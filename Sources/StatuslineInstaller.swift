@@ -7,25 +7,43 @@ enum StatuslineInstaller {
     private static let defaultScriptURL = claudeDir.appendingPathComponent("statusline-command.sh")
 
     private static let trackingMarker = "# --- ClaudeUsageBar tracking ---"
+    private static let trackingEndMarker = "# --- end ClaudeUsageBar tracking ---"
 
-    private static let trackingSnippet = """
+    private static let trackingSnippet = #"""
     # --- ClaudeUsageBar tracking ---
     _CUB_COST=$(echo "$input" | jq -r '.cost.total_cost_usd // 0')
     _CUB_LA=$(echo "$input" | jq -r '.cost.total_lines_added // 0')
     _CUB_LR=$(echo "$input" | jq -r '.cost.total_lines_removed // 0')
+    _CUB_MODEL=$(echo "$input" | jq -r '.model.display_name // "Claude"')
+    _CUB_AGENT=$(echo "$input" | jq -r '.agent.name // ""')
+    _CUB_CTX=$(echo "$input" | jq -r '.context_window.used_percentage // 0' | cut -d. -f1)
+    _CUB_WDIR=$(echo "$input" | jq -r '.workspace.current_dir // ""')
+    _CUB_SID=$(echo "$input" | jq -r '.session_id // ""')
     _CUB_DIR="$HOME/.claude/usage"
     _CUB_TODAY=$(date +%Y-%m-%d)
     mkdir -p "$_CUB_DIR/$_CUB_TODAY"
     echo "$_CUB_COST $_CUB_LA $_CUB_LR" > "$_CUB_DIR/$_CUB_TODAY/$PPID.dat"
+    cat > "$_CUB_DIR/$_CUB_TODAY/$PPID.agent.json.tmp" <<_CUB_EOF
+    {"pid":$PPID,"model":"$_CUB_MODEL","agent_name":"$_CUB_AGENT","context_pct":$_CUB_CTX,"cost":$_CUB_COST,"lines_added":$_CUB_LA,"lines_removed":$_CUB_LR,"working_dir":"$_CUB_WDIR","session_id":"$_CUB_SID","updated_at":$(date +%s)}
+    _CUB_EOF
+    mv "$_CUB_DIR/$_CUB_TODAY/$PPID.agent.json.tmp" "$_CUB_DIR/$_CUB_TODAY/$PPID.agent.json"
     # --- end ClaudeUsageBar tracking ---
-    """
+    """#
 
-    /// True when any configured statusline script contains the tracking snippet
+    /// True when the configured statusline script contains the tracking snippet with agent support
     static var isInstalled: Bool {
         guard let scriptPath = currentScriptPath(),
               let content = try? String(contentsOfFile: scriptPath, encoding: .utf8)
         else { return false }
-        return content.contains(trackingMarker)
+        return content.contains(trackingMarker) && content.contains(".agent.json")
+    }
+
+    /// True when old tracking exists but lacks agent.json support
+    static var needsUpgrade: Bool {
+        guard let scriptPath = currentScriptPath(),
+              let content = try? String(contentsOfFile: scriptPath, encoding: .utf8)
+        else { return false }
+        return content.contains(trackingMarker) && !content.contains(".agent.json")
     }
 
     @discardableResult
@@ -35,12 +53,14 @@ enum StatuslineInstaller {
         let fm = FileManager.default
         try? fm.createDirectory(at: claudeDir, withIntermediateDirectories: true)
 
+        if needsUpgrade {
+            return upgrade()
+        }
+
         if let existingPath = currentScriptPath(),
            fm.fileExists(atPath: existingPath) {
-            // Existing script — inject tracking snippet only
             return injectTracking(into: existingPath)
         } else {
-            // No statusline at all — install full script + configure settings
             return installFreshScript()
         }
     }
@@ -55,7 +75,6 @@ enum StatuslineInstaller {
               let command = statusLine["command"] as? String
         else { return nil }
 
-        // Extract file path from command like "sh /path/to/script.sh" or just "/path/to/script.sh"
         let parts = command.split(separator: " ", maxSplits: 10).map(String.init)
         for part in parts.reversed() {
             let expanded = NSString(string: part).expandingTildeInPath
@@ -66,25 +85,57 @@ enum StatuslineInstaller {
         return nil
     }
 
-    /// Inject just the tracking snippet into an existing script
-    private static func injectTracking(into path: String) -> Bool {
-        do {
-            var content = try String(contentsOfFile: path, encoding: .utf8)
-            guard !content.contains(trackingMarker) else { return true }
+    /// Replace old tracking block with new one that includes .agent.json
+    private static func upgrade() -> Bool {
+        guard let scriptPath = currentScriptPath(),
+              var content = try? String(contentsOfFile: scriptPath, encoding: .utf8)
+        else { return false }
 
-            // Inject after `input=$(cat)` if present, otherwise append at end
+        // Remove old tracking block
+        if let startRange = content.range(of: trackingMarker),
+           let endRange = content.range(of: trackingEndMarker) {
+            // Include the trailing newline if present
+            var endIdx = endRange.upperBound
+            if endIdx < content.endIndex && content[endIdx] == "\n" {
+                endIdx = content.index(after: endIdx)
+            }
+            content.removeSubrange(startRange.lowerBound..<endIdx)
+        }
+
+        // Inject new snippet at the same location
+        do {
             if let range = content.range(of: "input=$(cat)") {
                 let insertionPoint = content[range.upperBound...].hasPrefix("\n")
                     ? content.index(range.upperBound, offsetBy: 1)
                     : range.upperBound
                 content.insert(contentsOf: "\n" + trackingSnippet + "\n", at: insertionPoint)
             } else {
-                // Script doesn't read stdin with input=$(cat) — prepend reading + tracking
+                content += "\n" + trackingSnippet + "\n"
+            }
+            try content.write(toFile: scriptPath, atomically: true, encoding: .utf8)
+            return true
+        } catch {
+            print("Failed to upgrade tracking in \(scriptPath): \(error)")
+            return false
+        }
+    }
+
+    /// Inject just the tracking snippet into an existing script
+    private static func injectTracking(into path: String) -> Bool {
+        do {
+            var content = try String(contentsOfFile: path, encoding: .utf8)
+            guard !content.contains(trackingMarker) else { return true }
+
+            if let range = content.range(of: "input=$(cat)") {
+                let insertionPoint = content[range.upperBound...].hasPrefix("\n")
+                    ? content.index(range.upperBound, offsetBy: 1)
+                    : range.upperBound
+                content.insert(contentsOf: "\n" + trackingSnippet + "\n", at: insertionPoint)
+            } else {
                 let preamble = """
                 input=$(cat)
                 \(trackingSnippet)
                 """
-                // Insert after shebang line if present
                 if content.hasPrefix("#!") {
                     if let newline = content.firstIndex(of: "\n") {
                         let next = content.index(after: newline)
@@ -125,7 +176,6 @@ enum StatuslineInstaller {
             return false
         }
 
-        // Add statusLine to settings.json
         do {
             var json: [String: Any] = [:]
             if fm.fileExists(atPath: settingsURL.path),

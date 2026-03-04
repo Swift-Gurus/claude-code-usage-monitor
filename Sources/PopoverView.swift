@@ -2,6 +2,9 @@ import SwiftUI
 
 struct PopoverView: View {
     var data: UsageData
+    var agentTracker: AgentTracker
+    @State private var installed = StatuslineInstaller.isInstalled
+    @State private var installError = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -14,20 +17,29 @@ struct PopoverView: View {
             periodRow("This Week", stats: data.week)
             periodRow("This Month", stats: data.month)
 
+            if !agentTracker.activeAgents.isEmpty {
+                Divider()
+                agentsSection
+            }
+
             Divider()
 
             HStack(spacing: 6) {
-                Image(systemName: StatuslineInstaller.isInstalled
+                Image(systemName: installed
                       ? "checkmark.circle.fill" : "xmark.circle.fill")
-                    .foregroundStyle(StatuslineInstaller.isInstalled ? .green : .red)
-                Text(StatuslineInstaller.isInstalled
-                     ? "Statusline active" : "Statusline not configured")
+                    .foregroundStyle(installed ? .green : .red)
+                Text(installed
+                     ? "Statusline active"
+                     : installError ? "Install failed — check jq is installed"
+                     : "Statusline not configured")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                if !StatuslineInstaller.isInstalled {
+                if !installed {
                     Spacer()
                     Button("Install") {
-                        StatuslineInstaller.install()
+                        let success = StatuslineInstaller.install()
+                        installed = StatuslineInstaller.isInstalled
+                        installError = !success
                     }
                     .font(.caption)
                 }
@@ -41,8 +53,62 @@ struct PopoverView: View {
             .font(.caption)
         }
         .padding(16)
-        .frame(width: 240)
+        .frame(width: 280)
     }
+
+    // MARK: - Agents
+
+    @ViewBuilder
+    private var agentsSection: some View {
+        HStack {
+            Text("Active Agents")
+                .font(.subheadline)
+                .fontWeight(.medium)
+            Spacer()
+            Text("\(agentTracker.activeAgents.count)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+
+        ForEach(agentTracker.activeAgents) { agent in
+            agentRow(agent)
+        }
+    }
+
+    private func agentRow(_ agent: AgentInfo) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack {
+                Text(agent.displayName)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                Spacer()
+                Text(String(format: "$%.2f", agent.cost))
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+            HStack(spacing: 8) {
+                contextBadge(agent.contextPercent)
+                Label(agent.shortDir, systemImage: "folder")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    private func contextBadge(_ pct: Int) -> some View {
+        let color: Color = pct >= 90 ? .red : pct >= 70 ? .yellow : .green
+        return Text("\(pct)%")
+            .font(.caption2)
+            .fontWeight(.medium)
+            .foregroundStyle(color)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 1)
+            .background(color.opacity(0.15), in: RoundedRectangle(cornerRadius: 3))
+    }
+
+    // MARK: - Period Stats
 
     private func periodRow(_ label: String, stats: PeriodStats) -> some View {
         VStack(alignment: .leading, spacing: 4) {
