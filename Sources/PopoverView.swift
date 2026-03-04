@@ -78,10 +78,18 @@ struct PopoverView: View {
     private func agentRow(_ agent: AgentInfo) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack {
+                Image(systemName: agent.isIdle ? "moon.zzz.fill" : "circle.fill")
+                    .font(.system(size: 6))
+                    .foregroundStyle(agent.isIdle ? .gray : .green)
                 Text(agent.displayName)
                     .font(.caption)
                     .fontWeight(.medium)
                 Spacer()
+                if agent.isIdle {
+                    Text(agent.idleText)
+                        .font(.caption2)
+                        .foregroundStyle(.gray)
+                }
                 Text(String(format: "$%.2f", agent.cost))
                     .font(.caption)
                     .foregroundStyle(.orange)
@@ -95,6 +103,7 @@ struct PopoverView: View {
             }
         }
         .padding(.vertical, 2)
+        .opacity(agent.isIdle ? 0.6 : 1.0)
     }
 
     private func contextBadge(_ pct: Int) -> some View {

@@ -26,6 +26,21 @@ struct AgentInfo: Identifiable, Decodable {
         Date(timeIntervalSince1970: updatedAt)
     }
 
+    var idleDuration: TimeInterval {
+        Date().timeIntervalSince(updatedAtDate)
+    }
+
+    var isIdle: Bool {
+        idleDuration >= 60 // idle after 1 minute
+    }
+
+    var idleText: String {
+        let mins = Int(idleDuration) / 60
+        if mins < 1 { return "" }
+        if mins < 60 { return "\(mins)m idle" }
+        return "\(mins / 60)h \(mins % 60)m idle"
+    }
+
     private enum CodingKeys: String, CodingKey {
         case pid
         case model
@@ -45,7 +60,6 @@ final class AgentTracker {
     var activeAgents: [AgentInfo] = []
 
     private let usageDir: URL
-    private static let staleCutoff: TimeInterval = 300 // 5 minutes
     private let decoder = JSONDecoder()
 
     init() {
@@ -66,7 +80,6 @@ final class AgentTracker {
             return
         }
 
-        let now = Date()
         var agents: [AgentInfo] = []
 
         for file in files where file.lastPathComponent.hasSuffix(".agent.json") {
@@ -74,14 +87,8 @@ final class AgentTracker {
                   let agent = try? decoder.decode(AgentInfo.self, from: data)
             else { continue }
 
-            // Check PID liveness
+            // Check PID liveness — remove file if process is dead
             guard kill(Int32(agent.pid), 0) == 0 else {
-                try? fm.removeItem(at: file)
-                continue
-            }
-
-            // Staleness guard (PID recycling protection)
-            guard now.timeIntervalSince(agent.updatedAtDate) < Self.staleCutoff else {
                 try? fm.removeItem(at: file)
                 continue
             }
