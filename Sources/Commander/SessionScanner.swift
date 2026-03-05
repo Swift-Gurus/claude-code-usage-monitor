@@ -48,17 +48,33 @@ enum SessionScanner {
 
     // MARK: - Private
 
-    /// Returns a dictionary of PID → working directory for all running `claude` processes.
-    /// Uses a single `lsof` call to get CWDs for all matching PIDs.
+    /// Returns a dictionary of PID → working directory for `claude` processes launched by Commander.
+    /// Uses PPID to identify Commander-spawned processes, then `lsof` to get CWDs.
     private static func findClaudeProcesses() -> [Int: String] {
-        // Step 1: Get all claude PIDs via ps
-        guard let psOutput = runCommand("/bin/ps", ["-e", "-o", "pid,comm"]) else { return [:] }
+        // Step 1: Get all processes with PID, PPID, and command
+        guard let psOutput = runCommand("/bin/ps", ["-e", "-o", "pid,ppid,comm"]) else { return [:] }
 
+        // Build a set of Commander PIDs (any process whose comm contains "Commander")
+        var commanderPIDs: Set<Int> = []
+        for line in psOutput.split(separator: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.contains("Commander.app") || trimmed.hasSuffix("/Commander") {
+                if let pid = Int(trimmed.split(separator: " ", maxSplits: 1).first ?? "") {
+                    commanderPIDs.insert(pid)
+                }
+            }
+        }
+
+        // Find claude processes whose parent is Commander
         let pids = psOutput.split(separator: "\n").compactMap { line -> Int? in
             let trimmed = line.trimmingCharacters(in: .whitespaces)
-            // Match lines ending with the claude binary name
             guard trimmed.hasSuffix("/claude") || trimmed.hasSuffix(" claude") else { return nil }
-            return Int(trimmed.split(separator: " ", maxSplits: 1).first ?? "")
+            let parts = trimmed.split(separator: " ", maxSplits: 2)
+            guard parts.count >= 2,
+                  let pid = Int(parts[0]),
+                  let ppid = Int(parts[1]),
+                  commanderPIDs.contains(ppid) else { return nil }
+            return pid
         }
 
         guard !pids.isEmpty else { return [:] }

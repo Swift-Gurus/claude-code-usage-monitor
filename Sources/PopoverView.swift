@@ -17,14 +17,11 @@ struct PopoverView: View {
             periodRow("This Week", stats: data.week)
             periodRow("This Month", stats: data.month)
 
-            if !workingAgents.isEmpty {
-                Divider()
-                agentSection("Active Agents", agents: workingAgents, icon: "circle.fill", color: .green)
-            }
-
-            if !idleAgents.isEmpty {
-                Divider()
-                agentSection("Idle Agents", agents: idleAgents, icon: "moon.zzz.fill", color: .gray)
+            if !workingAgents.isEmpty || !idleAgents.isEmpty {
+                ForEach(groupedSources, id: \.source) { group in
+                    Divider()
+                    sourceSection(group)
+                }
             }
 
             Divider()
@@ -71,23 +68,47 @@ struct PopoverView: View {
         agentTracker.activeAgents.filter(\.isIdle).sorted { $0.cost > $1.cost }
     }
 
+    private struct SourceGroup {
+        let source: AgentSource
+        let active: [AgentInfo]
+        let idle: [AgentInfo]
+    }
+
+    private var groupedSources: [SourceGroup] {
+        let sources: [AgentSource] = [.cli, .commander]
+        return sources.compactMap { source in
+            let active = workingAgents.filter { $0.source == source }
+            let idle = idleAgents.filter { $0.source == source }
+            guard !active.isEmpty || !idle.isEmpty else { return nil }
+            return SourceGroup(source: source, active: active, idle: idle)
+        }
+    }
+
     @ViewBuilder
-    private func agentSection(_ title: String, agents: [AgentInfo], icon: String, color: Color) -> some View {
+    private func sourceSection(_ group: SourceGroup) -> some View {
         HStack {
-            Image(systemName: icon)
-                .font(.system(size: 8))
-                .foregroundStyle(color)
-            Text(title)
+            Image(systemName: group.source == .cli ? "terminal" : "app.connected.to.app.below.fill")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(group.source.rawValue)
                 .font(.subheadline)
                 .fontWeight(.medium)
             Spacer()
-            Text("\(agents.count)")
+            Text("\(group.active.count + group.idle.count)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
 
-        ForEach(agents) { agent in
-            agentRow(agent)
+        if !group.active.isEmpty {
+            ForEach(group.active) { agent in
+                agentRow(agent)
+            }
+        }
+
+        if !group.idle.isEmpty {
+            ForEach(group.idle) { agent in
+                agentRow(agent)
+            }
         }
     }
 

@@ -21,7 +21,6 @@ final class UsageData {
     }
 
     func reload() {
-        let fm = FileManager.default
         let calendar = Calendar.current
         let now = Date()
 
@@ -32,21 +31,31 @@ final class UsageData {
         let weekStart = calendar.date(byAdding: .day, value: -daysSinceMonday, to: today)!
         let monthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: now))!
 
-        let dateFmt = DateFormatter()
-        dateFmt.dateFormat = "yyyy-MM-dd"
-
         var d = PeriodStats()
         var w = PeriodStats()
         var m = PeriodStats()
 
-        // .dat files are written by the statusline (terminal sessions) and by
-        // AgentTracker (Commander sessions), so all sessions are covered here.
+        // Scan CLI (statusline) and Commander data separately — they live in different folders.
+        scanDateDirs(under: usageDir, today: today, weekStart: weekStart, monthStart: monthStart,
+                     d: &d, w: &w, m: &m)
+        scanDateDirs(under: CommanderSupport.baseDir, today: today, weekStart: weekStart, monthStart: monthStart,
+                     d: &d, w: &w, m: &m)
+
+        day = d; week = w; month = m
+    }
+
+    private func scanDateDirs(
+        under root: URL, today: Date, weekStart: Date, monthStart: Date,
+        d: inout PeriodStats, w: inout PeriodStats, m: inout PeriodStats
+    ) {
+        let fm = FileManager.default
+        let calendar = Calendar.current
+        let dateFmt = DateFormatter()
+        dateFmt.dateFormat = "yyyy-MM-dd"
+
         guard let dateDirs = try? fm.contentsOfDirectory(
-            at: usageDir, includingPropertiesForKeys: nil
-        ) else {
-            day = d; week = w; month = m
-            return
-        }
+            at: root, includingPropertiesForKeys: nil
+        ) else { return }
 
         for dateDir in dateDirs {
             let dirName = dateDir.lastPathComponent
@@ -78,7 +87,5 @@ final class UsageData {
                 }
             }
         }
-
-        day = d; week = w; month = m
     }
 }

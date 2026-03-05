@@ -30,6 +30,8 @@ struct ClaudeUsageBarApp: App {
             .onAppear {
                 guard monitor == nil else { return }
                 monitor = UsageMonitor { [usageData, agentTracker] in
+                    // Write Commander .dat/.agent.json BEFORE either reload reads them
+                    CommanderSupport.refreshFiles()
                     usageData.reload()
                     agentTracker.reload()
                 }
@@ -46,6 +48,7 @@ struct PopoverContentView: View {
     var body: some View {
         PopoverView(data: data, agentTracker: agentTracker)
             .onAppear {
+                CommanderSupport.refreshFiles()
                 data.reload()
                 agentTracker.reload()
             }
