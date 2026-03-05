@@ -33,7 +33,11 @@ final class UsageMonitor {
         let callback: FSEventStreamCallback = { _, info, _, _, _, _ in
             guard let info else { return }
             let monitor = Unmanaged<UsageMonitor>.fromOpaque(info).takeUnretainedValue()
-            monitor.onChange()
+            // Defer to next run loop iteration to avoid re-entrant layout cycles
+            // when SwiftUI's NSHostingView is mid-display-cycle
+            DispatchQueue.main.async {
+                monitor.onChange()
+            }
         }
 
         guard let stream = FSEventStreamCreate(
@@ -63,7 +67,10 @@ final class UsageMonitor {
 
     private func startPolling() {
         pollTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
-            self?.onChange()
+            // Defer to next run loop iteration to avoid re-entrant layout cycles
+            DispatchQueue.main.async {
+                self?.onChange()
+            }
         }
     }
 }
