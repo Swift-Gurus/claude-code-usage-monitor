@@ -8,6 +8,8 @@ LINES_ADDED=$(echo "$input" | jq -r '.cost.total_lines_added // 0')
 LINES_REMOVED=$(echo "$input" | jq -r '.cost.total_lines_removed // 0')
 PCT=$(echo "$input" | jq -r '.context_window.used_percentage // 0' | cut -d. -f1)
 DURATION_MS=$(echo "$input" | jq -r '.cost.total_duration_ms // 0')
+AGENT_NAME=$(echo "$input" | jq -r '.agent.name // ""')
+SESSION_ID=$(echo "$input" | jq -r '.session_id // ""')
 
 CYAN='\033[36m'; GREEN='\033[32m'; YELLOW='\033[33m'; RED='\033[31m'; RESET='\033[0m'; MAGENTA='\033[35m'
 
@@ -30,6 +32,12 @@ USAGE_DIR="$HOME/.claude/usage"
 TODAY=$(date +%Y-%m-%d)
 mkdir -p "$USAGE_DIR/$TODAY"
 echo "$COST $LINES_ADDED $LINES_REMOVED" > "$USAGE_DIR/$TODAY/$PPID.dat"
+
+# Write live agent metadata for menu bar app
+cat > "$USAGE_DIR/$TODAY/$PPID.agent.json.tmp" <<AGENTEOF
+{"pid":$PPID,"model":"$MODEL","agent_name":"$AGENT_NAME","context_pct":$PCT,"cost":$COST,"lines_added":$LINES_ADDED,"lines_removed":$LINES_REMOVED,"working_dir":"$DIR","session_id":"$SESSION_ID","duration_ms":$DURATION_MS,"api_duration_ms":$(echo "$input" | jq -r '.cost.total_api_duration_ms // 0'),"updated_at":$(date +%s)}
+AGENTEOF
+mv "$USAGE_DIR/$TODAY/$PPID.agent.json.tmp" "$USAGE_DIR/$TODAY/$PPID.agent.json"
 
 # Cleanup data older than 3 months (runs once per day via marker file)
 CLEANUP_MARKER="$USAGE_DIR/.last_cleanup"

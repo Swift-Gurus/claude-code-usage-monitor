@@ -13,6 +13,7 @@ struct ClaudeUsageBarApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
     @State private var usageData = UsageData()
     @State private var agentTracker = AgentTracker()
+    @State private var monitor: UsageMonitor?
 
     var body: some Scene {
         MenuBarExtra {
@@ -26,28 +27,27 @@ struct ClaudeUsageBarApp: App {
                         .foregroundStyle(.secondary)
                 }
             }
+            .onAppear {
+                guard monitor == nil else { return }
+                monitor = UsageMonitor { [usageData, agentTracker] in
+                    usageData.reload()
+                    agentTracker.reload()
+                }
+            }
         }
         .menuBarExtraStyle(.window)
     }
 }
 
-/// Wrapper view that owns the monitor lifecycle
 struct PopoverContentView: View {
     var data: UsageData
     var agentTracker: AgentTracker
-    @State private var monitor: UsageMonitor?
 
     var body: some View {
         PopoverView(data: data, agentTracker: agentTracker)
             .onAppear {
                 data.reload()
                 agentTracker.reload()
-            }
-            .task {
-                monitor = UsageMonitor { [data, agentTracker] in
-                    data.reload()
-                    agentTracker.reload()
-                }
             }
     }
 }

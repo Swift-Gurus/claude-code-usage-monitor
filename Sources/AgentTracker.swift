@@ -105,46 +105,84 @@ final class AgentTracker {
         dateFmt.dateFormat = "yyyy-MM-dd"
         let todayDir = usageDir.appendingPathComponent(dateFmt.string(from: Date()))
 
-        guard let files = try? fm.contentsOfDirectory(
+        var agents: [AgentInfo] = []
+        var knownPIDs: Set<Int> = []
+
+        // --- Source 1: Statusline .agent.json files (terminal sessions) ---
+        if let files = try? fm.contentsOfDirectory(
             at: todayDir, includingPropertiesForKeys: nil
-        ) else {
-            activeAgents = []
-            return
+        ) {
+            for file in files where file.lastPathComponent.hasSuffix(".agent.json") {
+                guard let data = try? Data(contentsOf: file),
+                      let json = try? decoder.decode(AgentJSON.self, from: data)
+                else { continue }
+
+                let pid32 = Int32(json.pid)
+
+                // Check PID liveness — remove file if process is dead
+                guard kill(pid32, 0) == 0 else {
+                    try? fm.removeItem(at: file)
+                    continue
+                }
+
+                let cpu = Self.cpuUsage(for: json.pid)
+                knownPIDs.insert(json.pid)
+
+                agents.append(AgentInfo(
+                    pid: json.pid,
+                    model: json.model,
+                    agentName: json.agentName,
+                    contextPercent: json.contextPercent,
+                    cost: json.cost,
+                    linesAdded: json.linesAdded,
+                    linesRemoved: json.linesRemoved,
+                    workingDir: json.workingDir,
+                    sessionID: json.sessionID,
+                    durationMs: json.durationMs ?? 0,
+                    apiDurationMs: json.apiDurationMs ?? 0,
+                    updatedAt: json.updatedAt,
+                    cpuUsage: cpu,
+                    isIdle: true // recalculated below
+                ))
+            }
         }
 
-        var agents: [AgentInfo] = []
+        // --- Source 2: JSONL session files (Commander / pipe-mode sessions) ---
+        let activeSessions = SessionScanner.findActiveSessions()
+        for session in activeSessions {
+            // Skip if we already have this PID from statusline data
+            guard !knownPIDs.contains(session.pid) else { continue }
 
-        for file in files where file.lastPathComponent.hasSuffix(".agent.json") {
-            guard let data = try? Data(contentsOf: file),
-                  let json = try? decoder.decode(AgentJSON.self, from: data)
-            else { continue }
+            guard let usage = JSONLParser.parseSession(
+                at: session.jsonlURL,
+                sessionID: session.sessionID,
+                workingDir: session.workingDir
+            ) else { continue }
 
-            let pid32 = Int32(json.pid)
-
-            // Check PID liveness — remove file if process is dead
-            guard kill(pid32, 0) == 0 else {
-                try? fm.removeItem(at: file)
-                continue
-            }
-
-            let cpu = Self.cpuUsage(for: json.pid)
+            let cpu = Self.cpuUsage(for: session.pid)
+            let durationMs = usage.lastUpdatedAt.timeIntervalSince(usage.startedAt) * 1000
 
             agents.append(AgentInfo(
-                pid: json.pid,
-                model: json.model,
-                agentName: json.agentName,
-                contextPercent: json.contextPercent,
-                cost: json.cost,
-                linesAdded: json.linesAdded,
-                linesRemoved: json.linesRemoved,
-                workingDir: json.workingDir,
-                sessionID: json.sessionID,
-                durationMs: json.durationMs ?? 0,
-                apiDurationMs: json.apiDurationMs ?? 0,
-                updatedAt: json.updatedAt,
+                pid: session.pid,
+                model: usage.displayModel,
+                agentName: usage.agentName,
+                contextPercent: usage.contextPercent,
+                cost: usage.costUSD,
+                linesAdded: 0,
+                linesRemoved: 0,
+                workingDir: usage.workingDir,
+                sessionID: usage.sessionID,
+                durationMs: durationMs,
+                apiDurationMs: 0,
+                updatedAt: usage.lastUpdatedAt.timeIntervalSince1970,
                 cpuUsage: cpu,
                 isIdle: true // recalculated below
             ))
+
+            // Write .dat and .agent.json so costs persist after the session ends
+            // and UsageData can aggregate them like normal statusline sessions
+            Self.writeDatFile(for: session.pid, in: todayDir, usage: usage)
+            Self.writeAgentJSON(for: session.pid, in: todayDir, usage: usage, durationMs: durationMs)
         }
 
         // Build set of active working dirs (any agent with CPU > 0 makes the dir active)
@@ -168,6 +206,35 @@ final class AgentTracker {
                 updatedAt: agent.updatedAt, cpuUsage: agent.cpuUsage, isIdle: idle
             )
         }.sorted { $0.pid < $1.pid }
+    }
+
+    /// Write a .dat file so UsageData picks up Commander session costs even after the process exits.
+    private static func writeDatFile(for pid: Int, in dir: URL, usage: SessionUsage) {
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let datURL = dir.appendingPathComponent("\(pid).dat")
+        let content = "\(usage.costUSD) 0 0\n"
+        try? content.write(to: datURL, atomically: true, encoding: .utf8)
+    }
+
+    /// Write an .agent.json file so Commander sessions persist for agent tracking.
+    private static func writeAgentJSON(for pid: Int, in dir: URL, usage: SessionUsage, durationMs: Double) {
+        let json: [String: Any] = [
+            "pid": pid,
+            "model": usage.displayModel,
+            "agent_name": usage.agentName,
+            "context_pct": usage.contextPercent,
+            "cost": usage.costUSD,
+            "lines_added": 0,
+            "lines_removed": 0,
+            "working_dir": usage.workingDir,
+            "session_id": usage.sessionID,
+            "duration_ms": durationMs,
+            "api_duration_ms": 0,
+            "updated_at": Int(Date().timeIntervalSince1970)
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: json) else { return }
+        let finalURL = dir.appendingPathComponent("\(pid).agent.json")
+        try? data.write(to: finalURL, options: .atomic)
     }
 
     /// Get CPU usage for a PID via `ps`
