@@ -39,6 +39,8 @@ final class UsageData {
         var w = PeriodStats()
         var m = PeriodStats()
 
+        // .dat files are written by the statusline (terminal sessions) and by
+        // AgentTracker (Commander sessions), so all sessions are covered here.
         guard let dateDirs = try? fm.contentsOfDirectory(
             at: usageDir, includingPropertiesForKeys: nil
         ) else {

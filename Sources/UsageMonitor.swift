@@ -3,16 +3,21 @@ import Foundation
 
 final class UsageMonitor {
     private var stream: FSEventStreamRef?
+    private var pollTimer: Timer?
     private let onChange: () -> Void
 
     init(onChange: @escaping () -> Void) {
         self.onChange = onChange
         startFSEvents()
+        startPolling()
     }
 
     deinit {
         stopFSEvents()
+        pollTimer?.invalidate()
     }
+
+    // MARK: - FSEvents (for terminal sessions writing to ~/.claude/usage/)
 
     private func startFSEvents() {
         let usageDir = NSHomeDirectory() + "/.claude/usage"
@@ -52,5 +57,13 @@ final class UsageMonitor {
         FSEventStreamInvalidate(stream)
         FSEventStreamRelease(stream)
         self.stream = nil
+    }
+
+    // MARK: - Polling (for Commander/pipe-mode sessions that don't write to usage/)
+
+    private func startPolling() {
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+            self?.onChange()
+        }
     }
 }
