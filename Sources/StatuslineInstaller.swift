@@ -19,31 +19,36 @@ enum StatuslineInstaller {
     _CUB_CTX=$(echo "$input" | jq -r '.context_window.used_percentage // 0' | cut -d. -f1)
     _CUB_WDIR=$(echo "$input" | jq -r '.workspace.current_dir // ""')
     _CUB_SID=$(echo "$input" | jq -r '.session_id // ""')
+    _CUB_DUR=$(echo "$input" | jq -r '.cost.total_duration_ms // 0')
+    _CUB_ADUR=$(echo "$input" | jq -r '.cost.total_api_duration_ms // 0')
     _CUB_DIR="$HOME/.claude/usage"
     _CUB_TODAY=$(date +%Y-%m-%d)
     mkdir -p "$_CUB_DIR/$_CUB_TODAY"
     echo "$_CUB_COST $_CUB_LA $_CUB_LR" > "$_CUB_DIR/$_CUB_TODAY/$PPID.dat"
     cat > "$_CUB_DIR/$_CUB_TODAY/$PPID.agent.json.tmp" <<_CUB_EOF
-    {"pid":$PPID,"model":"$_CUB_MODEL","agent_name":"$_CUB_AGENT","context_pct":$_CUB_CTX,"cost":$_CUB_COST,"lines_added":$_CUB_LA,"lines_removed":$_CUB_LR,"working_dir":"$_CUB_WDIR","session_id":"$_CUB_SID","updated_at":$(date +%s)}
+    {"pid":$PPID,"model":"$_CUB_MODEL","agent_name":"$_CUB_AGENT","context_pct":$_CUB_CTX,"cost":$_CUB_COST,"lines_added":$_CUB_LA,"lines_removed":$_CUB_LR,"working_dir":"$_CUB_WDIR","session_id":"$_CUB_SID","duration_ms":$_CUB_DUR,"api_duration_ms":$_CUB_ADUR,"updated_at":$(date +%s)}
     _CUB_EOF
     mv "$_CUB_DIR/$_CUB_TODAY/$PPID.agent.json.tmp" "$_CUB_DIR/$_CUB_TODAY/$PPID.agent.json"
     # --- end ClaudeUsageBar tracking ---
     """#
 
-    /// True when the configured statusline script contains the tracking snippet with agent support
+    /// True when the configured statusline script has the latest tracking snippet
     static var isInstalled: Bool {
         guard let scriptPath = currentScriptPath(),
               let content = try? String(contentsOfFile: scriptPath, encoding: .utf8)
         else { return false }
-        return content.contains(trackingMarker) && content.contains(".agent.json")
+        return content.contains(trackingMarker)
+            && content.contains(".agent.json")
+            && content.contains("duration_ms")
     }
 
-    /// True when old tracking exists but lacks agent.json support
+    /// True when tracking exists but is an older version
     static var needsUpgrade: Bool {
         guard let scriptPath = currentScriptPath(),
               let content = try? String(contentsOfFile: scriptPath, encoding: .utf8)
         else { return false }
-        return content.contains(trackingMarker) && !content.contains(".agent.json")
+        guard content.contains(trackingMarker) else { return false }
+        return !content.contains(".agent.json") || !content.contains("duration_ms")
     }
 
     @discardableResult
@@ -85,16 +90,21 @@ enum StatuslineInstaller {
         return nil
     }
 
-    /// Replace old tracking block with new one that includes .agent.json
+    /// Upgrade an existing script to the latest tracking version
     private static func upgrade() -> Bool {
         guard let scriptPath = currentScriptPath(),
               var content = try? String(contentsOfFile: scriptPath, encoding: .utf8)
         else { return false }
 
-        // Remove old tracking block
+        // If this is our own bundled script (has the full display output),
+        // just re-copy the latest bundled version
+        if scriptPath == defaultScriptURL.path {
+            return installFreshScript()
+        }
+
+        // User's custom script — replace just the tracking block
         if let startRange = content.range(of: trackingMarker),
            let endRange = content.range(of: trackingEndMarker) {
-            // Include the trailing newline if present
             var endIdx = endRange.upperBound
             if endIdx < content.endIndex && content[endIdx] == "\n" {
                 endIdx = content.index(after: endIdx)
@@ -102,7 +112,6 @@ enum StatuslineInstaller {
             content.removeSubrange(startRange.lowerBound..<endIdx)
         }
 
-        // Inject new snippet at the same location
         do {
             if let range = content.range(of: "input=$(cat)") {
                 let insertionPoint = content[range.upperBound...].hasPrefix("\n")
