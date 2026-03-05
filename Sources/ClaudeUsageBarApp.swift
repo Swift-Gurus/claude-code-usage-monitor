@@ -39,6 +39,10 @@ struct PopoverContentView: View {
 
     var body: some View {
         PopoverView(data: data, agentTracker: agentTracker)
+            .onAppear {
+                data.reload()
+                agentTracker.reload()
+            }
             .task {
                 monitor = UsageMonitor { [data, agentTracker] in
                     data.reload()
