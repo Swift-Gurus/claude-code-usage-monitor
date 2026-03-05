@@ -78,7 +78,7 @@ enum CommanderSupport {
                 "session_id": usage.sessionID,
                 "duration_ms": durationMs,
                 "api_duration_ms": 0,
-                "updated_at": Int(Date().timeIntervalSince1970)
+                "updated_at": Int(usage.lastUpdatedAt.timeIntervalSince1970)
             ]
             if let data = try? JSONSerialization.data(withJSONObject: json) {
                 try? data.write(
