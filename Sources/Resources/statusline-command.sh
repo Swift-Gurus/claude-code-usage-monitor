@@ -7,6 +7,7 @@ COST=$(echo "$input" | jq -r '.cost.total_cost_usd // 0')
 LINES_ADDED=$(echo "$input" | jq -r '.cost.total_lines_added // 0')
 LINES_REMOVED=$(echo "$input" | jq -r '.cost.total_lines_removed // 0')
 PCT=$(echo "$input" | jq -r '.context_window.used_percentage // 0' | cut -d. -f1)
+CTXWIN=$(echo "$input" | jq -r '.context_window.context_window_size // 0')
 DURATION_MS=$(echo "$input" | jq -r '.cost.total_duration_ms // 0')
 AGENT_NAME=$(echo "$input" | jq -r '.agent.name // ""')
 SESSION_ID=$(echo "$input" | jq -r '.session_id // ""')
@@ -35,7 +36,7 @@ echo "$COST $LINES_ADDED $LINES_REMOVED $MODEL" > "$USAGE_DIR/$TODAY/$PPID.dat"
 
 # Write live agent metadata for menu bar app
 cat > "$USAGE_DIR/$TODAY/$PPID.agent.json.tmp" <<AGENTEOF
-{"pid":$PPID,"model":"$MODEL","agent_name":"$AGENT_NAME","context_pct":$PCT,"cost":$COST,"lines_added":$LINES_ADDED,"lines_removed":$LINES_REMOVED,"working_dir":"$DIR","session_id":"$SESSION_ID","duration_ms":$DURATION_MS,"api_duration_ms":$(echo "$input" | jq -r '.cost.total_api_duration_ms // 0'),"updated_at":$(date +%s)}
+{"pid":$PPID,"model":"$MODEL","agent_name":"$AGENT_NAME","context_pct":$PCT,"context_window":$CTXWIN,"cost":$COST,"lines_added":$LINES_ADDED,"lines_removed":$LINES_REMOVED,"working_dir":"$DIR","session_id":"$SESSION_ID","duration_ms":$DURATION_MS,"api_duration_ms":$(echo "$input" | jq -r '.cost.total_api_duration_ms // 0'),"updated_at":$(date +%s)}
 AGENTEOF
 mv "$USAGE_DIR/$TODAY/$PPID.agent.json.tmp" "$USAGE_DIR/$TODAY/$PPID.agent.json"
 

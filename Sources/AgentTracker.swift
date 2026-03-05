@@ -10,6 +10,7 @@ struct AgentInfo: Identifiable {
     let model: String
     let agentName: String
     let contextPercent: Int
+    let contextWindow: Int
     let cost: Double
     let linesAdded: Int
     let linesRemoved: Int
@@ -52,6 +53,15 @@ struct AgentInfo: Identifiable {
         return "\(mins / 60)h \(mins % 60)m"
     }
 
+    var contextWindowText: String {
+        guard contextWindow > 0 else { return "" }
+        let millions = Double(contextWindow) / 1_000_000.0
+        if millions == Double(Int(millions)) {
+            return "\(Int(millions))M"
+        }
+        return String(format: "%.1fM", millions)
+    }
+
     var idleDuration: TimeInterval {
         Date().timeIntervalSince(updatedAtDate)
     }
@@ -70,6 +80,7 @@ private struct AgentJSON: Decodable {
     let model: String
     let agentName: String
     let contextPercent: Int
+    let contextWindow: Int?
     let cost: Double
     let linesAdded: Int
     let linesRemoved: Int
@@ -83,6 +94,7 @@ private struct AgentJSON: Decodable {
         case pid, model, cost
         case agentName = "agent_name"
         case contextPercent = "context_pct"
+        case contextWindow = "context_window"
         case linesAdded = "lines_added"
         case linesRemoved = "lines_removed"
         case workingDir = "working_dir"
@@ -145,6 +157,7 @@ final class AgentTracker {
                     model: json.model,
                     agentName: json.agentName,
                     contextPercent: json.contextPercent,
+                    contextWindow: json.contextWindow ?? 0,
                     cost: json.cost,
                     linesAdded: json.linesAdded,
                     linesRemoved: json.linesRemoved,
@@ -174,7 +187,8 @@ final class AgentTracker {
             guard idle != agent.isIdle else { return agent }
             return AgentInfo(
                 pid: agent.pid, model: agent.model, agentName: agent.agentName,
-                contextPercent: agent.contextPercent, cost: agent.cost,
+                contextPercent: agent.contextPercent, contextWindow: agent.contextWindow,
+                cost: agent.cost,
                 linesAdded: agent.linesAdded, linesRemoved: agent.linesRemoved,
                 workingDir: agent.workingDir, sessionID: agent.sessionID,
                 durationMs: agent.durationMs, apiDurationMs: agent.apiDurationMs,

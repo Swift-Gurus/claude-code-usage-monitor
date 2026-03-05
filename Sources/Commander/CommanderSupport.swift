@@ -108,11 +108,13 @@ enum CommanderSupport {
             )
 
             // Write .agent.json so the agent shows up in the UI
+            let resolved = ClaudeModel.from(modelID: usage.model)
             let json: [String: Any] = [
                 "pid": session.pid,
                 "model": usage.displayModel,
                 "agent_name": usage.agentName,
                 "context_pct": usage.contextPercent,
+                "context_window": resolved.contextWindowSize,
                 "cost": usage.costUSD,
                 "lines_added": 0,
                 "lines_removed": 0,

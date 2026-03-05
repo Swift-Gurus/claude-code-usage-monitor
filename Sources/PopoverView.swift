@@ -157,7 +157,7 @@ struct PopoverView: View {
 
             // Row 2: context bar + duration
             HStack(spacing: 8) {
-                contextBar(agent.contextPercent)
+                contextBar(agent.contextPercent, contextWindow: agent.contextWindow)
                 Label(agent.durationText, systemImage: "clock")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
@@ -184,8 +184,12 @@ struct PopoverView: View {
         .opacity(agent.isIdle ? 0.6 : 1.0)
     }
 
-    private func contextBar(_ pct: Int) -> some View {
+    private func contextBar(_ pct: Int, contextWindow: Int = 0) -> some View {
         let color: Color = pct >= 90 ? .red : pct >= 70 ? .yellow : .green
+        let millions = Double(contextWindow) / 1_000_000.0
+        let windowLabel = contextWindow <= 0 ? ""
+            : millions == Double(Int(millions)) ? "\(Int(millions))M"
+            : String(format: "%.1fM", millions)
         return HStack(spacing: 4) {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
@@ -197,7 +201,7 @@ struct PopoverView: View {
                 }
             }
             .frame(width: 60, height: 6)
-            Text("\(pct)%")
+            Text(windowLabel.isEmpty ? "\(pct)%" : "\(pct)% · \(windowLabel)")
                 .font(.caption2)
                 .foregroundStyle(color)
         }

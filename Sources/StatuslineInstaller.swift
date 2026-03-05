@@ -17,6 +17,7 @@ enum StatuslineInstaller {
     _CUB_MODEL=$(echo "$input" | jq -r '.model.display_name // "Claude"')
     _CUB_AGENT=$(echo "$input" | jq -r '.agent.name // ""')
     _CUB_CTX=$(echo "$input" | jq -r '.context_window.used_percentage // 0' | cut -d. -f1)
+    _CUB_CTXWIN=$(echo "$input" | jq -r '.context_window.context_window_size // 0')
     _CUB_WDIR=$(echo "$input" | jq -r '.workspace.current_dir // ""')
     _CUB_SID=$(echo "$input" | jq -r '.session_id // ""')
     _CUB_DUR=$(echo "$input" | jq -r '.cost.total_duration_ms // 0')
@@ -26,7 +27,7 @@ enum StatuslineInstaller {
     mkdir -p "$_CUB_DIR/$_CUB_TODAY"
     echo "$_CUB_COST $_CUB_LA $_CUB_LR $_CUB_MODEL" > "$_CUB_DIR/$_CUB_TODAY/$PPID.dat"
     cat > "$_CUB_DIR/$_CUB_TODAY/$PPID.agent.json.tmp" <<_CUB_EOF
-    {"pid":$PPID,"model":"$_CUB_MODEL","agent_name":"$_CUB_AGENT","context_pct":$_CUB_CTX,"cost":$_CUB_COST,"lines_added":$_CUB_LA,"lines_removed":$_CUB_LR,"working_dir":"$_CUB_WDIR","session_id":"$_CUB_SID","duration_ms":$_CUB_DUR,"api_duration_ms":$_CUB_ADUR,"updated_at":$(date +%s)}
+    {"pid":$PPID,"model":"$_CUB_MODEL","agent_name":"$_CUB_AGENT","context_pct":$_CUB_CTX,"context_window":$_CUB_CTXWIN,"cost":$_CUB_COST,"lines_added":$_CUB_LA,"lines_removed":$_CUB_LR,"working_dir":"$_CUB_WDIR","session_id":"$_CUB_SID","duration_ms":$_CUB_DUR,"api_duration_ms":$_CUB_ADUR,"updated_at":$(date +%s)}
     _CUB_EOF
     mv "$_CUB_DIR/$_CUB_TODAY/$PPID.agent.json.tmp" "$_CUB_DIR/$_CUB_TODAY/$PPID.agent.json"
     # --- end ClaudeUsageBar tracking ---

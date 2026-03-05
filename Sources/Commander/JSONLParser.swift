@@ -38,8 +38,8 @@ enum ClaudeModel: CaseIterable {
 
     var displayName: String {
         switch self {
-        case .opus4_6:   return "Opus 4.6 (1M context)"
-        case .opus4_5:   return "Opus 4.5 (1M context)"
+        case .opus4_6:   return "Opus 4.6"
+        case .opus4_5:   return "Opus 4.5"
         case .sonnet4_6: return "Sonnet 4.6"
         case .sonnet4_5: return "Sonnet 4.5"
         case .sonnet4:   return "Sonnet 4"
@@ -110,6 +110,7 @@ enum JSONLParser {
         }
         var usageByMsgID: [String: MsgUsage] = [:]
         var lastInputTokens = 0
+        var maxInputTokens = 0
 
         let decoder = JSONDecoder()
 
@@ -137,7 +138,9 @@ enum JSONLParser {
 
             // Overwrite — last entry per message ID wins (the final with stop_reason)
             usageByMsgID[msgID] = MsgUsage(input: inp, output: out, cacheCreation: cc, cacheRead: cr)
-            lastInputTokens = inp + cc + cr
+            let totalIn = inp + cc + cr
+            lastInputTokens = totalIn
+            maxInputTokens = max(maxInputTokens, totalIn)
         }
 
         // Sum across unique messages
