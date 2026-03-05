@@ -13,9 +13,7 @@ struct PopoverView: View {
 
             Divider()
 
-            periodRow("Today", stats: data.day)
-            periodRow("This Week", stats: data.week)
-            periodRow("This Month", stats: data.month)
+            periodTable
 
             if !workingAgents.isEmpty || !idleAgents.isEmpty {
                 ForEach(groupedSources, id: \.source) { group in
@@ -185,25 +183,42 @@ struct PopoverView: View {
 
     // MARK: - Period Stats
 
-    private func periodRow(_ label: String, stats: PeriodStats) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(label)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
+    private var periodTable: some View {
+        let rows: [(String, PeriodStats)] = [
+            ("Today", data.day),
+            ("Week", data.week),
+            ("Month", data.month)
+        ]
+
+        return Grid(alignment: .trailing, verticalSpacing: 8) {
+            GridRow {
                 Spacer()
-                Text(String(format: "$%.2f", stats.cost))
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.orange)
+                    .gridColumnAlignment(.leading)
+                Text("Cost")
+                Text("+Lines")
+                Text("-Lines")
             }
-            HStack(spacing: 8) {
-                Label("+\(stats.linesAdded)", systemImage: "plus.circle.fill")
-                    .foregroundStyle(.green)
-                Label("-\(stats.linesRemoved)", systemImage: "minus.circle.fill")
-                    .foregroundStyle(.red)
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+
+            ForEach(rows, id: \.0) { label, stats in
+                GridRow {
+                    Text(label)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Text(String(format: "$%.2f", stats.cost))
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.orange)
+                    Text("+\(stats.linesAdded)")
+                        .font(.caption)
+                        .foregroundStyle(.green)
+                    Text("-\(stats.linesRemoved)")
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
             }
-            .font(.caption)
         }
     }
 }
