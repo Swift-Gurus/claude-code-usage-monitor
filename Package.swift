@@ -5,11 +5,21 @@ let package = Package(
     name: "ClaudeUsageBar",
     platforms: [.macOS(.v14)],
     targets: [
+        .target(
+            name: "ClaudeUsageBarLib",
+            path: "Sources",
+            exclude: ["Info.plist", "App"],
+            resources: [.copy("Resources/statusline-command.sh")]
+        ),
         .executableTarget(
             name: "ClaudeUsageBar",
-            path: "Sources",
-            exclude: ["Info.plist"],
-            resources: [.copy("Resources/statusline-command.sh")]
+            dependencies: ["ClaudeUsageBarLib"],
+            path: "Sources/App"
+        ),
+        .testTarget(
+            name: "ClaudeUsageBarTests",
+            dependencies: ["ClaudeUsageBarLib"],
+            path: "Tests"
         )
     ]
 )

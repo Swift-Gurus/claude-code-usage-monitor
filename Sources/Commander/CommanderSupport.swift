@@ -24,9 +24,9 @@ import Foundation
 /// 3. Remove `commanderDir` references in `UsageData.swift` and `AgentTracker.swift`
 /// 4. Optionally remove the poll timer in `UsageMonitor.swift`
 /// 5. Optionally `rm -rf ~/.claude/usage/commander/`
-enum CommanderSupport {
+public enum CommanderSupport {
 
-    static let baseDir = FileManager.default.homeDirectoryForCurrentUser
+    public static let baseDir = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".claude/usage/commander")
 
     /// Discover active Commander sessions and write `.dat`/`.agent.json` files
@@ -36,7 +36,7 @@ enum CommanderSupport {
     /// so both read consistent, fresh data.
     private static let cleanupMarkerURL = baseDir.appendingPathComponent(".last_cleanup")
 
-    static func refreshFiles() {
+    public static func refreshFiles() {
         let dateFmt = DateFormatter()
         dateFmt.dateFormat = "yyyy-MM-dd"
         let todayStr = dateFmt.string(from: Date())

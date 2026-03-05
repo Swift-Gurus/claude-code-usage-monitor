@@ -1,47 +1,47 @@
 import Foundation
 
-enum AgentSource: String {
+public enum AgentSource: String {
     case cli = "CLI"
     case commander = "Commander"
 }
 
-struct AgentInfo: Identifiable {
-    let pid: Int
-    let model: String
-    let agentName: String
-    let contextPercent: Int
-    let contextWindow: Int
-    let cost: Double
-    let linesAdded: Int
-    let linesRemoved: Int
-    let workingDir: String
-    let sessionID: String
-    let durationMs: Double
-    let apiDurationMs: Double
-    let updatedAt: TimeInterval
-    let cpuUsage: Double
-    let isIdle: Bool
-    let source: AgentSource
+public struct AgentInfo: Identifiable {
+    public let pid: Int
+    public let model: String
+    public let agentName: String
+    public let contextPercent: Int
+    public let contextWindow: Int
+    public let cost: Double
+    public let linesAdded: Int
+    public let linesRemoved: Int
+    public let workingDir: String
+    public let sessionID: String
+    public let durationMs: Double
+    public let apiDurationMs: Double
+    public let updatedAt: TimeInterval
+    public let cpuUsage: Double
+    public let isIdle: Bool
+    public let source: AgentSource
 
-    var id: Int { pid }
+    public var id: Int { pid }
 
-    var displayName: String {
+    public var displayName: String {
         agentName.isEmpty ? model : agentName
     }
 
-    var shortDir: String {
+    public var shortDir: String {
         (workingDir as NSString).lastPathComponent
     }
 
-    var updatedAtDate: Date {
+    public var updatedAtDate: Date {
         Date(timeIntervalSince1970: updatedAt)
     }
 
-    var durationText: String {
+    public var durationText: String {
         formatMs(durationMs)
     }
 
-    var apiDurationText: String {
+    public var apiDurationText: String {
         formatMs(apiDurationMs)
     }
 
@@ -53,7 +53,7 @@ struct AgentInfo: Identifiable {
         return "\(mins / 60)h \(mins % 60)m"
     }
 
-    var contextWindowText: String {
+    public var contextWindowText: String {
         guard contextWindow > 0 else { return "" }
         let millions = Double(contextWindow) / 1_000_000.0
         if millions == Double(Int(millions)) {
@@ -62,15 +62,39 @@ struct AgentInfo: Identifiable {
         return String(format: "%.1fM", millions)
     }
 
-    var idleDuration: TimeInterval {
+    public var idleDuration: TimeInterval {
         Date().timeIntervalSince(updatedAtDate)
     }
 
-    var idleText: String {
+    public var idleText: String {
         let mins = Int(idleDuration) / 60
         if mins < 1 { return "" }
         if mins < 60 { return "\(mins)m idle" }
         return "\(mins / 60)h \(mins % 60)m idle"
+    }
+
+    public init(
+        pid: Int, model: String, agentName: String, contextPercent: Int, contextWindow: Int,
+        cost: Double, linesAdded: Int, linesRemoved: Int, workingDir: String, sessionID: String,
+        durationMs: Double, apiDurationMs: Double, updatedAt: TimeInterval, cpuUsage: Double,
+        isIdle: Bool, source: AgentSource
+    ) {
+        self.pid = pid
+        self.model = model
+        self.agentName = agentName
+        self.contextPercent = contextPercent
+        self.contextWindow = contextWindow
+        self.cost = cost
+        self.linesAdded = linesAdded
+        self.linesRemoved = linesRemoved
+        self.workingDir = workingDir
+        self.sessionID = sessionID
+        self.durationMs = durationMs
+        self.apiDurationMs = apiDurationMs
+        self.updatedAt = updatedAt
+        self.cpuUsage = cpuUsage
+        self.isIdle = isIdle
+        self.source = source
     }
 }
 
@@ -106,18 +130,18 @@ private struct AgentJSON: Decodable {
 }
 
 @Observable
-final class AgentTracker {
-    var activeAgents: [AgentInfo] = []
+public final class AgentTracker {
+    public var activeAgents: [AgentInfo] = []
 
     private let usageDir: URL
     private let decoder = JSONDecoder()
 
-    init() {
+    public init() {
         usageDir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude/usage")
     }
 
-    func reload() {
+    public func reload() {
         let fm = FileManager.default
         let dateFmt = DateFormatter()
         dateFmt.dateFormat = "yyyy-MM-dd"

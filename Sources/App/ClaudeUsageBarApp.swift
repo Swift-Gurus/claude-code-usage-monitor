@@ -1,11 +1,14 @@
 import AppKit
+import ClaudeUsageBarLib
 import SwiftUI
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
     private let usageData = UsageData()
     private let agentTracker = AgentTracker()
+    private let settings = AppSettings()
     private var monitor: UsageMonitor?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -15,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupPopover()
         setupMonitor()
         updateStatusItemTitle()
+        observeSettings()
     }
 
     // MARK: - Setup
@@ -32,7 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         popover = NSPopover()
         popover.behavior = .transient
         popover.contentViewController = NSHostingController(
-            rootView: PopoverView(data: usageData, agentTracker: agentTracker)
+            rootView: PopoverView(data: usageData, agentTracker: agentTracker, settings: settings)
         )
     }
 
@@ -50,7 +54,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func updateStatusItemTitle() {
         guard let button = statusItem.button else { return }
-        button.title = String(format: "$%.2f", usageData.day.cost)
+        let period = settings.statusBarPeriod
+        let stats: PeriodStats
+        switch period {
+        case .day: stats = usageData.day
+        case .week: stats = usageData.week
+        case .month: stats = usageData.month
+        }
+        button.title = "\(period.prefix): " + String(format: "$%.2f", stats.cost)
+    }
+
+    private func observeSettings() {
+        withObservationTracking {
+            _ = self.settings.statusBarPeriod
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                self?.updateStatusItemTitle()
+                self?.observeSettings()
+            }
+        }
     }
 
     // MARK: - Popover

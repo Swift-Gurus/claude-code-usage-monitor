@@ -1,22 +1,38 @@
 import Foundation
 
-struct SessionUsage {
-    let model: String
-    let displayModel: String
-    let costUSD: Double
-    let contextPercent: Int
-    let sessionID: String
-    let workingDir: String
-    let agentName: String
-    let startedAt: Date
-    let lastUpdatedAt: Date
+public struct SessionUsage {
+    public let model: String
+    public let displayModel: String
+    public let costUSD: Double
+    public let contextPercent: Int
+    public let sessionID: String
+    public let workingDir: String
+    public let agentName: String
+    public let startedAt: Date
+    public let lastUpdatedAt: Date
+
+    public init(
+        model: String, displayModel: String, costUSD: Double, contextPercent: Int,
+        sessionID: String, workingDir: String, agentName: String,
+        startedAt: Date, lastUpdatedAt: Date
+    ) {
+        self.model = model
+        self.displayModel = displayModel
+        self.costUSD = costUSD
+        self.contextPercent = contextPercent
+        self.sessionID = sessionID
+        self.workingDir = workingDir
+        self.agentName = agentName
+        self.startedAt = startedAt
+        self.lastUpdatedAt = lastUpdatedAt
+    }
 }
 
 // MARK: - Model Registry
 
 /// Single source of truth for model metadata: display name, pricing, context window.
 /// To add a new model: add a case and fill in all properties.
-enum ClaudeModel: CaseIterable {
+public enum ClaudeModel: CaseIterable {
     case opus4_6
     case opus4_5
     case sonnet4_6
@@ -25,7 +41,7 @@ enum ClaudeModel: CaseIterable {
     case haiku4_5
 
     /// Substring(s) to match in raw model ID (e.g. "claude-opus-4-6")
-    var idPatterns: [String] {
+    public var idPatterns: [String] {
         switch self {
         case .opus4_6:   return ["opus-4-6", "opus-4.6"]
         case .opus4_5:   return ["opus-4-5", "opus-4.5"]
@@ -36,7 +52,7 @@ enum ClaudeModel: CaseIterable {
         }
     }
 
-    var displayName: String {
+    public var displayName: String {
         switch self {
         case .opus4_6:   return "Opus 4.6"
         case .opus4_5:   return "Opus 4.5"
@@ -52,7 +68,7 @@ enum ClaudeModel: CaseIterable {
     /// JSONL usage fields don't include all tokens (system prompt, tool definitions,
     /// internal context). The higher rates compensate for the missing tokens to
     /// produce estimates closer to Claude Code's actual reported costs.
-    var pricing: ModelPricing {
+    public var pricing: ModelPricing {
         switch self {
         case .opus4_6, .opus4_5:
             return ModelPricing(inputPerMTok: 15.0, outputPerMTok: 75.0, cacheWritePerMTok: 18.75, cacheReadPerMTok: 1.50)
@@ -63,7 +79,7 @@ enum ClaudeModel: CaseIterable {
         }
     }
 
-    var contextWindowSize: Int {
+    public var contextWindowSize: Int {
         switch self {
         case .opus4_6, .opus4_5: return 1_000_000
         case .sonnet4_6, .sonnet4_5, .sonnet4, .haiku4_5: return 200_000
@@ -71,7 +87,7 @@ enum ClaudeModel: CaseIterable {
     }
 
     /// Match a raw model ID string (e.g. "claude-opus-4-6") to a known model.
-    static func from(modelID: String) -> ClaudeModel {
+    public static func from(modelID: String) -> ClaudeModel {
         for model in allCases {
             if model.idPatterns.contains(where: { modelID.contains($0) }) {
                 return model
@@ -82,7 +98,7 @@ enum ClaudeModel: CaseIterable {
         return .sonnet4_6
     }
 
-    static func displayName(for modelID: String) -> String {
+    public static func displayName(for modelID: String) -> String {
         if modelID.isEmpty { return "Claude" }
         return from(modelID: modelID).displayName
     }
@@ -91,10 +107,10 @@ enum ClaudeModel: CaseIterable {
 // MARK: - JSONL Parser
 
 /// Parses Claude Code JSONL conversation files to extract token usage and compute costs.
-enum JSONLParser {
+public enum JSONLParser {
 
     /// Parse a session JSONL file and return aggregated usage data.
-    static func parseSession(at url: URL, sessionID: String, workingDir: String) -> SessionUsage? {
+    public static func parseSession(at url: URL, sessionID: String, workingDir: String) -> SessionUsage? {
         guard let data = try? Data(contentsOf: url) else { return nil }
         guard let content = String(data: data, encoding: .utf8) else { return nil }
 

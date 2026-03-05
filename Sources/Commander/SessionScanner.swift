@@ -1,15 +1,22 @@
 import Foundation
 
-struct ActiveSession {
-    let pid: Int
-    let workingDir: String
-    let jsonlURL: URL
-    let sessionID: String
+public struct ActiveSession {
+    public let pid: Int
+    public let workingDir: String
+    public let jsonlURL: URL
+    public let sessionID: String
+
+    public init(pid: Int, workingDir: String, jsonlURL: URL, sessionID: String) {
+        self.pid = pid
+        self.workingDir = workingDir
+        self.jsonlURL = jsonlURL
+        self.sessionID = sessionID
+    }
 }
 
 /// Discovers running Claude Code processes (including Commander/pipe-mode sessions)
 /// and maps them to their JSONL conversation files.
-enum SessionScanner {
+public enum SessionScanner {
 
     private static let projectsDir = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".claude/projects")
@@ -20,7 +27,7 @@ enum SessionScanner {
 
     /// Find all running `claude` processes and resolve their JSONL session files.
     /// Results are cached for 2 seconds to avoid redundant ps/lsof calls.
-    static func findActiveSessions() -> [ActiveSession] {
+    public static func findActiveSessions() -> [ActiveSession] {
         let now = Date()
         if now.timeIntervalSince(cacheTime) < 2 { return cachedSessions }
 
@@ -101,7 +108,7 @@ enum SessionScanner {
     /// Encode a filesystem path into the project directory name format Claude Code uses.
     /// Claude Code replaces `/`, `.`, and `_` with `-`.
     /// e.g. "/Users/foo/.ai_rules" → "-Users-foo--ai-rules"
-    static func encodeProjectPath(_ path: String) -> String {
+    public static func encodeProjectPath(_ path: String) -> String {
         path.replacingOccurrences(of: "/", with: "-")
             .replacingOccurrences(of: ".", with: "-")
             .replacingOccurrences(of: "_", with: "-")

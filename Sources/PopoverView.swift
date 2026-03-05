@@ -1,11 +1,19 @@
 import SwiftUI
 
-struct PopoverView: View {
-    var data: UsageData
-    var agentTracker: AgentTracker
+public struct PopoverView: View {
+    public var data: UsageData
+    public var agentTracker: AgentTracker
+    public var settings: AppSettings
     @State private var installed = StatuslineInstaller.isInstalled
     @State private var installError = false
     @State private var selectedPeriod: String?
+    @State private var showSettings = false
+
+    public init(data: UsageData, agentTracker: AgentTracker, settings: AppSettings) {
+        self.data = data
+        self.agentTracker = agentTracker
+        self.settings = settings
+    }
 
     private func statsFor(_ label: String) -> PeriodStats {
         switch label {
@@ -16,9 +24,11 @@ struct PopoverView: View {
         }
     }
 
-    var body: some View {
+    public var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if let label = selectedPeriod {
+            if showSettings {
+                SettingsView(settings: settings) { showSettings = false }
+            } else if let label = selectedPeriod {
                 detailView(label: label, stats: statsFor(label))
             } else {
                 mainView
@@ -32,8 +42,16 @@ struct PopoverView: View {
 
     private var mainView: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Claude Usage")
-                .font(.headline)
+            HStack {
+                Text("Claude Usage")
+                    .font(.headline)
+                Spacer()
+                Button { showSettings = true } label: {
+                    Image(systemName: "gearshape")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
 
             Divider()
 
@@ -80,12 +98,20 @@ struct PopoverView: View {
 
     // MARK: - Agents
 
+    private func sortAgents(_ agents: [AgentInfo]) -> [AgentInfo] {
+        switch settings.agentSortOrder {
+        case .recentlyUpdated: return agents.sorted { $0.updatedAt > $1.updatedAt }
+        case .cost: return agents.sorted { $0.cost > $1.cost }
+        case .contextUsage: return agents.sorted { $0.contextPercent > $1.contextPercent }
+        }
+    }
+
     private var workingAgents: [AgentInfo] {
-        agentTracker.activeAgents.filter { !$0.isIdle }.sorted { $0.cost > $1.cost }
+        sortAgents(agentTracker.activeAgents.filter { !$0.isIdle })
     }
 
     private var idleAgents: [AgentInfo] {
-        agentTracker.activeAgents.filter(\.isIdle).sorted { $0.cost > $1.cost }
+        sortAgents(agentTracker.activeAgents.filter(\.isIdle))
     }
 
     private struct SourceGroup {

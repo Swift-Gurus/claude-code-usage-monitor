@@ -34,6 +34,11 @@ TODAY=$(date +%Y-%m-%d)
 mkdir -p "$USAGE_DIR/$TODAY"
 echo "$COST $LINES_ADDED $LINES_REMOVED $MODEL" > "$USAGE_DIR/$TODAY/$PPID.dat"
 
+# Track model transitions for per-model cost breakdown
+MF="$USAGE_DIR/$TODAY/$PPID.models"
+PREV_MODEL=""; [ -f "$MF" ] && PREV_MODEL=$(tail -1 "$MF" | cut -f4-)
+[ "$PREV_MODEL" != "$MODEL" ] && printf '%s\t%s\t%s\t%s\n' "$COST" "$LINES_ADDED" "$LINES_REMOVED" "$MODEL" >> "$MF"
+
 # Write live agent metadata for menu bar app
 cat > "$USAGE_DIR/$TODAY/$PPID.agent.json.tmp" <<AGENTEOF
 {"pid":$PPID,"model":"$MODEL","agent_name":"$AGENT_NAME","context_pct":$PCT,"context_window":$CTXWIN,"cost":$COST,"lines_added":$LINES_ADDED,"lines_removed":$LINES_REMOVED,"working_dir":"$DIR","session_id":"$SESSION_ID","duration_ms":$DURATION_MS,"api_duration_ms":$(echo "$input" | jq -r '.cost.total_api_duration_ms // 0'),"updated_at":$(date +%s)}

@@ -1,6 +1,6 @@
 import Foundation
 
-enum StatuslineInstaller {
+public enum StatuslineInstaller {
     private static let claudeDir = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".claude")
     private static let settingsURL = claudeDir.appendingPathComponent("settings.json")
@@ -26,6 +26,9 @@ enum StatuslineInstaller {
     _CUB_TODAY=$(date +%Y-%m-%d)
     mkdir -p "$_CUB_DIR/$_CUB_TODAY"
     echo "$_CUB_COST $_CUB_LA $_CUB_LR $_CUB_MODEL" > "$_CUB_DIR/$_CUB_TODAY/$PPID.dat"
+    _CUB_MF="$_CUB_DIR/$_CUB_TODAY/$PPID.models"
+    _CUB_PREV=""; [ -f "$_CUB_MF" ] && _CUB_PREV=$(tail -1 "$_CUB_MF" | cut -f4-)
+    [ "$_CUB_PREV" != "$_CUB_MODEL" ] && printf '%s\t%s\t%s\t%s\n' "$_CUB_COST" "$_CUB_LA" "$_CUB_LR" "$_CUB_MODEL" >> "$_CUB_MF"
     cat > "$_CUB_DIR/$_CUB_TODAY/$PPID.agent.json.tmp" <<_CUB_EOF
     {"pid":$PPID,"model":"$_CUB_MODEL","agent_name":"$_CUB_AGENT","context_pct":$_CUB_CTX,"context_window":$_CUB_CTXWIN,"cost":$_CUB_COST,"lines_added":$_CUB_LA,"lines_removed":$_CUB_LR,"working_dir":"$_CUB_WDIR","session_id":"$_CUB_SID","duration_ms":$_CUB_DUR,"api_duration_ms":$_CUB_ADUR,"updated_at":$(date +%s)}
     _CUB_EOF
@@ -33,7 +36,7 @@ enum StatuslineInstaller {
     # --- end ClaudeUsageBar tracking ---
     """#
 
-    static var isInstalled: Bool {
+    public static var isInstalled: Bool {
         guard let scriptPath = currentScriptPath(),
               let content = try? String(contentsOfFile: scriptPath, encoding: .utf8)
         else { return false }
@@ -51,7 +54,7 @@ enum StatuslineInstaller {
     }
 
     /// True when tracking marker exists but content has changed
-    static var needsUpgrade: Bool {
+    public static var needsUpgrade: Bool {
         guard let scriptPath = currentScriptPath(),
               let content = try? String(contentsOfFile: scriptPath, encoding: .utf8)
         else { return false }
@@ -67,7 +70,7 @@ enum StatuslineInstaller {
     }
 
     @discardableResult
-    static func install() -> Bool {
+    public static func install() -> Bool {
         guard !isInstalled else { return true }
 
         let fm = FileManager.default

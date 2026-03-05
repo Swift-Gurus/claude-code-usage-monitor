@@ -1,12 +1,12 @@
 import CoreServices
 import Foundation
 
-final class UsageMonitor {
+public final class UsageMonitor {
     private var stream: FSEventStreamRef?
     private var pollTimer: Timer?
     private let onChange: () -> Void
 
-    init(onChange: @escaping () -> Void) {
+    public init(onChange: @escaping () -> Void) {
         self.onChange = onChange
         startFSEvents()
         startPolling()
