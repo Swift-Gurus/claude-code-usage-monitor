@@ -128,8 +128,6 @@ final class AgentTracker {
             }
 
             let cpu = Self.cpuUsage(for: json.pid)
-            let recentlyUpdated = Date().timeIntervalSince1970 - json.updatedAt < 30
-            let idle = cpu < 1.0 && !recentlyUpdated
 
             agents.append(AgentInfo(
                 pid: json.pid,
@@ -145,11 +143,31 @@ final class AgentTracker {
                 apiDurationMs: json.apiDurationMs ?? 0,
                 updatedAt: json.updatedAt,
                 cpuUsage: cpu,
-                isIdle: idle
+                isIdle: true // recalculated below
             ))
         }
 
-        activeAgents = agents.sorted { $0.pid < $1.pid }
+        // Build set of active working dirs (any agent with CPU > 0 makes the dir active)
+        let activeWorkDirs = Set(
+            agents.filter { $0.cpuUsage >= 1.0 }.map(\.workingDir)
+        )
+
+        // Re-evaluate idle: agent is active if it has CPU, was recently updated,
+        // OR another agent in the same project is active
+        activeAgents = agents.map { agent in
+            let projectActive = activeWorkDirs.contains(agent.workingDir)
+            let recentlyUpdated = Date().timeIntervalSince1970 - agent.updatedAt < 300
+            let idle = agent.cpuUsage < 1.0 && !recentlyUpdated && !projectActive
+            guard idle != agent.isIdle else { return agent }
+            return AgentInfo(
+                pid: agent.pid, model: agent.model, agentName: agent.agentName,
+                contextPercent: agent.contextPercent, cost: agent.cost,
+                linesAdded: agent.linesAdded, linesRemoved: agent.linesRemoved,
+                workingDir: agent.workingDir, sessionID: agent.sessionID,
+                durationMs: agent.durationMs, apiDurationMs: agent.apiDurationMs,
+                updatedAt: agent.updatedAt, cpuUsage: agent.cpuUsage, isIdle: idle
+            )
+        }.sorted { $0.pid < $1.pid }
     }
 
     /// Get CPU usage for a PID via `ps`
