@@ -98,10 +98,13 @@ enum SessionScanner {
         return result
     }
 
-    /// Encode a filesystem path into the project directory name format Claude uses.
-    /// e.g. "/Users/mitchea/Developer/MyApp" → "-Users-mitchea-Developer-MyApp"
+    /// Encode a filesystem path into the project directory name format Claude Code uses.
+    /// Claude Code replaces `/`, `.`, and `_` with `-`.
+    /// e.g. "/Users/foo/.ai_rules" → "-Users-foo--ai-rules"
     static func encodeProjectPath(_ path: String) -> String {
         path.replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ".", with: "-")
+            .replacingOccurrences(of: "_", with: "-")
     }
 
     /// Find the most recently modified .jsonl file in a project directory (top level only).

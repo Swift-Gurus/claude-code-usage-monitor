@@ -99,7 +99,7 @@ enum JSONLParser {
         var totalCacheCreation = 0
         var totalCacheRead = 0
         var lastInputTokens = 0
-        var agentName = ""
+        let agentName = ""
         var firstTimestamp: Date?
         var lastTimestamp: Date?
 
@@ -114,7 +114,9 @@ enum JSONLParser {
                 lastTimestamp = ts
             }
 
-            if let slug = entry.slug, !slug.isEmpty { agentName = slug }
+            // Note: entry.slug is the session name (e.g. "jazzy-gliding-island"), not agent name.
+            // Agent name is not available in JSONL — it comes from --agent flag which
+            // is only in the statusline JSON.
 
             guard entry.type == "assistant",
                   let message = entry.message,
