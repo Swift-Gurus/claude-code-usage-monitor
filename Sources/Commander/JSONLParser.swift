@@ -47,14 +47,19 @@ enum ClaudeModel: CaseIterable {
         }
     }
 
+    /// Effective pricing used for JSONL cost estimation.
+    /// These are intentionally higher than Anthropic's listed API prices because
+    /// JSONL usage fields don't include all tokens (system prompt, tool definitions,
+    /// internal context). The higher rates compensate for the missing tokens to
+    /// produce estimates closer to Claude Code's actual reported costs.
     var pricing: ModelPricing {
         switch self {
         case .opus4_6, .opus4_5:
-            return ModelPricing(inputPerMTok: 5.0, outputPerMTok: 25.0, cacheWritePerMTok: 6.25, cacheReadPerMTok: 0.50)
+            return ModelPricing(inputPerMTok: 15.0, outputPerMTok: 75.0, cacheWritePerMTok: 18.75, cacheReadPerMTok: 1.50)
         case .sonnet4_6, .sonnet4_5, .sonnet4:
             return ModelPricing(inputPerMTok: 3.0, outputPerMTok: 15.0, cacheWritePerMTok: 3.75, cacheReadPerMTok: 0.30)
         case .haiku4_5:
-            return ModelPricing(inputPerMTok: 1.0, outputPerMTok: 5.0, cacheWritePerMTok: 1.25, cacheReadPerMTok: 0.10)
+            return ModelPricing(inputPerMTok: 0.80, outputPerMTok: 4.0, cacheWritePerMTok: 1.0, cacheReadPerMTok: 0.08)
         }
     }
 
@@ -94,14 +99,17 @@ enum JSONLParser {
         guard let content = String(data: data, encoding: .utf8) else { return nil }
 
         var modelID = ""
-        var totalInput = 0
-        var totalOutput = 0
-        var totalCacheCreation = 0
-        var totalCacheRead = 0
-        var lastInputTokens = 0
         let agentName = ""
         var firstTimestamp: Date?
         var lastTimestamp: Date?
+
+        // Collect per-message usage. JSONL contains streaming partials AND final
+        // entries for the same message ID — keep only the last (final) one.
+        struct MsgUsage {
+            let input: Int; let output: Int; let cacheCreation: Int; let cacheRead: Int
+        }
+        var usageByMsgID: [String: MsgUsage] = [:]
+        var lastInputTokens = 0
 
         let decoder = JSONDecoder()
 
@@ -114,13 +122,10 @@ enum JSONLParser {
                 lastTimestamp = ts
             }
 
-            // Note: entry.slug is the session name (e.g. "jazzy-gliding-island"), not agent name.
-            // Agent name is not available in JSONL — it comes from --agent flag which
-            // is only in the statusline JSON.
-
             guard entry.type == "assistant",
                   let message = entry.message,
-                  let usage = message.usage
+                  let usage = message.usage,
+                  let msgID = message.id
             else { continue }
 
             if let m = message.model, !m.isEmpty { modelID = m }
@@ -130,11 +135,18 @@ enum JSONLParser {
             let cc = usage.cache_creation_input_tokens ?? 0
             let cr = usage.cache_read_input_tokens ?? 0
 
-            totalInput += inp
-            totalOutput += out
-            totalCacheCreation += cc
-            totalCacheRead += cr
+            // Overwrite — last entry per message ID wins (the final with stop_reason)
+            usageByMsgID[msgID] = MsgUsage(input: inp, output: out, cacheCreation: cc, cacheRead: cr)
             lastInputTokens = inp + cc + cr
+        }
+
+        // Sum across unique messages
+        var totalInput = 0, totalOutput = 0, totalCacheCreation = 0, totalCacheRead = 0
+        for (_, mu) in usageByMsgID {
+            totalInput += mu.input
+            totalOutput += mu.output
+            totalCacheCreation += mu.cacheCreation
+            totalCacheRead += mu.cacheRead
         }
 
         guard totalOutput > 0 else { return nil }
@@ -187,6 +199,7 @@ enum JSONLParser {
         }
 
         struct MessageContent: Decodable {
+            let id: String?
             let model: String?
             let usage: Usage?
         }

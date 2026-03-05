@@ -34,11 +34,53 @@ enum CommanderSupport {
     ///
     /// Must be called **before** `UsageData.reload()` and `AgentTracker.reload()`
     /// so both read consistent, fresh data.
+    private static let cleanupMarkerURL = baseDir.appendingPathComponent(".last_cleanup")
+
     static func refreshFiles() {
         let dateFmt = DateFormatter()
         dateFmt.dateFormat = "yyyy-MM-dd"
-        let todayDir = baseDir.appendingPathComponent(dateFmt.string(from: Date()))
+        let todayStr = dateFmt.string(from: Date())
+        let todayDir = baseDir.appendingPathComponent(todayStr)
+        cleanupDeadPIDs(in: todayDir)
+        cleanupOldData(today: todayStr, dateFmt: dateFmt)
         writeAgentData(in: todayDir)
+    }
+
+    /// Remove date folders older than 3 months. Runs once per day.
+    private static func cleanupOldData(today: String, dateFmt: DateFormatter) {
+        let fm = FileManager.default
+        let marker = cleanupMarkerURL
+        if let last = try? String(contentsOf: marker, encoding: .utf8),
+           last.trimmingCharacters(in: .whitespacesAndNewlines) == today { return }
+
+        try? fm.createDirectory(at: baseDir, withIntermediateDirectories: true)
+        try? today.write(to: marker, atomically: true, encoding: .utf8)
+
+        guard let cutoff = Calendar.current.date(byAdding: .month, value: -3, to: Date()),
+              let dirs = try? fm.contentsOfDirectory(at: baseDir, includingPropertiesForKeys: nil)
+        else { return }
+
+        let cutoffStr = dateFmt.string(from: cutoff)
+        for dir in dirs {
+            let name = dir.lastPathComponent
+            guard dateFmt.date(from: name) != nil, name < cutoffStr else { continue }
+            try? fm.removeItem(at: dir)
+        }
+    }
+
+    /// Remove .agent.json for PIDs that are no longer running.
+    /// .dat files are kept for cost history (daily/weekly/monthly totals).
+    private static func cleanupDeadPIDs(in dir: URL) {
+        let fm = FileManager.default
+        guard let files = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else { return }
+        for file in files where file.lastPathComponent.hasSuffix(".agent.json") {
+            let pidStr = file.deletingPathExtension().lastPathComponent
+                .replacingOccurrences(of: ".agent", with: "")
+            guard let pid = Int(pidStr) else { continue }
+            if kill(Int32(pid), 0) != 0 {
+                try? fm.removeItem(at: file)
+            }
+        }
     }
 
     private static func writeAgentData(in todayDir: URL) {
@@ -59,7 +101,7 @@ enum CommanderSupport {
             try? fm.createDirectory(at: todayDir, withIntermediateDirectories: true)
 
             // Write .dat so UsageData aggregates this session's cost
-            let datContent = "\(usage.costUSD) 0 0\n"
+            let datContent = "\(usage.costUSD) 0 0 \(usage.displayModel)\n"
             try? datContent.write(
                 to: todayDir.appendingPathComponent("\(session.pid).dat"),
                 atomically: true, encoding: .utf8

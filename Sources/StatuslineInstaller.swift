@@ -24,7 +24,7 @@ enum StatuslineInstaller {
     _CUB_DIR="$HOME/.claude/usage"
     _CUB_TODAY=$(date +%Y-%m-%d)
     mkdir -p "$_CUB_DIR/$_CUB_TODAY"
-    echo "$_CUB_COST $_CUB_LA $_CUB_LR" > "$_CUB_DIR/$_CUB_TODAY/$PPID.dat"
+    echo "$_CUB_COST $_CUB_LA $_CUB_LR $_CUB_MODEL" > "$_CUB_DIR/$_CUB_TODAY/$PPID.dat"
     cat > "$_CUB_DIR/$_CUB_TODAY/$PPID.agent.json.tmp" <<_CUB_EOF
     {"pid":$PPID,"model":"$_CUB_MODEL","agent_name":"$_CUB_AGENT","context_pct":$_CUB_CTX,"cost":$_CUB_COST,"lines_added":$_CUB_LA,"lines_removed":$_CUB_LR,"working_dir":"$_CUB_WDIR","session_id":"$_CUB_SID","duration_ms":$_CUB_DUR,"api_duration_ms":$_CUB_ADUR,"updated_at":$(date +%s)}
     _CUB_EOF
@@ -32,23 +32,37 @@ enum StatuslineInstaller {
     # --- end ClaudeUsageBar tracking ---
     """#
 
-    /// True when the configured statusline script has the latest tracking snippet
     static var isInstalled: Bool {
         guard let scriptPath = currentScriptPath(),
               let content = try? String(contentsOfFile: scriptPath, encoding: .utf8)
         else { return false }
-        return content.contains(trackingMarker)
-            && content.contains(".agent.json")
-            && content.contains("duration_ms")
+
+        // Bundled script — compare against the bundled resource file
+        if scriptPath == defaultScriptURL.path {
+            guard let bundledURL = Bundle.module.url(forResource: "statusline-command", withExtension: "sh"),
+                  let bundled = try? String(contentsOf: bundledURL, encoding: .utf8)
+            else { return false }
+            return content == bundled
+        }
+
+        // Custom script — check it contains the current tracking snippet
+        return content.contains(trackingSnippet)
     }
 
-    /// True when tracking exists but is an older version
+    /// True when tracking marker exists but content has changed
     static var needsUpgrade: Bool {
         guard let scriptPath = currentScriptPath(),
               let content = try? String(contentsOfFile: scriptPath, encoding: .utf8)
         else { return false }
+
+        if scriptPath == defaultScriptURL.path {
+            // Bundled script exists but doesn't match — needs re-copy
+            return !isInstalled
+        }
+
+        // Custom script has tracking block but snippet changed
         guard content.contains(trackingMarker) else { return false }
-        return !content.contains(".agent.json") || !content.contains("duration_ms")
+        return !content.contains(trackingSnippet)
     }
 
     @discardableResult

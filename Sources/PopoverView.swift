@@ -5,8 +5,32 @@ struct PopoverView: View {
     var agentTracker: AgentTracker
     @State private var installed = StatuslineInstaller.isInstalled
     @State private var installError = false
+    @State private var selectedPeriod: String?
+
+    private func statsFor(_ label: String) -> PeriodStats {
+        switch label {
+        case "Today": return data.day
+        case "Week": return data.week
+        case "Month": return data.month
+        default: return data.day
+        }
+    }
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if let label = selectedPeriod {
+                detailView(label: label, stats: statsFor(label))
+            } else {
+                mainView
+            }
+        }
+        .padding(16)
+        .frame(width: 320)
+    }
+
+    // MARK: - Main View
+
+    private var mainView: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Claude Usage")
                 .font(.headline)
@@ -52,8 +76,6 @@ struct PopoverView: View {
             .foregroundStyle(.secondary)
             .font(.caption)
         }
-        .padding(16)
-        .frame(width: 320)
     }
 
     // MARK: - Agents
@@ -181,7 +203,7 @@ struct PopoverView: View {
         }
     }
 
-    // MARK: - Period Stats
+    // MARK: - Period Stats Table
 
     private var periodTable: some View {
         let rows: [(String, PeriodStats)] = [
@@ -203,10 +225,15 @@ struct PopoverView: View {
 
             ForEach(rows, id: \.0) { label, stats in
                 GridRow {
-                    Text(label)
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    HStack(spacing: 4) {
+                        Text(label)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 8))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     Text(String(format: "$%.2f", stats.cost))
                         .font(.subheadline)
                         .fontWeight(.semibold)
@@ -218,6 +245,114 @@ struct PopoverView: View {
                         .font(.caption)
                         .foregroundStyle(.red)
                 }
+                .contentShape(Rectangle())
+                .onTapGesture { selectedPeriod = label }
+            }
+        }
+    }
+
+    // MARK: - Detail View
+
+    private func detailView(label: String, stats: PeriodStats) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Header with back button
+            HStack {
+                Button {
+                    selectedPeriod = nil
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                        Text("Back")
+                    }
+                    .font(.caption)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.blue)
+
+                Spacer()
+
+                Text("\(label) Breakdown")
+                    .font(.headline)
+            }
+
+            Divider()
+
+            // Summary row
+            HStack {
+                Text("Total")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                Spacer()
+                Text(String(format: "$%.2f", stats.cost))
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.orange)
+            }
+
+            // Source breakdowns
+            let sources: [(String, String, SourceStats)] = [
+                ("CLI", "terminal", stats.cli),
+                ("Commander", "app.connected.to.app.below.fill", stats.commander)
+            ]
+
+            ForEach(sources.filter { $0.2.total.cost > 0 || $0.2.total.linesAdded > 0 }, id: \.0) { name, icon, source in
+                Divider()
+                sourceBreakdown(name: name, icon: icon, source: source)
+            }
+        }
+    }
+
+    private func sourceBreakdown(name: String, icon: String, source: SourceStats) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            // Source header
+            HStack {
+                Image(systemName: icon)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(name)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                Spacer()
+                Text(String(format: "$%.2f", source.total.cost))
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.orange)
+                Text("+\(source.total.linesAdded)")
+                    .font(.caption)
+                    .foregroundStyle(.green)
+                Text("-\(source.total.linesRemoved)")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+
+            // Model rows (indented)
+            let models = source.byModel.sorted { $0.value.cost > $1.value.cost }
+            ForEach(models, id: \.key) { model, stats in
+                HStack {
+                    Text(model)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text(String(format: "$%.2f", stats.cost))
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.orange)
+                    Text("+\(stats.linesAdded)")
+                        .font(.caption2)
+                        .foregroundStyle(.green)
+                    Text("-\(stats.linesRemoved)")
+                        .font(.caption2)
+                        .foregroundStyle(.red)
+                }
+                .padding(.leading, 20)
+            }
+
+            // If no model data, show note
+            if source.byModel.isEmpty && source.total.cost > 0 {
+                Text("Model breakdown not available for older sessions")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .padding(.leading, 20)
             }
         }
     }

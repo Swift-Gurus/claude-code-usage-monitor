@@ -31,7 +31,7 @@ git rev-parse --git-dir > /dev/null 2>&1 && BRANCH=" | 🌿 $(git branch --show-
 USAGE_DIR="$HOME/.claude/usage"
 TODAY=$(date +%Y-%m-%d)
 mkdir -p "$USAGE_DIR/$TODAY"
-echo "$COST $LINES_ADDED $LINES_REMOVED" > "$USAGE_DIR/$TODAY/$PPID.dat"
+echo "$COST $LINES_ADDED $LINES_REMOVED $MODEL" > "$USAGE_DIR/$TODAY/$PPID.dat"
 
 # Write live agent metadata for menu bar app
 cat > "$USAGE_DIR/$TODAY/$PPID.agent.json.tmp" <<AGENTEOF
