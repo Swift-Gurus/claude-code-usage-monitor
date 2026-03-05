@@ -135,6 +135,8 @@ public final class AgentTracker {
 
     private let usageDir: URL
     private let decoder = JSONDecoder()
+    /// Cache: sessionID → (subagents dir mtime, per-model stats)
+    private var subagentCache: [String: (mtime: Date, stats: [String: SourceModelStats])] = [:]
 
     public init() {
         usageDir = FileManager.default.homeDirectoryForCurrentUser
@@ -220,6 +222,48 @@ public final class AgentTracker {
                 source: agent.source
             )
         }.sorted { $0.pid < $1.pid }
+
+        // Scan subagents for live sessions and write {pid}.subagents.json
+        writeSubagentFiles(agents: activeAgents, todayStr: todayStr)
+    }
+
+    private func writeSubagentFiles(agents: [AgentInfo], todayStr: String) {
+        let fm = FileManager.default
+        let projectsDir = fm.homeDirectoryForCurrentUser.appendingPathComponent(".claude/projects")
+
+        for agent in agents where !agent.sessionID.isEmpty {
+            let encoded = SessionScanner.encodeProjectPath(agent.workingDir)
+            let subagentsDir = projectsDir
+                .appendingPathComponent(encoded)
+                .appendingPathComponent(agent.sessionID)
+                .appendingPathComponent("subagents")
+
+            // Check if subagents directory exists and get its mtime
+            guard let attrs = try? fm.attributesOfItem(atPath: subagentsDir.path),
+                  let mtime = attrs[.modificationDate] as? Date else { continue }
+
+            // Use cache to avoid rescanning unchanged directories
+            if let cached = subagentCache[agent.sessionID], cached.mtime == mtime { continue }
+
+            let stats = JSONLParser.parseSubagents(in: subagentsDir)
+            subagentCache[agent.sessionID] = (mtime: mtime, stats: stats)
+
+            // Write {pid}.subagents.json to usage folder so UsageData can read it
+            let todayDir: URL
+            switch agent.source {
+            case .cli:
+                todayDir = usageDir.appendingPathComponent(todayStr)
+            case .commander:
+                todayDir = CommanderSupport.baseDir.appendingPathComponent(todayStr)
+            }
+
+            if let data = try? JSONEncoder().encode(stats) {
+                try? data.write(
+                    to: todayDir.appendingPathComponent("\(agent.pid).subagents.json"),
+                    options: .atomic
+                )
+            }
+        }
     }
 
     /// Get CPU usage for a PID via `ps`

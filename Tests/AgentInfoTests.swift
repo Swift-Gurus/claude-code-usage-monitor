@@ -108,8 +108,9 @@ struct AgentInfoTests {
 
     @Test("idleText shows hours when long idle")
     func idleTextHours() {
-        let agent = makeAgent(updatedAt: Date().timeIntervalSince1970 - 7200) // 2h ago
-        #expect(agent.idleText == "2h 0m idle")
+        // Use a fixed past date far enough back that timing can't affect it
+        let agent = makeAgent(updatedAt: Date().timeIntervalSince1970 - 10_800) // exactly 3h ago
+        #expect(agent.idleText == "3h 0m idle")
     }
 
     // MARK: - id

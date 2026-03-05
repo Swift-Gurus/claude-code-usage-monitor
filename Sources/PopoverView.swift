@@ -57,10 +57,29 @@ public struct PopoverView: View {
 
             periodTable
 
-            if !workingAgents.isEmpty || !idleAgents.isEmpty {
+            Divider()
+
+            if settings.isLoading {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                        .scaleEffect(0.8)
+                    Text("Loading active agents...")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 4)
+            } else if workingAgents.isEmpty && idleAgents.isEmpty {
+                Text("No active agents")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 4)
+            } else {
                 ForEach(groupedSources, id: \.source) { group in
-                    Divider()
                     sourceSection(group)
+                    Divider()
                 }
             }
 
@@ -383,6 +402,41 @@ public struct PopoverView: View {
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
                     .padding(.leading, 20)
+            }
+
+            // Subagents subsection
+            if !source.subagentsByModel.isEmpty {
+                let subTotal = source.subagentsByModel.values.reduce(0.0) { $0 + $1.cost }
+                HStack {
+                    Image(systemName: "arrow.turn.down.right")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Text("Subagents")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text(String(format: "$%.2f", subTotal))
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.orange)
+                }
+                .padding(.leading, 8)
+                .padding(.top, 4)
+
+                let subModels = source.subagentsByModel.sorted { $0.value.cost > $1.value.cost }
+                ForEach(subModels, id: \.key) { model, stats in
+                    HStack {
+                        Text(model)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text(String(format: "$%.2f", stats.cost))
+                            .font(.caption2)
+                            .fontWeight(.medium)
+                            .foregroundStyle(.orange)
+                    }
+                    .padding(.leading, 28)
+                }
             }
         }
     }

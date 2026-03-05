@@ -81,11 +81,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if popover.isShown {
             popover.performClose(nil)
         } else if let button = statusItem.button {
-            CommanderSupport.refreshFiles()
-            usageData.reload()
-            agentTracker.reload()
-            updateStatusItemTitle()
+            // Show immediately with existing data, then refresh in background
+            settings.isLoading = true
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                guard let self else { return }
+                CommanderSupport.refreshFiles()
+                DispatchQueue.main.async {
+                    self.usageData.reload()
+                    self.agentTracker.reload()
+                    self.updateStatusItemTitle()
+                    self.settings.isLoading = false
+                }
+            }
         }
     }
 }

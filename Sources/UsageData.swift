@@ -1,6 +1,6 @@
 import Foundation
 
-public struct SourceModelStats {
+public struct SourceModelStats: Codable {
     public var cost: Double = 0
     public var linesAdded: Int = 0
     public var linesRemoved: Int = 0
@@ -15,10 +15,16 @@ public struct SourceModelStats {
 public struct SourceStats {
     public var total = SourceModelStats()
     public var byModel: [String: SourceModelStats] = [:]
+    public var subagentsByModel: [String: SourceModelStats] = [:]
 
-    public init(total: SourceModelStats = SourceModelStats(), byModel: [String: SourceModelStats] = [:]) {
+    public init(
+        total: SourceModelStats = SourceModelStats(),
+        byModel: [String: SourceModelStats] = [:],
+        subagentsByModel: [String: SourceModelStats] = [:]
+    ) {
         self.total = total
         self.byModel = byModel
+        self.subagentsByModel = subagentsByModel
     }
 }
 
@@ -50,6 +56,9 @@ public final class UsageData {
     /// Model transition history per PID. Key: "{pid}\t{source}".
     /// Value: sorted list of (cost, linesAdded, linesRemoved, model) at each switch point.
     private var modelHistories: [String: [(cost: Double, la: Int, lr: Int, model: String)]] = [:]
+
+    /// Subagent per-model stats per PID. Key: "{pid}\t{source}".
+    private var subagentStats: [String: [String: SourceModelStats]] = [:]
 
     public init() {
         usageDir = FileManager.default.homeDirectoryForCurrentUser
@@ -90,11 +99,13 @@ public final class UsageData {
         // Collect all .dat entries and model histories from both sources
         var entries: [DatEntry] = []
         var histories: [String: [(cost: Double, la: Int, lr: Int, model: String)]] = [:]
-        collectEntries(under: usageDir, source: .cli, since: monthStart, into: &entries, histories: &histories)
+        var subagents: [String: [String: SourceModelStats]] = [:]
+        collectEntries(under: usageDir, source: .cli, since: monthStart, into: &entries, histories: &histories, subagents: &subagents)
         if includeCommander {
-            collectEntries(under: CommanderSupport.baseDir, source: .commander, since: monthStart, into: &entries, histories: &histories)
+            collectEntries(under: CommanderSupport.baseDir, source: .commander, since: monthStart, into: &entries, histories: &histories, subagents: &subagents)
         }
         modelHistories = histories
+        subagentStats = subagents
 
         // Deduplicate: .dat stores cumulative session cost, so a PID spanning multiple days
         // has entries in each day's folder. Keep only the latest day per PID — that has the
@@ -186,6 +197,16 @@ public final class UsageData {
             p[keyPath: kp].byModel[entry.model, default: SourceModelStats()].linesAdded += entry.linesAdded
             p[keyPath: kp].byModel[entry.model, default: SourceModelStats()].linesRemoved += entry.linesRemoved
         }
+
+        // Merge subagent breakdown
+        let subagentKey = "\(entry.pid)\t\(entry.source.rawValue)"
+        if let subs = subagentStats[subagentKey] {
+            for (model, stats) in subs {
+                p[keyPath: kp].subagentsByModel[model, default: SourceModelStats()].cost += stats.cost
+                p[keyPath: kp].subagentsByModel[model, default: SourceModelStats()].linesAdded += stats.linesAdded
+                p[keyPath: kp].subagentsByModel[model, default: SourceModelStats()].linesRemoved += stats.linesRemoved
+            }
+        }
     }
 
     /// Compute per-model cost/lines from transition history.
@@ -246,7 +267,8 @@ public final class UsageData {
     private func collectEntries(
         under root: URL, source: AgentSource, since monthStart: Date,
         into entries: inout [DatEntry],
-        histories: inout [String: [(cost: Double, la: Int, lr: Int, model: String)]]
+        histories: inout [String: [(cost: Double, la: Int, lr: Int, model: String)]],
+        subagents: inout [String: [String: SourceModelStats]]
     ) {
         let fm = FileManager.default
         let calendar = Calendar.current
@@ -301,6 +323,14 @@ public final class UsageData {
                     if transitions.count > 1 {
                         histories["\(pid)\t\(source.rawValue)"] = transitions
                     }
+                }
+
+                // Read {pid}.subagents.json for subagent per-model cost
+                let subagentsFile = dateDir.appendingPathComponent("\(pid).subagents.json")
+                if let subData = try? Data(contentsOf: subagentsFile),
+                   let subMap = try? JSONDecoder().decode([String: SourceModelStats].self, from: subData),
+                   !subMap.isEmpty {
+                    subagents["\(pid)\t\(source.rawValue)"] = subMap
                 }
             }
         }

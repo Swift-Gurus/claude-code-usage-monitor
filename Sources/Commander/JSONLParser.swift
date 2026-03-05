@@ -183,10 +183,14 @@ public enum JSONLParser {
             ? min(100, Int(Double(lastInputTokens) / Double(resolved.contextWindowSize) * 100))
             : 0
 
+        // Add subagent costs to the total
+        let subagentsByModel = parseSubagents(sessionID: sessionID, workingDir: workingDir)
+        let subagentCost = subagentsByModel.values.reduce(0.0) { $0 + $1.cost }
+
         return SessionUsage(
             model: modelID,
             displayModel: resolved.displayName,
-            costUSD: PriceCalculator.cost(for: usage, model: resolved),
+            costUSD: PriceCalculator.cost(for: usage, model: resolved) + subagentCost,
             contextPercent: contextPct,
             sessionID: sessionID,
             workingDir: workingDir,
@@ -194,6 +198,74 @@ public enum JSONLParser {
             startedAt: firstTimestamp ?? Date(),
             lastUpdatedAt: lastTimestamp ?? Date()
         )
+    }
+
+    /// Parse all subagent JSONL files for a session, returning per-model cost.
+    /// Subagents are stored in ~/.claude/projects/{encoded_path}/{sessionID}/subagents/
+    public static func parseSubagents(sessionID: String, workingDir: String) -> [String: SourceModelStats] {
+        let projectsDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude/projects")
+        let encoded = SessionScanner.encodeProjectPath(workingDir)
+        let subagentsDir = projectsDir
+            .appendingPathComponent(encoded)
+            .appendingPathComponent(sessionID)
+            .appendingPathComponent("subagents")
+
+        return parseSubagents(in: subagentsDir)
+    }
+
+    /// Parse all JSONL files in a subagents directory, returning per-model cost.
+    public static func parseSubagents(in dir: URL) -> [String: SourceModelStats] {
+        let fm = FileManager.default
+        guard let files = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else {
+            return [:]
+        }
+
+        var result: [String: SourceModelStats] = [:]
+        let decoder = JSONDecoder()
+
+        for file in files where file.pathExtension == "jsonl" {
+            guard let data = try? Data(contentsOf: file),
+                  let content = String(data: data, encoding: .utf8) else { continue }
+
+            struct MsgUsage {
+                let model: String; let input: Int; let output: Int
+                let cacheCreation: Int; let cacheRead: Int
+            }
+            var usageByMsgID: [String: MsgUsage] = [:]
+
+            for line in content.split(separator: "\n") {
+                guard let lineData = line.data(using: .utf8),
+                      let entry = try? decoder.decode(JSONLEntry.self, from: lineData),
+                      entry.type == "assistant",
+                      let message = entry.message,
+                      let usage = message.usage,
+                      let msgID = message.id,
+                      let model = message.model, !model.isEmpty
+                else { continue }
+
+                usageByMsgID[msgID] = MsgUsage(
+                    model: model,
+                    input: usage.input_tokens ?? 0,
+                    output: usage.output_tokens ?? 0,
+                    cacheCreation: usage.cache_creation_input_tokens ?? 0,
+                    cacheRead: usage.cache_read_input_tokens ?? 0
+                )
+            }
+
+            for (_, mu) in usageByMsgID {
+                let resolved = ClaudeModel.from(modelID: mu.model)
+                let tokenUsage = TokenUsage(
+                    inputTokens: mu.input, outputTokens: mu.output,
+                    cacheCreationTokens: mu.cacheCreation, cacheReadTokens: mu.cacheRead
+                )
+                let cost = PriceCalculator.cost(for: tokenUsage, model: resolved)
+                let key = resolved.displayName
+                result[key, default: SourceModelStats()].cost += cost
+            }
+        }
+
+        return result
     }
 
     // MARK: - JSONL Decodable Types

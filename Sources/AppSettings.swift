@@ -42,6 +42,8 @@ public final class AppSettings {
         didSet { UserDefaults.standard.set(agentSortOrder.rawValue, forKey: "ClaudeUsageBar.agentSortOrder") }
     }
 
+    public var isLoading: Bool = false
+
     public init() {
         let periodRaw = UserDefaults.standard.string(forKey: "ClaudeUsageBar.statusBarPeriod") ?? ""
         statusBarPeriod = StatusBarPeriod(rawValue: periodRaw) ?? .day
