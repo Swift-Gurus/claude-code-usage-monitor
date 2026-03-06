@@ -35,6 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupPopover() {
         popover = NSPopover()
         popover.behavior = .transient
+        popover.delegate = self
         popover.contentViewController = NSHostingController(
             rootView: PopoverView(data: usageData, agentTracker: agentTracker, settings: settings)
         )
@@ -81,7 +82,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if popover.isShown {
             popover.performClose(nil)
         } else if let button = statusItem.button {
-            // Show immediately with existing data, then refresh in background
             settings.isLoading = true
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -95,6 +95,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+    }
+}
+
+extension AppDelegate: NSPopoverDelegate {
+    func popoverDidShow(_ notification: Notification) {
+        popover.contentViewController?.view.window?.makeKey()
     }
 }
 
