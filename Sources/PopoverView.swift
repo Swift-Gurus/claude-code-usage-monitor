@@ -4,11 +4,18 @@ public struct PopoverView: View {
     public var data: UsageData
     public var agentTracker: AgentTracker
     public var settings: AppSettings
+    @Environment(\.colorScheme) private var colorScheme
     @State private var installed = StatuslineInstaller.isInstalled
     @State private var installError = false
     @State private var selectedPeriod: String?
     @State private var showSettings = false
     @State private var selectedAgent: AgentInfo?
+
+    // Colors that adapt to dark/light mode
+    private var idleColor: Color { colorScheme == .dark ? Color(white: 0.7) : .gray }
+    private var idleOpacity: Double { colorScheme == .dark ? 0.85 : 0.6 }
+    private var addedColor: Color { colorScheme == .dark ? .green : Color(red: 0.1, green: 0.55, blue: 0.1) }
+    private var removedColor: Color { colorScheme == .dark ? Color(red: 1.0, green: 0.4, blue: 0.4) : .red }
 
     public init(data: UsageData, agentTracker: AgentTracker, settings: AppSettings) {
         self.data = data
@@ -186,7 +193,7 @@ public struct PopoverView: View {
             HStack {
                 Image(systemName: agent.isIdle ? "moon.zzz.fill" : "circle.fill")
                     .font(.system(size: 8))
-                    .foregroundStyle(agent.isIdle ? .gray : .green)
+                    .foregroundStyle(agent.isIdle ? idleColor : .green)
                 Text(agent.displayName)
                     .font(.caption)
                     .fontWeight(.medium)
@@ -195,7 +202,7 @@ public struct PopoverView: View {
                 if agent.isIdle {
                     Text(agent.idleText)
                         .font(.caption2)
-                        .foregroundStyle(.gray)
+                        .foregroundStyle(idleColor)
                 }
                 Text(String(format: "$%.2f", agent.cost))
                     .font(.caption)
@@ -220,9 +227,9 @@ public struct PopoverView: View {
                 Spacer()
                 HStack(spacing: 6) {
                     Text("+\(agent.linesAdded)")
-                        .foregroundStyle(.green)
+                        .foregroundStyle(addedColor)
                     Text("-\(agent.linesRemoved)")
-                        .foregroundStyle(.red)
+                        .foregroundStyle(removedColor)
                 }
                     .font(.caption2)
             }
@@ -230,7 +237,7 @@ public struct PopoverView: View {
         }
         .padding(8)
         .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 6))
-        .opacity(agent.isIdle ? 0.6 : 1.0)
+        .opacity(agent.isIdle ? idleOpacity : 1.0)
         .contentShape(Rectangle())
         .onTapGesture { selectedAgent = agent }
     }
@@ -295,10 +302,10 @@ public struct PopoverView: View {
                         .foregroundStyle(.orange)
                     Text("+\(stats.linesAdded)")
                         .font(.caption)
-                        .foregroundStyle(.green)
+                        .foregroundStyle(addedColor)
                     Text("-\(stats.linesRemoved)")
                         .font(.caption)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(removedColor)
                 }
                 .contentShape(Rectangle())
                 .onTapGesture { selectedPeriod = label }
@@ -374,10 +381,10 @@ public struct PopoverView: View {
                     .foregroundStyle(.orange)
                 Text("+\(source.total.linesAdded)")
                     .font(.caption)
-                    .foregroundStyle(.green)
+                    .foregroundStyle(addedColor)
                 Text("-\(source.total.linesRemoved)")
                     .font(.caption)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(removedColor)
             }
 
             // Model rows (indented)
@@ -394,10 +401,10 @@ public struct PopoverView: View {
                         .foregroundStyle(.orange)
                     Text("+\(stats.linesAdded)")
                         .font(.caption2)
-                        .foregroundStyle(.green)
+                        .foregroundStyle(addedColor)
                     Text("-\(stats.linesRemoved)")
                         .font(.caption2)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(removedColor)
                 }
                 .padding(.leading, 20)
             }
