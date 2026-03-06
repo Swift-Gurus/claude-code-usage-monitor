@@ -6,14 +6,19 @@ public struct SubagentInfo: Codable, Identifiable {
     public let model: String         // display name e.g. "Opus 4.6"
     public let cost: Double
     public let lastInputTokens: Int  // last message's total input tokens (for context %)
+    public let linesAdded: Int
+    public let linesRemoved: Int
 
     public var id: String { agentID }
 
-    public init(agentID: String, model: String, cost: Double, lastInputTokens: Int) {
+    public init(agentID: String, model: String, cost: Double, lastInputTokens: Int,
+                linesAdded: Int = 0, linesRemoved: Int = 0) {
         self.agentID = agentID
         self.model = model
         self.cost = cost
         self.lastInputTokens = lastInputTokens
+        self.linesAdded = linesAdded
+        self.linesRemoved = linesRemoved
     }
 }
 
@@ -276,17 +281,39 @@ public enum JSONLParser {
                 let cacheCreation: Int; let cacheRead: Int
             }
             var usageByMsgID: [String: MsgUsage] = [:]
+            var linesAdded = 0
+            var linesRemoved = 0
+            var dominantModel = ""
 
             for line in content.split(separator: "\n") {
                 guard let lineData = line.data(using: .utf8),
-                      let entry = try? decoder.decode(JSONLEntry.self, from: lineData),
-                      entry.type == "assistant",
+                      let entry = try? decoder.decode(JSONLEntry.self, from: lineData)
+                else { continue }
+
+                // Count line changes from Edit/Write tool calls
+                if entry.type == "assistant", let message = entry.message {
+                    for toolCall in message.toolCalls ?? [] {
+                        switch toolCall.name {
+                        case "Edit":
+                            let oldLines = (toolCall.input.old_string ?? "").components(separatedBy: "\n").count
+                            let newLines = (toolCall.input.new_string ?? "").components(separatedBy: "\n").count
+                            let delta = newLines - oldLines
+                            if delta > 0 { linesAdded += delta } else { linesRemoved += -delta }
+                        case "Write":
+                            linesAdded += (toolCall.input.content ?? "").components(separatedBy: "\n").count
+                        default: break
+                        }
+                    }
+                }
+
+                guard entry.type == "assistant",
                       let message = entry.message,
                       let usage = message.usage,
                       let msgID = message.id,
                       let model = message.model, !model.isEmpty
                 else { continue }
 
+                if dominantModel.isEmpty { dominantModel = model }
                 usageByMsgID[msgID] = MsgUsage(
                     model: model,
                     input: usage.input_tokens ?? 0,
@@ -305,6 +332,13 @@ public enum JSONLParser {
                 let cost = PriceCalculator.cost(for: tokenUsage, model: resolved)
                 let key = resolved.displayName
                 result[key, default: SourceModelStats()].cost += cost
+            }
+
+            // Attribute lines to the dominant model for this subagent file
+            if linesAdded > 0 || linesRemoved > 0, !dominantModel.isEmpty {
+                let key = ClaudeModel.from(modelID: dominantModel).displayName
+                result[key, default: SourceModelStats()].linesAdded += linesAdded
+                result[key, default: SourceModelStats()].linesRemoved += linesRemoved
             }
         }
 
@@ -331,11 +365,31 @@ public enum JSONLParser {
             }
             var usageByMsgID: [String: MsgUsage] = [:]
             var lastInputTokens = 0
+            var linesAdded = 0
+            var linesRemoved = 0
 
             for line in content.split(separator: "\n") {
                 guard let lineData = line.data(using: .utf8),
-                      let entry = try? decoder.decode(JSONLEntry.self, from: lineData),
-                      entry.type == "assistant",
+                      let entry = try? decoder.decode(JSONLEntry.self, from: lineData)
+                else { continue }
+
+                // Count line changes from Edit/Write tool calls
+                if entry.type == "assistant", let message = entry.message {
+                    for toolCall in message.toolCalls ?? [] {
+                        switch toolCall.name {
+                        case "Edit":
+                            let oldLines = (toolCall.input.old_string ?? "").components(separatedBy: "\n").count
+                            let newLines = (toolCall.input.new_string ?? "").components(separatedBy: "\n").count
+                            let delta = newLines - oldLines
+                            if delta > 0 { linesAdded += delta } else { linesRemoved += -delta }
+                        case "Write":
+                            linesAdded += (toolCall.input.content ?? "").components(separatedBy: "\n").count
+                        default: break
+                        }
+                    }
+                }
+
+                guard entry.type == "assistant",
                       let message = entry.message,
                       let usage = message.usage,
                       let msgID = message.id,
@@ -374,7 +428,9 @@ public enum JSONLParser {
                 agentID: agentID,
                 model: displayModel,
                 cost: totalCost,
-                lastInputTokens: lastInputTokens
+                lastInputTokens: lastInputTokens,
+                linesAdded: linesAdded,
+                linesRemoved: linesRemoved
             ))
         }
 

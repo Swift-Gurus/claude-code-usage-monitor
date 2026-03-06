@@ -359,47 +359,43 @@ public struct PopoverView: View {
         }
     }
 
+    private func costCell(_ cost: Double, font: Font = .caption, weight: Font.Weight = .medium) -> some View {
+        Text(String(format: "$%.2f", cost))
+            .font(font).fontWeight(weight)
+            .foregroundStyle(.orange)
+            .frame(minWidth: 54, alignment: .trailing)
+    }
+
+    private func linesCell(added: Int, removed: Int, font: Font = .caption2) -> some View {
+        HStack(spacing: 4) {
+            Text("+\(added)").font(font).foregroundStyle(addedColor)
+                .frame(minWidth: 42, alignment: .trailing)
+            Text("-\(removed)").font(font).foregroundStyle(removedColor)
+                .frame(minWidth: 38, alignment: .trailing)
+        }
+    }
+
+
     private func sourceBreakdown(name: String, icon: String, source: SourceStats) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             // Source header
             HStack {
-                Image(systemName: icon)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text(name)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
+                Image(systemName: icon).font(.caption).foregroundStyle(.secondary)
+                Text(name).font(.subheadline).fontWeight(.medium)
                 Spacer()
-                Text(String(format: "$%.2f", source.total.cost))
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.orange)
-                Text("+\(source.total.linesAdded)")
-                    .font(.caption)
-                    .foregroundStyle(addedColor)
-                Text("-\(source.total.linesRemoved)")
-                    .font(.caption)
-                    .foregroundStyle(removedColor)
+                costCell(source.total.cost, font: .subheadline, weight: .semibold)
+                linesCell(added: source.total.linesAdded, removed: source.total.linesRemoved, font: .caption)
             }
 
             // Model rows (indented)
             let models = source.byModel.sorted { $0.value.cost > $1.value.cost }
             ForEach(models, id: \.key) { model, stats in
                 HStack {
-                    Text(model)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Text(String(format: "$%.2f", stats.cost))
-                        .font(.caption)
-                        .fontWeight(.medium)
-                        .foregroundStyle(.orange)
-                    Text("+\(stats.linesAdded)")
-                        .font(.caption2)
-                        .foregroundStyle(addedColor)
-                    Text("-\(stats.linesRemoved)")
-                        .font(.caption2)
-                        .foregroundStyle(removedColor)
+                    Text(model).font(.caption).foregroundStyle(.secondary)
+                        .lineLimit(1).truncationMode(.tail)
+                    Spacer(minLength: 4)
+                    costCell(stats.cost)
+                    linesCell(added: stats.linesAdded, removed: stats.linesRemoved)
                 }
                 .padding(.leading, 20)
             }
@@ -407,8 +403,7 @@ public struct PopoverView: View {
             // If no model data, show note
             if source.byModel.isEmpty && source.total.cost > 0 {
                 Text("Model breakdown not available for older sessions")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .font(.caption2).foregroundStyle(.tertiary)
                     .padding(.leading, 20)
             }
 
@@ -416,17 +411,13 @@ public struct PopoverView: View {
             if !source.subagentsByModel.isEmpty {
                 let subTotal = source.subagentsByModel.values.reduce(0.0) { $0 + $1.cost }
                 HStack {
-                    Image(systemName: "arrow.turn.down.right")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    Text("Subagents")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Image(systemName: "arrow.turn.down.right").font(.caption2).foregroundStyle(.secondary)
+                    Text("Subagents").font(.caption).foregroundStyle(.secondary)
                     Spacer()
-                    Text(String(format: "$%.2f", subTotal))
-                        .font(.caption)
-                        .fontWeight(.medium)
-                        .foregroundStyle(.orange)
+                    let subLinesAdded = source.subagentsByModel.values.reduce(0) { $0 + $1.linesAdded }
+                    let subLinesRemoved = source.subagentsByModel.values.reduce(0) { $0 + $1.linesRemoved }
+                    linesCell(added: subLinesAdded, removed: subLinesRemoved)
+                    costCell(subTotal)
                 }
                 .padding(.leading, 8)
                 .padding(.top, 4)
@@ -434,14 +425,11 @@ public struct PopoverView: View {
                 let subModels = source.subagentsByModel.sorted { $0.value.cost > $1.value.cost }
                 ForEach(subModels, id: \.key) { model, stats in
                     HStack {
-                        Text(model)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Text(String(format: "$%.2f", stats.cost))
-                            .font(.caption2)
-                            .fontWeight(.medium)
-                            .foregroundStyle(.orange)
+                        Text(model).font(.caption2).foregroundStyle(.secondary)
+                            .lineLimit(1).truncationMode(.tail)
+                        Spacer(minLength: 4)
+                        linesCell(added: stats.linesAdded, removed: stats.linesRemoved)
+                        costCell(stats.cost, font: .caption2)
                     }
                     .padding(.leading, 28)
                 }
