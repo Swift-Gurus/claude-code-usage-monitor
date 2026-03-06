@@ -61,19 +61,56 @@ DOW=$(date +%u)
 WEEK_START=$(date -v-$(( DOW - 1 ))d +%Y-%m-%d)
 MONTH_START=$(date +%Y-%m-01)
 
-# Sum all tracked sessions in one pass (find + awk reads each .dat file)
-TOTALS=$(find "$USAGE_DIR" -name "*.dat" -type f 2>/dev/null | \
+# Sum all tracked sessions with deduplication (same logic as the menu bar app):
+# A session spanning multiple days has .dat files in each day's folder with cumulative costs.
+# Keep only the latest day per PID and subtract the previous day's value for today's increment.
+TOTALS=$(find "$USAGE_DIR" -name "*.dat" -type f 2>/dev/null | sort | \
   awk -v today="$TODAY" -v week="$WEEK_START" -v month="$MONTH_START" '{
-    n = split($0, p, "/"); date = p[n-1]
+    n = split($0, p, "/"); date = p[n-1]; pid = p[n]
+    sub(/\.dat$/, "", pid)
+    key = pid
     if ((getline line < $0) > 0) {
       close($0)
       split(line, vals, " ")
       cost = vals[1] + 0; la = vals[2] + 0; lr = vals[3] + 0
-      if (date >= month) { m += cost; m_la += la; m_lr += lr }
-      if (date >= week)  { w += cost; w_la += la; w_lr += lr }
-      if (date == today)  { d += cost; d_la += la; d_lr += lr }
+      # Track latest and previous entry per PID (sorted by date, so later overwrites earlier)
+      if (key in latest_cost) {
+        prev_cost[key]  = latest_cost[key]
+        prev_la[key]    = latest_la[key]
+        prev_lr[key]    = latest_lr[key]
+        prev_date[key]  = latest_date[key]
+      }
+      latest_cost[key] = cost
+      latest_la[key]   = la
+      latest_lr[key]   = lr
+      latest_date[key] = date
     }
-  } END { printf "%.2f %.2f %.2f %d %d %d %d %d %d", d+0, w+0, m+0, d_la+0, d_lr+0, w_la+0, w_lr+0, m_la+0, m_lr+0 }')
+  } END {
+    for (key in latest_cost) {
+      date = latest_date[key]
+      cost = latest_cost[key]; la = latest_la[key]; lr = latest_lr[key]
+      # Month: latest cumulative value
+      if (date >= month) { m += cost; m_la += la; m_lr += lr }
+      # Week: latest if in week, else skip
+      if (date >= week) {
+        if (key in prev_cost && prev_date[key] >= week) {
+          # both in week: use incremental
+          w += cost - prev_cost[key]; w_la += la - prev_la[key]; w_lr += lr - prev_lr[key]
+        } else {
+          w += cost; w_la += la; w_lr += lr
+        }
+      }
+      # Today: incremental (subtract previous day if session spans midnight)
+      if (date == today) {
+        if (key in prev_cost && prev_date[key] < today) {
+          d += cost - prev_cost[key]; d_la += la - prev_la[key]; d_lr += lr - prev_lr[key]
+        } else {
+          d += cost; d_la += la; d_lr += lr
+        }
+      }
+    }
+    printf "%.2f %.2f %.2f %d %d %d %d %d %d", d+0, w+0, m+0, d_la+0, d_lr+0, w_la+0, w_lr+0, m_la+0, m_lr+0
+  }')
 
 DAY_TOTAL=$(echo "$TOTALS" | awk '{print $1}')
 WEEK_TOTAL=$(echo "$TOTALS" | awk '{print $2}')

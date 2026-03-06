@@ -84,6 +84,7 @@ public struct SubagentDetailView: View {
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
+                .scrollIndicators(.never)
                 .frame(maxHeight: 240)
             }
         }
