@@ -72,7 +72,6 @@ public struct PopoverView: View {
             if !workingAgents.isEmpty || !idleAgents.isEmpty {
                 ForEach(groupedSources, id: \.source) { group in
                     sourceSection(group)
-                    Divider()
                 }
             } else if settings.isLoading {
                 HStack(spacing: 8) {
