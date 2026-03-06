@@ -22,6 +22,8 @@ public struct SessionUsage {
     public let displayModel: String
     public let costUSD: Double
     public let contextPercent: Int
+    public let linesAdded: Int
+    public let linesRemoved: Int
     public let sessionID: String
     public let workingDir: String
     public let agentName: String
@@ -30,6 +32,7 @@ public struct SessionUsage {
 
     public init(
         model: String, displayModel: String, costUSD: Double, contextPercent: Int,
+        linesAdded: Int = 0, linesRemoved: Int = 0,
         sessionID: String, workingDir: String, agentName: String,
         startedAt: Date, lastUpdatedAt: Date
     ) {
@@ -37,6 +40,8 @@ public struct SessionUsage {
         self.displayModel = displayModel
         self.costUSD = costUSD
         self.contextPercent = contextPercent
+        self.linesAdded = linesAdded
+        self.linesRemoved = linesRemoved
         self.sessionID = sessionID
         self.workingDir = workingDir
         self.agentName = agentName
@@ -135,6 +140,8 @@ public enum JSONLParser {
         let agentName = ""
         var firstTimestamp: Date?
         var lastTimestamp: Date?
+        var linesAdded = 0
+        var linesRemoved = 0
 
         // Collect per-message usage. JSONL contains streaming partials AND final
         // entries for the same message ID — keep only the last (final) one.
@@ -154,6 +161,23 @@ public enum JSONLParser {
             if let ts = entry.parsedTimestamp {
                 if firstTimestamp == nil { firstTimestamp = ts }
                 lastTimestamp = ts
+            }
+
+            // Count line changes from Edit/Write tool calls
+            if entry.type == "assistant", let message = entry.message {
+                for toolCall in message.toolCalls ?? [] {
+                    switch toolCall.name {
+                    case "Edit":
+                        let oldLines = (toolCall.input.old_string ?? "").components(separatedBy: "\n").count
+                        let newLines = (toolCall.input.new_string ?? "").components(separatedBy: "\n").count
+                        let delta = newLines - oldLines
+                        if delta > 0 { linesAdded += delta } else { linesRemoved += -delta }
+                    case "Write":
+                        linesAdded += (toolCall.input.content ?? "").components(separatedBy: "\n").count
+                    default:
+                        break
+                    }
+                }
             }
 
             guard entry.type == "assistant",
@@ -209,6 +233,8 @@ public enum JSONLParser {
             displayModel: resolved.displayName,
             costUSD: PriceCalculator.cost(for: usage, model: resolved) + subagentCost,
             contextPercent: contextPct,
+            linesAdded: linesAdded,
+            linesRemoved: linesRemoved,
             sessionID: sessionID,
             workingDir: workingDir,
             agentName: agentName,
@@ -380,6 +406,42 @@ public enum JSONLParser {
             let id: String?
             let model: String?
             let usage: Usage?
+            let content: [ContentItem]?
+
+            var toolCalls: [ToolCall]? {
+                content?.compactMap {
+                    if case .toolCall(let t) = $0 { return t }
+                    return nil
+                }
+            }
+
+            enum ContentItem: Decodable {
+                case toolCall(ToolCall)
+                case other
+
+                init(from decoder: Decoder) throws {
+                    let c = try decoder.container(keyedBy: CodingKeys.self)
+                    let type = try? c.decode(String.self, forKey: .type)
+                    if type == "tool_use" {
+                        self = .toolCall(try ToolCall(from: decoder))
+                    } else {
+                        self = .other
+                    }
+                }
+
+                enum CodingKeys: String, CodingKey { case type }
+            }
+        }
+
+        struct ToolCall: Decodable {
+            let name: String
+            let input: ToolInput
+
+            struct ToolInput: Decodable {
+                let old_string: String?
+                let new_string: String?
+                let content: String?
+            }
         }
 
         struct Usage: Decodable {

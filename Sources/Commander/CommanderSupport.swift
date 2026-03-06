@@ -101,7 +101,7 @@ public enum CommanderSupport {
             try? fm.createDirectory(at: todayDir, withIntermediateDirectories: true)
 
             // Write .dat so UsageData aggregates this session's cost
-            let datContent = "\(usage.costUSD) 0 0 \(usage.displayModel)\n"
+            let datContent = "\(usage.costUSD) \(usage.linesAdded) \(usage.linesRemoved) \(usage.displayModel)\n"
             try? datContent.write(
                 to: todayDir.appendingPathComponent("\(session.pid).dat"),
                 atomically: true, encoding: .utf8
@@ -109,22 +109,22 @@ public enum CommanderSupport {
 
             // Write .agent.json so the agent shows up in the UI
             let resolved = ClaudeModel.from(modelID: usage.model)
-            let json: [String: Any] = [
-                "pid": session.pid,
-                "model": usage.displayModel,
-                "agent_name": usage.agentName,
-                "context_pct": usage.contextPercent,
-                "context_window": resolved.contextWindowSize,
-                "cost": usage.costUSD,
-                "lines_added": 0,
-                "lines_removed": 0,
-                "working_dir": usage.workingDir,
-                "session_id": usage.sessionID,
-                "duration_ms": durationMs,
-                "api_duration_ms": 0,
-                "updated_at": Int(usage.lastUpdatedAt.timeIntervalSince1970)
-            ]
-            if let data = try? JSONSerialization.data(withJSONObject: json) {
+            let agentData = AgentFileData(
+                pid: session.pid,
+                model: usage.displayModel,
+                agentName: usage.agentName,
+                contextPercent: usage.contextPercent,
+                contextWindow: resolved.contextWindowSize,
+                cost: usage.costUSD,
+                linesAdded: usage.linesAdded,
+                linesRemoved: usage.linesRemoved,
+                workingDir: usage.workingDir,
+                sessionID: usage.sessionID,
+                durationMs: durationMs,
+                apiDurationMs: 0,
+                updatedAt: usage.lastUpdatedAt.timeIntervalSince1970
+            )
+            if let data = try? JSONEncoder().encode(agentData) {
                 try? data.write(
                     to: todayDir.appendingPathComponent("\(session.pid).agent.json"),
                     options: .atomic

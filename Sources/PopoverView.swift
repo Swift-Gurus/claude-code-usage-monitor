@@ -69,28 +69,24 @@ public struct PopoverView: View {
 
             Divider()
 
-            if settings.isLoading {
-                HStack(spacing: 8) {
-                    ProgressView()
-                        .controlSize(.small)
-                        .scaleEffect(0.8)
-                    Text("Loading active agents...")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 4)
-            } else if workingAgents.isEmpty && idleAgents.isEmpty {
-                Text("No active agents")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 4)
-            } else {
+            if !workingAgents.isEmpty || !idleAgents.isEmpty {
                 ForEach(groupedSources, id: \.source) { group in
                     sourceSection(group)
                     Divider()
                 }
+            } else if settings.isLoading {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small).scaleEffect(0.8)
+                    Text("Loading active agents...")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 4)
+            } else {
+                Text("No active agents")
+                    .font(.caption).foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 4)
             }
 
             Divider()

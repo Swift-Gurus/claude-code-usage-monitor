@@ -98,36 +98,6 @@ public struct AgentInfo: Identifiable {
     }
 }
 
-// JSON shape from .agent.json files
-private struct AgentJSON: Decodable {
-    let pid: Int
-    let model: String
-    let agentName: String
-    let contextPercent: Int
-    let contextWindow: Int?
-    let cost: Double
-    let linesAdded: Int
-    let linesRemoved: Int
-    let workingDir: String
-    let sessionID: String
-    let durationMs: Double?
-    let apiDurationMs: Double?
-    let updatedAt: TimeInterval
-
-    private enum CodingKeys: String, CodingKey {
-        case pid, model, cost
-        case agentName = "agent_name"
-        case contextPercent = "context_pct"
-        case contextWindow = "context_window"
-        case linesAdded = "lines_added"
-        case linesRemoved = "lines_removed"
-        case workingDir = "working_dir"
-        case sessionID = "session_id"
-        case durationMs = "duration_ms"
-        case apiDurationMs = "api_duration_ms"
-        case updatedAt = "updated_at"
-    }
-}
 
 @Observable
 public final class AgentTracker {
@@ -165,7 +135,7 @@ public final class AgentTracker {
 
             for file in files where file.lastPathComponent.hasSuffix(".agent.json") {
                 guard let data = try? Data(contentsOf: file),
-                      let json = try? decoder.decode(AgentJSON.self, from: data)
+                      let json = try? decoder.decode(AgentFileData.self, from: data)
                 else { continue }
 
                 let pid32 = Int32(json.pid)
