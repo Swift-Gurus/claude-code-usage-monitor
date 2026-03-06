@@ -1,5 +1,22 @@
 import Foundation
 
+/// Per-subagent stats for the detail drill-down view.
+public struct SubagentInfo: Codable, Identifiable {
+    public let agentID: String       // e.g. "agent-abc123"
+    public let model: String         // display name e.g. "Opus 4.6"
+    public let cost: Double
+    public let lastInputTokens: Int  // last message's total input tokens (for context %)
+
+    public var id: String { agentID }
+
+    public init(agentID: String, model: String, cost: Double, lastInputTokens: Int) {
+        self.agentID = agentID
+        self.model = model
+        self.cost = cost
+        self.lastInputTokens = lastInputTokens
+    }
+}
+
 public struct SessionUsage {
     public let model: String
     public let displayModel: String
@@ -266,6 +283,76 @@ public enum JSONLParser {
         }
 
         return result
+    }
+
+    /// Parse all subagent JSONL files in a directory, returning one SubagentInfo per file.
+    public static func parseSubagentDetails(in dir: URL) -> [SubagentInfo] {
+        let fm = FileManager.default
+        guard let files = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else {
+            return []
+        }
+
+        var results: [SubagentInfo] = []
+        let decoder = JSONDecoder()
+
+        for file in files where file.pathExtension == "jsonl" {
+            guard let data = try? Data(contentsOf: file),
+                  let content = String(data: data, encoding: .utf8) else { continue }
+
+            struct MsgUsage {
+                let model: String; let input: Int; let output: Int
+                let cacheCreation: Int; let cacheRead: Int
+            }
+            var usageByMsgID: [String: MsgUsage] = [:]
+            var lastInputTokens = 0
+
+            for line in content.split(separator: "\n") {
+                guard let lineData = line.data(using: .utf8),
+                      let entry = try? decoder.decode(JSONLEntry.self, from: lineData),
+                      entry.type == "assistant",
+                      let message = entry.message,
+                      let usage = message.usage,
+                      let msgID = message.id,
+                      let model = message.model, !model.isEmpty
+                else { continue }
+
+                let totalIn = (usage.input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0)
+                usageByMsgID[msgID] = MsgUsage(
+                    model: model,
+                    input: usage.input_tokens ?? 0,
+                    output: usage.output_tokens ?? 0,
+                    cacheCreation: usage.cache_creation_input_tokens ?? 0,
+                    cacheRead: usage.cache_read_input_tokens ?? 0
+                )
+                lastInputTokens = totalIn
+            }
+
+            guard !usageByMsgID.isEmpty else { continue }
+
+            // Use the most common model and sum cost across all messages
+            var modelCounts: [String: Int] = [:]
+            var totalCost = 0.0
+            for (_, mu) in usageByMsgID {
+                modelCounts[mu.model, default: 0] += 1
+                let resolved = ClaudeModel.from(modelID: mu.model)
+                totalCost += PriceCalculator.cost(for: TokenUsage(
+                    inputTokens: mu.input, outputTokens: mu.output,
+                    cacheCreationTokens: mu.cacheCreation, cacheReadTokens: mu.cacheRead
+                ), model: resolved)
+            }
+            let dominantModel = modelCounts.max(by: { $0.value < $1.value })?.key ?? ""
+            let displayModel = ClaudeModel.from(modelID: dominantModel).displayName
+            let agentID = file.deletingPathExtension().lastPathComponent
+
+            results.append(SubagentInfo(
+                agentID: agentID,
+                model: displayModel,
+                cost: totalCost,
+                lastInputTokens: lastInputTokens
+            ))
+        }
+
+        return results.sorted { $0.cost > $1.cost }
     }
 
     // MARK: - JSONL Decodable Types

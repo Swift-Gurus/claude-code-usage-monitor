@@ -263,6 +263,15 @@ public final class AgentTracker {
                     options: .atomic
                 )
             }
+
+            // Write per-subagent detail for drill-down view
+            let details = JSONLParser.parseSubagentDetails(in: subagentsDir)
+            if !details.isEmpty, let data = try? JSONEncoder().encode(details) {
+                try? data.write(
+                    to: todayDir.appendingPathComponent("\(agent.pid).subagent-details.json"),
+                    options: .atomic
+                )
+            }
         }
     }
 

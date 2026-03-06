@@ -32,6 +32,24 @@ public enum AgentSortOrder: String, CaseIterable {
     }
 }
 
+public enum SubagentContextBudget: String, CaseIterable {
+    case k200, m1
+
+    public var label: String {
+        switch self {
+        case .k200: return "200K"
+        case .m1:   return "1M"
+        }
+    }
+
+    public var tokens: Int {
+        switch self {
+        case .k200: return 200_000
+        case .m1:   return 1_000_000
+        }
+    }
+}
+
 @Observable
 public final class AppSettings {
     public var statusBarPeriod: StatusBarPeriod {
@@ -42,6 +60,10 @@ public final class AppSettings {
         didSet { UserDefaults.standard.set(agentSortOrder.rawValue, forKey: "ClaudeUsageBar.agentSortOrder") }
     }
 
+    public var subagentContextBudget: SubagentContextBudget {
+        didSet { UserDefaults.standard.set(subagentContextBudget.rawValue, forKey: "ClaudeUsageBar.subagentContextBudget") }
+    }
+
     public var isLoading: Bool = false
 
     public init() {
@@ -50,5 +72,8 @@ public final class AppSettings {
 
         let sortRaw = UserDefaults.standard.string(forKey: "ClaudeUsageBar.agentSortOrder") ?? ""
         agentSortOrder = AgentSortOrder(rawValue: sortRaw) ?? .recentlyUpdated
+
+        let budgetRaw = UserDefaults.standard.string(forKey: "ClaudeUsageBar.subagentContextBudget") ?? ""
+        subagentContextBudget = SubagentContextBudget(rawValue: budgetRaw) ?? .m1
     }
 }

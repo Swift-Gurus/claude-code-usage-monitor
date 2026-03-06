@@ -109,6 +109,103 @@ struct SubagentTests {
         #expect(result["Haiku 4.5"] != nil)
     }
 
+    // MARK: - JSONLParser.parseSubagentDetails
+
+    @Test("parseSubagentDetails — empty directory returns empty array")
+    func parseDetailsEmptyDir() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        #expect(JSONLParser.parseSubagentDetails(in: dir).isEmpty)
+    }
+
+    @Test("parseSubagentDetails — returns one entry per file with correct model and cost")
+    func parseDetailsSingleFile() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        try writeJSONL([
+            assistantLine(msgID: "m1", model: "claude-opus-4-6", input: 1_000_000, output: 1_000_000)
+        ], to: dir, name: "agent-abc123.jsonl")
+
+        let details = JSONLParser.parseSubagentDetails(in: dir)
+        #expect(details.count == 1)
+        #expect(details[0].agentID == "agent-abc123")
+        #expect(details[0].model == "Opus 4.6")
+        #expect(abs(details[0].cost - 90.0) < 0.01)
+    }
+
+    @Test("parseSubagentDetails — lastInputTokens reflects last message")
+    func parseDetailsLastInputTokens() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        // Two messages — lastInputTokens should be from the second
+        try writeJSONL([
+            assistantLine(msgID: "m1", model: "claude-sonnet-4-6", input: 10_000, output: 500),
+            assistantLine(msgID: "m2", model: "claude-sonnet-4-6", input: 50_000, output: 1_000,
+                         cacheWrite: 5_000, cacheRead: 20_000),
+        ], to: dir, name: "agent-x.jsonl")
+
+        let details = JSONLParser.parseSubagentDetails(in: dir)
+        #expect(details.count == 1)
+        // lastInputTokens = input + cacheWrite + cacheRead of last message = 50k + 5k + 20k = 75k
+        #expect(details[0].lastInputTokens == 75_000)
+    }
+
+    @Test("parseSubagentDetails — multiple files sorted by cost descending")
+    func parseDetailsMultipleFiles() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        // Cheap agent: Haiku
+        try writeJSONL([
+            assistantLine(msgID: "m1", model: "claude-haiku-4-5-20251001", input: 100_000, output: 10_000)
+        ], to: dir, name: "agent-cheap.jsonl")
+
+        // Expensive agent: Opus
+        try writeJSONL([
+            assistantLine(msgID: "m2", model: "claude-opus-4-6", input: 1_000_000, output: 1_000_000)
+        ], to: dir, name: "agent-expensive.jsonl")
+
+        let details = JSONLParser.parseSubagentDetails(in: dir)
+        #expect(details.count == 2)
+        // Opus ($90) should come first (sorted by cost desc)
+        #expect(details[0].model == "Opus 4.6")
+        #expect(details[1].model == "Haiku 4.5")
+    }
+
+    // MARK: - SubagentContextBudget
+
+    @Test("SubagentContextBudget token counts")
+    func budgetTokens() {
+        #expect(SubagentContextBudget.k200.tokens == 200_000)
+        #expect(SubagentContextBudget.m1.tokens == 1_000_000)
+    }
+
+    @Test("SubagentContextBudget labels")
+    func budgetLabels() {
+        #expect(SubagentContextBudget.k200.label == "200K")
+        #expect(SubagentContextBudget.m1.label == "1M")
+    }
+
+    @Test("AppSettings defaults subagentContextBudget to 1M")
+    func settingsDefaultBudget() {
+        UserDefaults.standard.removeObject(forKey: "ClaudeUsageBar.subagentContextBudget")
+        let settings = AppSettings()
+        #expect(settings.subagentContextBudget == .m1)
+        UserDefaults.standard.removeObject(forKey: "ClaudeUsageBar.subagentContextBudget")
+    }
+
+    @Test("AppSettings persists subagentContextBudget")
+    func settingsPersistsBudget() {
+        let settings = AppSettings()
+        settings.subagentContextBudget = .k200
+        #expect(UserDefaults.standard.string(forKey: "ClaudeUsageBar.subagentContextBudget") == "k200")
+        let settings2 = AppSettings()
+        #expect(settings2.subagentContextBudget == .k200)
+        UserDefaults.standard.removeObject(forKey: "ClaudeUsageBar.subagentContextBudget")
+    }
+
     // MARK: - UsageData.subagentsByModel
 
     @Test("UsageData reads .subagents.json and populates subagentsByModel")

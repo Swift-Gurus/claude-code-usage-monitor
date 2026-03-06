@@ -61,6 +61,25 @@ public struct SettingsView: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
             }
+
+            Divider()
+
+            // Subagent Context Budget
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Subagent Context Budget")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                Text("Used to calculate context % in subagent drill-down")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Picker("", selection: $settings.subagentContextBudget) {
+                    ForEach(SubagentContextBudget.allCases, id: \.self) { budget in
+                        Text(budget.label).tag(budget)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+            }
         }
         .padding(16)
         .frame(width: 320)

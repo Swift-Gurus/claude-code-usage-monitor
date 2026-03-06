@@ -8,6 +8,7 @@ public struct PopoverView: View {
     @State private var installError = false
     @State private var selectedPeriod: String?
     @State private var showSettings = false
+    @State private var selectedAgent: AgentInfo?
 
     public init(data: UsageData, agentTracker: AgentTracker, settings: AppSettings) {
         self.data = data
@@ -28,6 +29,8 @@ public struct PopoverView: View {
         VStack(alignment: .leading, spacing: 12) {
             if showSettings {
                 SettingsView(settings: settings) { showSettings = false }
+            } else if let agent = selectedAgent {
+                SubagentDetailView(agent: agent, settings: settings) { selectedAgent = nil }
             } else if let label = selectedPeriod {
                 detailView(label: label, stats: statsFor(label))
             } else {
@@ -221,12 +224,15 @@ public struct PopoverView: View {
                     Text("-\(agent.linesRemoved)")
                         .foregroundStyle(.red)
                 }
-                .font(.caption2)
+                    .font(.caption2)
             }
+
         }
         .padding(8)
         .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 6))
         .opacity(agent.isIdle ? 0.6 : 1.0)
+        .contentShape(Rectangle())
+        .onTapGesture { selectedAgent = agent }
     }
 
     private func contextBar(_ pct: Int, contextWindow: Int = 0) -> some View {
