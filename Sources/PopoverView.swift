@@ -221,9 +221,9 @@ public struct PopoverView: View {
                     .lineLimit(1)
                 Spacer()
                 HStack(spacing: 6) {
-                    Text("+\(agent.linesAdded)")
+                    Text("+\(agent.linesAdded.formatted(.number.notation(.compactName)))")
                         .foregroundStyle(addedColor)
-                    Text("-\(agent.linesRemoved)")
+                    Text("-\(agent.linesRemoved.formatted(.number.notation(.compactName)))")
                         .foregroundStyle(removedColor)
                 }
                     .font(.caption2)
@@ -295,10 +295,10 @@ public struct PopoverView: View {
                         .font(.subheadline)
                         .fontWeight(.semibold)
                         .foregroundStyle(.orange)
-                    Text("+\(stats.linesAdded)")
+                    Text("+\(stats.linesAdded.formatted(.number.notation(.compactName)))")
                         .font(.caption)
                         .foregroundStyle(addedColor)
-                    Text("-\(stats.linesRemoved)")
+                    Text("-\(stats.linesRemoved.formatted(.number.notation(.compactName)))")
                         .font(.caption)
                         .foregroundStyle(removedColor)
                 }
@@ -363,44 +363,60 @@ public struct PopoverView: View {
         Text(String(format: "$%.2f", cost))
             .font(font).fontWeight(weight)
             .foregroundStyle(.orange)
-            .frame(minWidth: 54, alignment: .trailing)
+            .frame(width: 64, alignment: .trailing)
+    }
+
+    private func addedCell(_ count: Int, font: Font = .caption2) -> some View {
+        Text("+\(count.formatted(.number.notation(.compactName)))")
+            .font(font).foregroundStyle(addedColor)
+            .frame(width: 46, alignment: .trailing)
+    }
+
+    private func removedCell(_ count: Int, font: Font = .caption2) -> some View {
+        Text("-\(count.formatted(.number.notation(.compactName)))")
+            .font(font).foregroundStyle(removedColor)
+            .frame(width: 40, alignment: .trailing)
     }
 
     private func linesCell(added: Int, removed: Int, font: Font = .caption2) -> some View {
-        HStack(spacing: 4) {
-            Text("+\(added)").font(font).foregroundStyle(addedColor)
-                .frame(minWidth: 42, alignment: .trailing)
-            Text("-\(removed)").font(font).foregroundStyle(removedColor)
-                .frame(minWidth: 38, alignment: .trailing)
+        HStack(spacing: 0) {
+            addedCell(added, font: font)
+            removedCell(removed, font: font)
         }
     }
 
 
     private func sourceBreakdown(name: String, icon: String, source: SourceStats) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let models = source.byModel.sorted { $0.value.cost > $1.value.cost }
+        let subModels = source.subagentsByModel.sorted { $0.value.cost > $1.value.cost }
+        let subTotal = source.subagentsByModel.values.reduce(0.0) { $0 + $1.cost }
+        let subLA = source.subagentsByModel.values.reduce(0) { $0 + $1.linesAdded }
+        let subLR = source.subagentsByModel.values.reduce(0) { $0 + $1.linesRemoved }
+
+        return VStack(alignment: .leading, spacing: 5) {
             // Source header
-            HStack {
+            HStack(spacing: 0) {
                 Image(systemName: icon).font(.caption).foregroundStyle(.secondary)
-                Text(name).font(.subheadline).fontWeight(.medium)
-                Spacer()
+                Text(" \(name)").font(.subheadline).fontWeight(.medium)
+                Spacer(minLength: 2)
+                addedCell(source.total.linesAdded, font: .caption)
+                removedCell(source.total.linesRemoved, font: .caption)
                 costCell(source.total.cost, font: .subheadline, weight: .semibold)
-                linesCell(added: source.total.linesAdded, removed: source.total.linesRemoved, font: .caption)
             }
 
-            // Model rows (indented)
-            let models = source.byModel.sorted { $0.value.cost > $1.value.cost }
+            // Model rows
             ForEach(models, id: \.key) { model, stats in
-                HStack {
+                HStack(spacing: 0) {
                     Text(model).font(.caption).foregroundStyle(.secondary)
                         .lineLimit(1).truncationMode(.tail)
-                    Spacer(minLength: 4)
+                    Spacer(minLength: 2)
+                    addedCell(stats.linesAdded)
+                    removedCell(stats.linesRemoved)
                     costCell(stats.cost)
-                    linesCell(added: stats.linesAdded, removed: stats.linesRemoved)
                 }
                 .padding(.leading, 20)
             }
 
-            // If no model data, show note
             if source.byModel.isEmpty && source.total.cost > 0 {
                 Text("Model breakdown not available for older sessions")
                     .font(.caption2).foregroundStyle(.tertiary)
@@ -409,26 +425,24 @@ public struct PopoverView: View {
 
             // Subagents subsection
             if !source.subagentsByModel.isEmpty {
-                let subTotal = source.subagentsByModel.values.reduce(0.0) { $0 + $1.cost }
-                HStack {
+                HStack(spacing: 0) {
                     Image(systemName: "arrow.turn.down.right").font(.caption2).foregroundStyle(.secondary)
-                    Text("Subagents").font(.caption).foregroundStyle(.secondary)
-                    Spacer()
-                    let subLinesAdded = source.subagentsByModel.values.reduce(0) { $0 + $1.linesAdded }
-                    let subLinesRemoved = source.subagentsByModel.values.reduce(0) { $0 + $1.linesRemoved }
-                    linesCell(added: subLinesAdded, removed: subLinesRemoved)
+                    Text(" Subagents").font(.caption).foregroundStyle(.secondary)
+                    Spacer(minLength: 2)
+                    addedCell(subLA)
+                    removedCell(subLR)
                     costCell(subTotal)
                 }
                 .padding(.leading, 8)
-                .padding(.top, 4)
+                .padding(.top, 2)
 
-                let subModels = source.subagentsByModel.sorted { $0.value.cost > $1.value.cost }
                 ForEach(subModels, id: \.key) { model, stats in
-                    HStack {
+                    HStack(spacing: 0) {
                         Text(model).font(.caption2).foregroundStyle(.secondary)
                             .lineLimit(1).truncationMode(.tail)
-                        Spacer(minLength: 4)
-                        linesCell(added: stats.linesAdded, removed: stats.linesRemoved)
+                        Spacer(minLength: 2)
+                        addedCell(stats.linesAdded)
+                        removedCell(stats.linesRemoved)
                         costCell(stats.cost, font: .caption2)
                     }
                     .padding(.leading, 28)
