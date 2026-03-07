@@ -59,6 +59,23 @@ struct AppSettingsTests {
         UserDefaults.standard.removeObject(forKey: "ClaudeUsageBar.agentSortOrder")
     }
 
+    @Test("SubagentContextBudget defaults to 1M")
+    func subagentBudgetDefault() {
+        UserDefaults.standard.removeObject(forKey: "ClaudeUsageBar.subagentContextBudget")
+        let settings = AppSettings()
+        #expect(settings.subagentContextBudget == .m1)
+    }
+
+    @Test("SubagentContextBudget persists")
+    func subagentBudgetPersists() {
+        let settings = AppSettings()
+        settings.subagentContextBudget = .k200
+        #expect(UserDefaults.standard.string(forKey: "ClaudeUsageBar.subagentContextBudget") == "k200")
+        let settings2 = AppSettings()
+        #expect(settings2.subagentContextBudget == .k200)
+        UserDefaults.standard.removeObject(forKey: "ClaudeUsageBar.subagentContextBudget")
+    }
+
     // MARK: - Enum properties
 
     @Test("StatusBarPeriod labels and prefixes")

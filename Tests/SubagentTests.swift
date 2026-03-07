@@ -188,23 +188,8 @@ struct SubagentTests {
         #expect(SubagentContextBudget.m1.label == "1M")
     }
 
-    @Test("AppSettings defaults subagentContextBudget to 1M")
-    func settingsDefaultBudget() {
-        UserDefaults.standard.removeObject(forKey: "ClaudeUsageBar.subagentContextBudget")
-        let settings = AppSettings()
-        #expect(settings.subagentContextBudget == .m1)
-        UserDefaults.standard.removeObject(forKey: "ClaudeUsageBar.subagentContextBudget")
-    }
-
-    @Test("AppSettings persists subagentContextBudget")
-    func settingsPersistsBudget() {
-        let settings = AppSettings()
-        settings.subagentContextBudget = .k200
-        #expect(UserDefaults.standard.string(forKey: "ClaudeUsageBar.subagentContextBudget") == "k200")
-        let settings2 = AppSettings()
-        #expect(settings2.subagentContextBudget == .k200)
-        UserDefaults.standard.removeObject(forKey: "ClaudeUsageBar.subagentContextBudget")
-    }
+    // AppSettings persistence tests for subagentContextBudget are in AppSettingsTests.swift
+    // (requires .serialized suite to avoid UserDefaults race conditions)
 
     // MARK: - UsageData.subagentsByModel
 

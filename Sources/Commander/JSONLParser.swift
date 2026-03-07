@@ -251,6 +251,33 @@ public enum JSONLParser {
         )
     }
 
+    /// Parse tool usage from the parent session's JSONL file.
+    /// Works for both CLI and Commander sessions since they share the same JSONL format.
+    public static func parseParentTools(sessionID: String, workingDir: String) -> [String: Int] {
+        let projectsDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude/projects")
+        let encoded = SessionScanner.encodeProjectPath(workingDir)
+        let jsonlURL = projectsDir
+            .appendingPathComponent(encoded)
+            .appendingPathComponent("\(sessionID).jsonl")
+
+        guard let data = try? Data(contentsOf: jsonlURL),
+              let content = String(data: data, encoding: .utf8) else { return [:] }
+
+        var toolCounts: [String: Int] = [:]
+        let decoder = JSONDecoder()
+        for line in content.split(separator: "\n") {
+            guard let lineData = line.data(using: .utf8),
+                  let entry = try? decoder.decode(JSONLEntry.self, from: lineData),
+                  entry.type == "assistant",
+                  let message = entry.message else { continue }
+            for toolCall in message.toolCalls ?? [] {
+                toolCounts[toolCall.name, default: 0] += 1
+            }
+        }
+        return toolCounts
+    }
+
     /// Parse all subagent JSONL files for a session, returning per-model cost.
     /// Subagents are stored in ~/.claude/projects/{encoded_path}/{sessionID}/subagents/
     public static func parseSubagents(sessionID: String, workingDir: String) -> [String: SourceModelStats] {

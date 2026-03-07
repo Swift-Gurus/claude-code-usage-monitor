@@ -43,6 +43,7 @@ public struct SubagentDetailView: View {
     let onDismiss: () -> Void
 
     @State private var subagents: [SubagentInfo] = []
+    @State private var parentTools: [String: Int] = [:]
     @State private var rowHeights: [Int: CGFloat] = [:]
 
     private let rowSpacing: CGFloat = 6
@@ -60,16 +61,19 @@ public struct SubagentDetailView: View {
         let fmt = DateFormatter()
         fmt.dateFormat = "yyyy-MM-dd"
         let today = fmt.string(from: Date())
-        let file = usageDir
-            .appendingPathComponent(today)
-            .appendingPathComponent("\(agent.pid).subagent-details.json")
-        let details = await Task.detached(priority: .utility) {
-            guard let data = try? Data(contentsOf: file),
-                  let decoded = try? JSONDecoder().decode([SubagentInfo].self, from: data)
-            else { return [SubagentInfo]() }
-            return decoded
+        let dir = usageDir.appendingPathComponent(today)
+        let pid = agent.pid
+
+        let (details, tools) = await Task.detached(priority: .utility) {
+            let details = (try? Data(contentsOf: dir.appendingPathComponent("\(pid).subagent-details.json")))
+                .flatMap { try? JSONDecoder().decode([SubagentInfo].self, from: $0) } ?? []
+            let tools = (try? Data(contentsOf: dir.appendingPathComponent("\(pid).parent-tools.json")))
+                .flatMap { try? JSONDecoder().decode([String: Int].self, from: $0) } ?? [:]
+            return (details, tools)
         }.value
+
         if !details.isEmpty { subagents = details }
+        if !tools.isEmpty { parentTools = tools }
     }
 
     /// Sum of the first N rows' actual heights — precise regardless of variable row heights.
@@ -99,15 +103,83 @@ public struct SubagentDetailView: View {
 
             Divider()
 
-            // Agent summary
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(agent.shortDir).font(.caption).foregroundStyle(.secondary)
-                    Text(agent.durationText).font(.caption2).foregroundStyle(.tertiary)
+            // Agent summary — two-column receipt layout
+            let subTotal = subagents.reduce(0.0) { $0 + $1.cost }
+            let ctxColor: Color = agent.contextPercent >= 90 ? .red : agent.contextPercent >= 70 ? .yellow : .green
+
+            Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 4) {
+                // Rows 1+2+3 left: dir, duration, lines
+                // Right: two VStacks for labels + numbers, guaranteed alignment
+                GridRow {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(agent.shortDir).font(.caption).foregroundStyle(.secondary)
+                        Text(agent.durationText).font(.caption2).foregroundStyle(.tertiary)
+                        HStack(spacing: 6) {
+                            Text("+\(agent.linesAdded.formatted(.number.notation(.compactName)))")
+                                .font(.caption2).foregroundStyle(.green)
+                            Text("-\(agent.linesRemoved.formatted(.number.notation(.compactName)))")
+                                .font(.caption2).foregroundStyle(.red)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    HStack(alignment: .top, spacing: 4) {
+                        VStack(alignment: .trailing, spacing: 4) {
+                            Text("Total").font(.caption2).foregroundStyle(.tertiary)
+                            if subTotal > 0 {
+                                Text("Subagents").font(.caption2).foregroundStyle(.tertiary)
+                            }
+                        }
+                        VStack(alignment: .trailing, spacing: 4) {
+                            Text(String(format: "$%.2f", agent.cost))
+                                .font(.caption).fontWeight(.semibold).foregroundStyle(.orange)
+                            if subTotal > 0 {
+                                Text(String(format: "$%.2f", subTotal))
+                                    .font(.caption2).foregroundStyle(.tertiary)
+                            }
+                        }
+                    }
+                    .gridColumnAlignment(.trailing)
                 }
-                Spacer()
-                Text(String(format: "$%.2f", agent.cost))
-                    .font(.subheadline).fontWeight(.semibold).foregroundStyle(.orange)
+
+                // Row 4: full-width progress bar → percent · budget
+                if agent.contextPercent > 0 {
+                    GridRow {
+                        HStack(spacing: 8) {
+                            GeometryReader { geo in
+                                ZStack(alignment: .leading) {
+                                    RoundedRectangle(cornerRadius: 2).fill(ctxColor.opacity(0.2))
+                                    RoundedRectangle(cornerRadius: 2).fill(ctxColor)
+                                        .frame(width: geo.size.width * CGFloat(agent.contextPercent) / 100)
+                                }
+                            }
+                            .frame(height: 6)
+                            Text("\(agent.contextPercent)%\(agent.contextWindowText.isEmpty ? "" : " · \(agent.contextWindowText)")")
+                                .font(.caption2).foregroundStyle(ctxColor)
+                                .fixedSize()
+                        }
+                        .gridCellColumns(2)
+                    }
+                }
+            }
+
+            // Parent session tool usage
+            if !parentTools.isEmpty {
+                Divider()
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Tools Used").font(.subheadline).fontWeight(.medium)
+                    let sorted = parentTools.sorted { $0.value > $1.value }
+                    FlowLayout(spacing: 4, maxLines: 5) {
+                        ForEach(sorted, id: \.key) { tool, count in
+                            Text(count > 1 ? "\(tool) (\(count))" : tool)
+                                .font(.system(size: 10))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 4))
+                        }
+                    }
+                }
             }
 
             Divider()

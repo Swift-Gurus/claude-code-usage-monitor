@@ -104,11 +104,18 @@ public final class AgentTracker {
     public var activeAgents: [AgentInfo] = []
     /// Subagent details keyed by PID — updated every reload cycle, drives reactive UI
     public var subagentDetails: [Int: [SubagentInfo]] = [:]
+    /// Parent session tool counts keyed by PID — populated lazily when detail view opens
+    public var parentToolCounts: [Int: [String: Int]] = [:]
 
     private let usageDir: URL
     private let decoder = JSONDecoder()
-    /// Cache: sessionID → (subagents dir mtime, per-model stats)
+    /// Cache: sessionID → (max individual file mtime in subagents dir, per-model stats)
+    /// Uses max file mtime (not dir mtime) to detect when existing subagent files grow.
     private var subagentCache: [String: (mtime: Date, stats: [String: SourceModelStats])] = [:]
+    /// Cache: sessionID → (parent JSONL mtime, tool counts)
+    private var parentToolCache: [String: (mtime: Date, counts: [String: Int])] = [:]
+    /// Serial queue — ensures subagent scans never run concurrently, preventing data races
+    private let subagentQueue = DispatchQueue(label: "com.swiftgurus.subagentScanner", qos: .utility)
 
     public init() {
         usageDir = FileManager.default.homeDirectoryForCurrentUser
@@ -195,8 +202,11 @@ public final class AgentTracker {
             )
         }.sorted { $0.pid < $1.pid }
 
-        // Scan subagents for live sessions and write {pid}.subagents.json
-        writeSubagentFiles(agents: activeAgents, todayStr: todayStr)
+        // Scan subagents on dedicated serial queue — prevents data races and blocks main thread
+        let agentsSnapshot = activeAgents
+        subagentQueue.async { [weak self] in
+            self?.writeSubagentFiles(agents: agentsSnapshot, todayStr: todayStr)
+        }
     }
 
     private func writeSubagentFiles(agents: [AgentInfo], todayStr: String) {
@@ -210,15 +220,17 @@ public final class AgentTracker {
                 .appendingPathComponent(agent.sessionID)
                 .appendingPathComponent("subagents")
 
-            // Check if subagents directory exists and get its mtime
-            guard let attrs = try? fm.attributesOfItem(atPath: subagentsDir.path),
-                  let mtime = attrs[.modificationDate] as? Date else { continue }
+            guard fm.fileExists(atPath: subagentsDir.path) else { continue }
 
-            // Use cache to avoid rescanning unchanged directories
-            if let cached = subagentCache[agent.sessionID], cached.mtime == mtime { continue }
+            // Use max individual file mtime — detects both new files AND growth in existing files
+            let files = (try? fm.contentsOfDirectory(at: subagentsDir, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+            let maxMtime = files.compactMap {
+                try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+            }.max() ?? Date.distantPast
+            guard subagentCache[agent.sessionID]?.mtime != maxMtime else { continue }
 
             let stats = JSONLParser.parseSubagents(in: subagentsDir)
-            subagentCache[agent.sessionID] = (mtime: mtime, stats: stats)
+            subagentCache[agent.sessionID] = (mtime: maxMtime, stats: stats)
 
             // Write {pid}.subagents.json to usage folder so UsageData can read it
             let todayDir: URL
@@ -236,7 +248,7 @@ public final class AgentTracker {
                 )
             }
 
-            // Write per-subagent detail for drill-down view and update observable state
+            // Write per-subagent detail for drill-down view
             let details = JSONLParser.parseSubagentDetails(in: subagentsDir)
             if !details.isEmpty {
                 if let data = try? JSONEncoder().encode(details) {
@@ -245,7 +257,36 @@ public final class AgentTracker {
                         options: .atomic
                     )
                 }
-                subagentDetails[agent.pid] = details
+                let pid = agent.pid
+                DispatchQueue.main.async { [weak self] in
+                    self?.subagentDetails[pid] = details
+                }
+            }
+
+            // Parse parent session tool counts (CLI + Commander), cached by JSONL mtime
+            guard !agent.sessionID.isEmpty else { continue }
+            let projectsDir = fm.homeDirectoryForCurrentUser.appendingPathComponent(".claude/projects")
+            let jsonlURL = projectsDir
+                .appendingPathComponent(SessionScanner.encodeProjectPath(agent.workingDir))
+                .appendingPathComponent("\(agent.sessionID).jsonl")
+            if let jsonlAttrs = try? fm.attributesOfItem(atPath: jsonlURL.path),
+               let jsonlMtime = jsonlAttrs[.modificationDate] as? Date {
+                if parentToolCache[agent.sessionID]?.mtime != jsonlMtime {
+                    let counts = JSONLParser.parseParentTools(sessionID: agent.sessionID, workingDir: agent.workingDir)
+                    parentToolCache[agent.sessionID] = (mtime: jsonlMtime, counts: counts)
+                    if !counts.isEmpty, let data = try? JSONEncoder().encode(counts) {
+                        try? data.write(
+                            to: todayDir.appendingPathComponent("\(agent.pid).parent-tools.json"),
+                            options: .atomic
+                        )
+                    }
+                }
+                if let counts = parentToolCache[agent.sessionID]?.counts, !counts.isEmpty {
+                    let pid = agent.pid
+                    DispatchQueue.main.async { [weak self] in
+                        self?.parentToolCounts[pid] = counts
+                    }
+                }
             }
         }
     }
