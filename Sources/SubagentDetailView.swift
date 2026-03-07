@@ -1,11 +1,21 @@
 import SwiftUI
 
+/// Captures the height of the first rendered row so the ScrollView can size itself exactly.
+private struct RowHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        if value == 0 { value = nextValue() }
+    }
+}
+
 public struct SubagentDetailView: View {
     let agent: AgentInfo
+    let agentTracker: AgentTracker
     let settings: AppSettings
     let onDismiss: () -> Void
 
     @State private var subagents: [SubagentInfo] = []
+    @State private var rowHeight: CGFloat = 0
 
     private var usageDir: URL {
         let base = FileManager.default.homeDirectoryForCurrentUser
@@ -14,6 +24,19 @@ public struct SubagentDetailView: View {
         case .cli: return base
         case .commander: return base.appendingPathComponent("commander")
         }
+    }
+
+    private func loadFromFile() {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        let today = fmt.string(from: Date())
+        let file = usageDir
+            .appendingPathComponent(today)
+            .appendingPathComponent("\(agent.pid).subagent-details.json")
+        guard let data = try? Data(contentsOf: file),
+              let details = try? JSONDecoder().decode([SubagentInfo].self, from: data)
+        else { return }
+        subagents = details
     }
 
     public var body: some View {
@@ -76,34 +99,42 @@ public struct SubagentDetailView: View {
                     .foregroundStyle(.tertiary)
                     .padding(.vertical, 8)
             } else {
-                List(subagents) { sub in
-                    subagentRow(sub)
-                        .listRowInsets(EdgeInsets(top: 3, leading: 0, bottom: 3, trailing: 0))
-                        .listRowBackground(Color.clear)
-                        .listRowSeparator(.hidden)
+                let spacing: CGFloat = 6
+                let maxRows = settings.maxVisibleSubagents
+                let visibleCount = min(subagents.count, maxRows)
+                let scrollHeight = rowHeight > 0
+                    ? rowHeight * CGFloat(visibleCount) + spacing * CGFloat(visibleCount - 1)
+                    : nil
+
+                ScrollView {
+                    LazyVStack(spacing: spacing) {
+                        ForEach(Array(subagents.enumerated()), id: \.element.id) { idx, sub in
+                            subagentRow(sub)
+                                .background(idx == 0
+                                    ? GeometryReader { geo in
+                                        Color.clear.preference(key: RowHeightKey.self, value: geo.size.height)
+                                    }
+                                    : nil
+                                )
+                        }
+                    }
                 }
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
                 .scrollIndicators(.never)
-                .frame(maxHeight: 240)
+                .frame(height: scrollHeight)
+                .onPreferenceChange(RowHeightKey.self) { h in
+                    if h > 0 { rowHeight = h }
+                }
             }
         }
         .padding(16)
         .frame(width: 320)
-        .onAppear { load() }
-    }
-
-    private func load() {
-        let fmt = DateFormatter()
-        fmt.dateFormat = "yyyy-MM-dd"
-        let today = fmt.string(from: Date())
-        let file = usageDir
-            .appendingPathComponent(today)
-            .appendingPathComponent("\(agent.pid).subagent-details.json")
-        guard let data = try? Data(contentsOf: file),
-              let details = try? JSONDecoder().decode([SubagentInfo].self, from: data)
-        else { return }
-        subagents = details
+        .task {
+            loadFromFile()
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(2))
+                loadFromFile()
+            }
+        }
     }
 
     private func subagentRow(_ sub: SubagentInfo) -> some View {
@@ -119,12 +150,15 @@ public struct SubagentDetailView: View {
                 Spacer(minLength: 4)
                 Text("+\(sub.linesAdded)")
                     .font(.caption2).foregroundStyle(.green)
+                    .frame(minWidth: 36, alignment: .trailing)
                 Text("-\(sub.linesRemoved)")
                     .font(.caption2).foregroundStyle(.red)
+                    .frame(minWidth: 32, alignment: .trailing)
                 Text(String(format: "$%.2f", sub.cost))
                     .font(.caption)
                     .fontWeight(.semibold)
                     .foregroundStyle(.orange)
+                    .frame(minWidth: 48, alignment: .trailing)
             }
 
             HStack(spacing: 8) {

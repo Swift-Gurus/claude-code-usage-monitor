@@ -102,6 +102,8 @@ public struct AgentInfo: Identifiable {
 @Observable
 public final class AgentTracker {
     public var activeAgents: [AgentInfo] = []
+    /// Subagent details keyed by PID — updated every reload cycle, drives reactive UI
+    public var subagentDetails: [Int: [SubagentInfo]] = [:]
 
     private let usageDir: URL
     private let decoder = JSONDecoder()
@@ -234,13 +236,16 @@ public final class AgentTracker {
                 )
             }
 
-            // Write per-subagent detail for drill-down view
+            // Write per-subagent detail for drill-down view and update observable state
             let details = JSONLParser.parseSubagentDetails(in: subagentsDir)
-            if !details.isEmpty, let data = try? JSONEncoder().encode(details) {
-                try? data.write(
-                    to: todayDir.appendingPathComponent("\(agent.pid).subagent-details.json"),
-                    options: .atomic
-                )
+            if !details.isEmpty {
+                if let data = try? JSONEncoder().encode(details) {
+                    try? data.write(
+                        to: todayDir.appendingPathComponent("\(agent.pid).subagent-details.json"),
+                        options: .atomic
+                    )
+                }
+                subagentDetails[agent.pid] = details
             }
         }
     }

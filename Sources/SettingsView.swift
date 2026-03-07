@@ -80,6 +80,22 @@ public struct SettingsView: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
             }
+
+            Divider()
+
+            // Max visible subagents
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Visible Subagents Before Scroll")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                Picker("", selection: $settings.maxVisibleSubagents) {
+                    ForEach([3, 5, 8, 10, 15], id: \.self) { n in
+                        Text("\(n)").tag(n)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+            }
         }
         .padding(16)
         .frame(width: 320)

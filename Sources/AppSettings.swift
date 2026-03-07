@@ -64,6 +64,10 @@ public final class AppSettings {
         didSet { UserDefaults.standard.set(subagentContextBudget.rawValue, forKey: "ClaudeUsageBar.subagentContextBudget") }
     }
 
+    public var maxVisibleSubagents: Int {
+        didSet { UserDefaults.standard.set(maxVisibleSubagents, forKey: "ClaudeUsageBar.maxVisibleSubagents") }
+    }
+
     public var isLoading: Bool = false
 
     public init() {
@@ -75,5 +79,8 @@ public final class AppSettings {
 
         let budgetRaw = UserDefaults.standard.string(forKey: "ClaudeUsageBar.subagentContextBudget") ?? ""
         subagentContextBudget = SubagentContextBudget(rawValue: budgetRaw) ?? .m1
+
+        let stored = UserDefaults.standard.integer(forKey: "ClaudeUsageBar.maxVisibleSubagents")
+        maxVisibleSubagents = stored > 0 ? stored : 5
     }
 }

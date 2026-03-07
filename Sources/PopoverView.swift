@@ -37,7 +37,7 @@ public struct PopoverView: View {
             if showSettings {
                 SettingsView(settings: settings) { showSettings = false }
             } else if let agent = selectedAgent {
-                SubagentDetailView(agent: agent, settings: settings) { selectedAgent = nil }
+                SubagentDetailView(agent: agent, agentTracker: agentTracker, settings: settings) { selectedAgent = nil }
             } else if let label = selectedPeriod {
                 detailView(label: label, stats: statsFor(label))
             } else {
