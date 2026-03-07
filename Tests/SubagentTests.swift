@@ -39,14 +39,14 @@ struct SubagentTests {
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
 
-        // 1M input + 1M output on Opus: $15 + $75 = $90
+        // 1M input + 1M output on Opus: $5 + $25 = $30
         try writeJSONL([
             assistantLine(msgID: "msg1", model: "claude-opus-4-6", input: 1_000_000, output: 1_000_000)
         ], to: dir, name: "agent-abc.jsonl")
 
         let result = JSONLParser.parseSubagents(in: dir)
         #expect(result.keys.count == 1)
-        #expect(abs((result["Opus 4.6"]?.cost ?? 0) - 90.0) < 0.01)
+        #expect(abs((result["Opus 4.6"]?.cost ?? 0) - 30.0) < 0.01)
     }
 
     @Test("Multiple subagent files — costs aggregated per model")
@@ -54,7 +54,7 @@ struct SubagentTests {
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
 
-        // Agent 1: Opus, 1M input + 1M output = $90
+        // Agent 1: Opus, 1M input + 1M output = $30
         try writeJSONL([
             assistantLine(msgID: "m1", model: "claude-opus-4-6", input: 1_000_000, output: 1_000_000)
         ], to: dir, name: "agent-1.jsonl")
@@ -64,15 +64,15 @@ struct SubagentTests {
             assistantLine(msgID: "m2", model: "claude-sonnet-4-6", input: 1_000_000, output: 1_000_000)
         ], to: dir, name: "agent-2.jsonl")
 
-        // Agent 3: Also Opus, same cost = $90
+        // Agent 3: Also Opus, same cost = $30
         try writeJSONL([
             assistantLine(msgID: "m3", model: "claude-opus-4-6", input: 1_000_000, output: 1_000_000)
         ], to: dir, name: "agent-3.jsonl")
 
         let result = JSONLParser.parseSubagents(in: dir)
         #expect(result.keys.count == 2)
-        // Opus: $90 + $90 = $180
-        #expect(abs((result["Opus 4.6"]?.cost ?? 0) - 180.0) < 0.01)
+        // Opus: $30 + $30 = $60
+        #expect(abs((result["Opus 4.6"]?.cost ?? 0) - 60.0) < 0.01)
         // Sonnet: $18
         #expect(abs((result["Sonnet 4.6"]?.cost ?? 0) - 18.0) < 0.01)
     }
@@ -131,7 +131,7 @@ struct SubagentTests {
         #expect(details.count == 1)
         #expect(details[0].agentID == "agent-abc123")
         #expect(details[0].model == "Opus 4.6")
-        #expect(abs(details[0].cost - 90.0) < 0.01)
+        #expect(abs(details[0].cost - 30.0) < 0.01)
     }
 
     @Test("parseSubagentDetails — lastInputTokens reflects last message")
@@ -169,7 +169,7 @@ struct SubagentTests {
 
         let details = JSONLParser.parseSubagentDetails(in: dir)
         #expect(details.count == 2)
-        // Opus ($90) should come first (sorted by cost desc)
+        // Opus ($30) should come first (sorted by cost desc)
         #expect(details[0].model == "Opus 4.6")
         #expect(details[1].model == "Haiku 4.5")
     }

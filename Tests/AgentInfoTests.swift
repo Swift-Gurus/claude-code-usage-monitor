@@ -102,8 +102,8 @@ struct AgentInfoTests {
 
     @Test("idleText shows minutes when idle")
     func idleTextMinutes() {
-        let agent = makeAgent(updatedAt: Date().timeIntervalSince1970 - 1200) // 20 min ago
-        #expect(agent.idleText == "20m idle")
+        let agent = makeAgent(updatedAt: Date().timeIntervalSince1970 - 3600) // exactly 60 min ago
+        #expect(agent.idleText == "1h 0m idle")
     }
 
     @Test("idleText shows hours when long idle")

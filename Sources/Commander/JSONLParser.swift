@@ -101,11 +101,14 @@ public enum ClaudeModel: CaseIterable {
     public var pricing: ModelPricing {
         switch self {
         case .opus4_6, .opus4_5:
-            return ModelPricing(inputPerMTok: 15.0, outputPerMTok: 75.0, cacheWritePerMTok: 18.75, cacheReadPerMTok: 1.50)
+            // Opus 4.6/4.5: $5/$25 per MTok (source: platform.claude.com/docs/en/about-claude/pricing)
+            return ModelPricing(inputPerMTok: 5.0, outputPerMTok: 25.0, cacheWritePerMTok: 6.25, cacheReadPerMTok: 0.50)
         case .sonnet4_6, .sonnet4_5, .sonnet4:
+            // Sonnet 4.x: $3/$15 per MTok
             return ModelPricing(inputPerMTok: 3.0, outputPerMTok: 15.0, cacheWritePerMTok: 3.75, cacheReadPerMTok: 0.30)
         case .haiku4_5:
-            return ModelPricing(inputPerMTok: 0.80, outputPerMTok: 4.0, cacheWritePerMTok: 1.0, cacheReadPerMTok: 0.08)
+            // Haiku 4.5: $1/$5 per MTok
+            return ModelPricing(inputPerMTok: 1.0, outputPerMTok: 5.0, cacheWritePerMTok: 1.25, cacheReadPerMTok: 0.10)
         }
     }
 
