@@ -13,9 +13,10 @@ The view is always 320pt wide with 16pt padding on all sides, matching all other
 - **Back button**: Top-left, `chevron.left` + `"Back"` text, `.plain` style, `.blue` foreground, `.caption` font
   - On tap: calls `onDismiss()` which sets `selectedAgent = nil` in `PopoverView`
 - **Title**: Top-right, `agent.displayName` (agent name if non-empty, else model name); `.headline` font
+- **Log viewer button**: To the right of the title, `doc.text.magnifyingglass` icon, `.caption` font, `.plain` style, `.blue` foreground. Only shown when `!agent.sessionID.isEmpty`. On tap: sets `logTarget = .parent`, navigating to `LogViewerView` for the parent session.
 
 ```
-← Back                               My Agent Name
+← Back                         My Agent Name  [log]
 ─────────────────────────────────────────────────
 ```
 
@@ -151,8 +152,10 @@ When `subagents` is non-empty:
 ```swift
 ScrollView {
     VStack(spacing: rowSpacing) {
-        ForEach(Array(subagents.enumerated()), id: \.element.id) { idx, sub in
+        ForEach(Array(sortedSubagents.enumerated()), id: \.element.id) { idx, sub in
             subagentRow(sub)
+                .contentShape(Rectangle())
+                .onTapGesture { logTarget = .subagent(sub) }
                 .background(GeometryReader { geo in
                     Color.clear.preference(key: RowHeightsKey.self, value: [idx: geo.size.height])
                 })
@@ -166,14 +169,21 @@ ScrollView {
 }
 ```
 
+`sortedSubagents` is a computed property that sorts the `subagents` array according to `settings.subagentSortOrder`. Each row has a tap gesture that sets `logTarget = .subagent(sub)`, navigating to `LogViewerView` for that subagent's JSONL conversation.
+
 `rowSpacing = 6pt`. Scroll indicators are hidden.
 
 ### Viewport Height Calculation
 
-The `ScrollView`'s height is set to `viewportHeight`, which is the sum of the first `min(subagents.count, settings.maxVisibleSubagents)` rows' actual rendered heights plus inter-row spacing:
+The `ScrollView`'s height is set to `viewportHeight`, which depends on the display mode:
+
+**Window mode**: `viewportHeight` always returns `nil` — the scroll view fills available space without a fixed height.
+
+**Popover mode**: The height is the sum of the first `min(subagents.count, settings.maxVisibleSubagents)` rows' actual rendered heights plus inter-row spacing:
 
 ```swift
 private var viewportHeight: CGFloat? {
+    if settings.displayMode == .window { return nil }
     let n = min(subagents.count, settings.maxVisibleSubagents)
     guard rowHeights.count >= n else { return nil }
     let h = (0..<n).compactMap { rowHeights[$0] }.reduce(0, +)
@@ -206,11 +216,15 @@ Each row reports its rendered height via `GeometryReader` + `.preference(key: Ro
 
 ```
 Opus 4.6                    +42   -0    $0.23
+Explore UI navigation and views
+Explore
 [========░░░░] 45% of 1M
 [Read (15)] [Edit (42)] [Bash (1)]
 ```
 
-`subagentRow(_:)` returns a `VStack(alignment: .leading, spacing: 6)` with 8pt padding and `Color.primary.opacity(0.04)` background in `RoundedRectangle(cornerRadius: 6)`.
+`subagentRow(_:)` returns a `VStack(alignment: .leading, spacing: 6)` with 8pt padding and `Color.primary.opacity(0.08)` background in `RoundedRectangle(cornerRadius: 6)`.
+
+Tapping a subagent row navigates to `LogViewerView` with `logTarget = .subagent(sub)` — showing the full JSONL conversation for that subagent.
 
 **Row 1 — Model + Lines + Cost (HStack):**
 - Model name: `sub.model` (display name e.g. `"Opus 4.6"`); `.caption` + `.medium`; lineLimit 1
@@ -218,6 +232,11 @@ Opus 4.6                    +42   -0    $0.23
 - Lines added: `"+{sub.linesAdded}"` (raw integer, not compact); `.caption2` + `.green`; `minWidth: 36`, trailing alignment
 - Lines removed: `"-{sub.linesRemoved}"` (raw integer); `.caption2` + `.red`; `minWidth: 32`, trailing alignment
 - Cost: `"$%.2f"` format; `.caption` + `.semibold` + `.orange`; `minWidth: 48`, trailing alignment
+
+**Row 1.5 — Description + Type (optional):**
+- If `sub.description` is non-empty: `Text(sub.description)` — `.caption` + `.secondary`; lineLimit 1
+- If `sub.subagentType` is non-empty: `Text(sub.subagentType)` — `.caption2` + `.secondary`; lineLimit 1
+- These come from `JSONLParser.parseSubagentMeta` which parses Agent tool_use calls in the parent JSONL
 
 **Row 2 — Context Bar + Label (HStack, spacing 8pt):**
 - Context bar: fixed 80×6pt `GeometryReader`-backed `ZStack`:
@@ -321,8 +340,18 @@ No loading indicator is shown. The empty state ("No subagents recorded") appears
 | `linesAdded` | Int | Lines added by Edit/Write tool calls |
 | `linesRemoved` | Int | Lines removed by Edit/Write tool calls |
 | `toolCounts` | [String: Int] | Tool name → invocation count across all messages |
+| `description` | String | Subagent description from Agent tool_use (e.g. `"Explore UI navigation"`) |
+| `subagentType` | String | Subagent type from Agent tool_use (e.g. `"Explore"`) |
+| `lastModified` | Double | JSONL file mtime as `timeIntervalSince1970` |
 
-Subagents are sorted by cost descending (highest cost first) when written by `JSONLParser.parseSubagentDetails`.
+Subagents are sorted by cost descending (highest cost first) when written by `JSONLParser.parseSubagentDetails`. The display sort order is controlled by `AppSettings.subagentSortOrder` in `SubagentDetailView.sortedSubagents`:
+
+| Sort Order | Key |
+|------------|-----|
+| Recent | `sub.lastModified` descending (JSONL file mtime) |
+| Cost | `sub.cost` descending |
+| Context | `sub.lastInputTokens` descending |
+| Name | `sub.displayName` ascending (localized case-insensitive) |
 
 ---
 
@@ -385,8 +414,12 @@ try? data.write(
 
 | Setting | Type | Default | Used for |
 |---------|------|---------|----------|
-| `maxVisibleSubagents` | Int | 5 | Number of rows visible before scroll; options: 3, 5, 8, 10, 15 |
+| `maxVisibleSubagents` | Int | 5 | Number of rows visible before scroll (popover mode only); options: 3, 5, 8, 10, 15 |
 | `subagentContextBudget` | SubagentContextBudget | `.m1` | Denominator for context % per subagent row |
+| `subagentSortOrder` | SubagentSortOrder | `.cost` | Sort order for subagent list; options: Recent, Cost, Context, Name |
+| `displayMode` | DisplayMode | `.popover` | Controls viewport height behavior (nil in window mode) |
+| `expandThinking` | Bool | `false` | Initial expand state for thinking blocks in log viewer |
+| `expandTools` | Bool | `false` | Initial expand state for tool call details in log viewer |
 
 ---
 
@@ -394,7 +427,7 @@ try? data.write(
 
 ```
 ┌──────────────────────────────────────────────────┐
-│ ← Back                         My Agent Name     │
+│ ← Back                    My Agent Name  [log]   │
 ├──────────────────────────────────────────────────┤
 │ my-project                    Total      $1.23   │
 │ 2m 30s                     Subagents    $0.50   │
@@ -408,6 +441,8 @@ try? data.write(
 │ Subagents [3]                      Budget: 1M     │
 │ ┌────────────────────────────────────────────┐   │
 │ │ Opus 4.6              +42   -0    $0.23    │   │
+│ │ Explore UI navigation and views            │   │
+│ │ Explore                                    │   │
 │ │ [========░░░░░░░░░░░] 45% of 1M           │   │
 │ │ [Read (15)] [Edit (42)] [Bash (1)]        │   │
 │ ├────────────────────────────────────────────┤   │
@@ -418,7 +453,8 @@ try? data.write(
 │ │ Sonnet 4.5             +0   -0    $0.01   │   │
 │ │ [░░░░░░░░░░░░░░░░░░░░]  3% of 1M         │   │
 │ └────────────────────────────────────────────┘   │
-│          ↕ scrolls when > maxVisibleSubagents     │
+│  ↕ scrolls when > maxVisibleSubagents (popover)   │
+│  tap row → LogViewerView for that subagent        │
 └──────────────────────────────────────────────────┘
 ```
 

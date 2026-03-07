@@ -5,7 +5,8 @@ import SwiftUI
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
-    private var popover: NSPopover!
+    private var popover: NSPopover?
+    private var window: NSWindow?
     private let usageData = UsageData()
     private let agentTracker = AgentTracker()
     private let settings = AppSettings()
@@ -15,7 +16,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
         StatuslineInstaller.install()
         setupStatusItem()
-        setupPopover()
+
+        if settings.displayMode == .window {
+            setupWindow()
+        } else {
+            setupPopover()
+        }
+
         setupMonitor()
         updateStatusItemTitle()
         observeSettings()
@@ -29,16 +36,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         button.image = NSImage(systemSymbolName: "chart.bar.fill", accessibilityDescription: "Claude Usage")
         button.imagePosition = .imageLeading
         button.target = self
-        button.action = #selector(togglePopover)
+        button.action = #selector(toggleUI)
     }
 
     private func setupPopover() {
         popover = NSPopover()
-        popover.behavior = .transient
-        popover.delegate = self
-        popover.contentViewController = NSHostingController(
+        popover?.behavior = .transient
+        popover?.delegate = self
+        popover?.contentViewController = NSHostingController(
             rootView: PopoverView(data: usageData, agentTracker: agentTracker, settings: settings)
         )
+    }
+
+    private func setupWindow() {
+        let hostingView = NSHostingController(
+            rootView: PopoverView(data: usageData, agentTracker: agentTracker, settings: settings)
+        )
+        // Prevent SwiftUI from trying to auto-resize the window (causes re-entrant layout crash)
+        hostingView.sizingOptions = []
+
+        let win = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 340, height: 600),
+            styleMask: [.titled, .closable, .resizable, .utilityWindow, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        win.contentViewController = hostingView
+        win.title = "Claude Usage"
+        win.isFloatingPanel = true
+        win.level = .floating
+        win.isMovableByWindowBackground = true
+        win.hidesOnDeactivate = false
+        win.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        win.setFrameAutosaveName("ClaudeUsageBarWindow")
+        win.isReleasedWhenClosed = false
+        win.minSize = NSSize(width: 320, height: 300)
+
+        window = win
     }
 
     private func setupMonitor() {
@@ -76,9 +110,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    // MARK: - Popover
+    // MARK: - Toggle UI
 
-    @objc private func togglePopover() {
+    @objc private func toggleUI() {
+        if settings.displayMode == .window {
+            toggleWindow()
+        } else {
+            togglePopover()
+        }
+    }
+
+    private func togglePopover() {
+        guard let popover else { return }
         if popover.isShown {
             popover.performClose(nil)
         } else if let button = statusItem.button {
@@ -96,11 +139,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
     }
+
+    private func toggleWindow() {
+        guard let window else { return }
+        if window.isVisible {
+            window.orderOut(nil)
+        } else {
+            settings.isLoading = true
+            window.orderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                guard let self else { return }
+                CommanderSupport.refreshFiles()
+                DispatchQueue.main.async {
+                    self.usageData.reload()
+                    self.agentTracker.reload()
+                    self.updateStatusItemTitle()
+                    self.settings.isLoading = false
+                }
+            }
+        }
+    }
 }
 
 extension AppDelegate: NSPopoverDelegate {
     func popoverDidShow(_ notification: Notification) {
-        popover.contentViewController?.view.window?.makeKey()
+        popover?.contentViewController?.view.window?.makeKey()
     }
 }
 

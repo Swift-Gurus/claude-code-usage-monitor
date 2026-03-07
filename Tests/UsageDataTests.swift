@@ -324,6 +324,33 @@ struct UsageDataTests {
         }
     }
 
+    // MARK: - CLI + Commander Same PID
+
+    @Test("Same PID in CLI and Commander tracked independently")
+    func samePIDDifferentSources() throws {
+        try withTempUsageDir { root in
+            let today = todayStr()
+
+            // CLI entry: PID 1234, cost $20
+            let cliDir = root.appendingPathComponent(today)
+            try FileManager.default.createDirectory(at: cliDir, withIntermediateDirectories: true)
+            try writeDat(dir: cliDir, pid: "1234", cost: 20.0, la: 50, lr: 10, model: "Opus 4.6")
+
+            // Commander entry: same PID 1234, cost $30
+            let cmdDir = root.appendingPathComponent("commander").appendingPathComponent(today)
+            try FileManager.default.createDirectory(at: cmdDir, withIntermediateDirectories: true)
+            try writeDat(dir: cmdDir, pid: "1234", cost: 30.0, la: 80, lr: 20, model: "Sonnet 4.6")
+
+            let data = UsageData(testUsageDir: root, includeCommander: true)
+
+            // Both should be counted: $20 + $30 = $50
+            #expect(abs(data.day.cost - 50.0) < 0.01, "Both CLI and Commander costs should be counted")
+            #expect(data.day.linesAdded == 130, "Lines from both sources should aggregate")
+            #expect(abs(data.day.cli.total.cost - 20.0) < 0.01, "CLI cost independent")
+            #expect(abs(data.day.commander.total.cost - 30.0) < 0.01, "Commander cost independent")
+        }
+    }
+
     @Test("Missing .dat files ignored gracefully")
     func missingDat() throws {
         try withTempUsageDir { root in

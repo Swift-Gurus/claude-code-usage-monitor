@@ -183,12 +183,45 @@ public final class AgentTracker {
             agents.filter { $0.cpuUsage >= 1.0 }.map(\.workingDir)
         )
 
+        // Check JSONL activity: if parent or any subagent JSONL modified within 60s, agent is active
+        let projectsDir = fm.homeDirectoryForCurrentUser.appendingPathComponent(".claude/projects")
+        var jsonlActivePIDs = Set<Int>()
+        let now = Date()
+        let modKey: URLResourceKey = .contentModificationDateKey
+        for agent in agents where !agent.sessionID.isEmpty {
+            let encoded = SessionScanner.encodeProjectPath(agent.workingDir)
+            let sessionDir = projectsDir.appendingPathComponent(encoded)
+
+            // Check parent session JSONL mtime
+            let parentJSONL = sessionDir.appendingPathComponent("\(agent.sessionID).jsonl")
+            if let attrs = try? fm.attributesOfItem(atPath: parentJSONL.path),
+               let mtime = attrs[.modificationDate] as? Date,
+               now.timeIntervalSince(mtime) < 60 {
+                jsonlActivePIDs.insert(agent.pid)
+                continue
+            }
+
+            // Check subagent JSONL mtimes
+            let subagentsDir = sessionDir
+                .appendingPathComponent(agent.sessionID)
+                .appendingPathComponent("subagents")
+            guard fm.fileExists(atPath: subagentsDir.path) else { continue }
+            let files = (try? fm.contentsOfDirectory(at: subagentsDir, includingPropertiesForKeys: [modKey])) ?? []
+            let maxMtime = files.compactMap {
+                try? $0.resourceValues(forKeys: [modKey]).contentModificationDate
+            }.max()
+            if let mtime = maxMtime, now.timeIntervalSince(mtime) < 60 {
+                jsonlActivePIDs.insert(agent.pid)
+            }
+        }
+
         // Re-evaluate idle: agent is active if it has CPU, was recently updated,
-        // OR another agent in the same project is active
+        // another agent in the same project is active, OR subagents are actively running
         activeAgents = agents.map { agent in
             let projectActive = activeWorkDirs.contains(agent.workingDir)
-            let recentlyUpdated = Date().timeIntervalSince1970 - agent.updatedAt < 300
-            let idle = agent.cpuUsage < 1.0 && !recentlyUpdated && !projectActive
+            let recentlyUpdated = Date().timeIntervalSince1970 - agent.updatedAt < 60
+            let subagentsActive = jsonlActivePIDs.contains(agent.pid)
+            let idle = agent.cpuUsage < 1.0 && !recentlyUpdated && !projectActive && !subagentsActive
             guard idle != agent.isIdle else { return agent }
             return AgentInfo(
                 pid: agent.pid, model: agent.model, agentName: agent.agentName,
@@ -249,7 +282,8 @@ public final class AgentTracker {
             }
 
             // Write per-subagent detail for drill-down view
-            let details = JSONLParser.parseSubagentDetails(in: subagentsDir)
+            let meta = JSONLParser.parseSubagentMeta(sessionID: agent.sessionID, workingDir: agent.workingDir)
+            let details = JSONLParser.parseSubagentDetails(in: subagentsDir, meta: meta)
             if !details.isEmpty {
                 if let data = try? JSONEncoder().encode(details) {
                     try? data.write(

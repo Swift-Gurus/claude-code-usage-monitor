@@ -45,6 +45,7 @@ public struct SubagentDetailView: View {
     @State private var subagents: [SubagentInfo] = []
     @State private var parentTools: [String: Int] = [:]
     @State private var rowHeights: [Int: CGFloat] = [:]
+    @State private var logTarget: LogTarget?
 
     private let rowSpacing: CGFloat = 6
 
@@ -76,8 +77,23 @@ public struct SubagentDetailView: View {
         if !tools.isEmpty { parentTools = tools }
     }
 
+    private var sortedSubagents: [SubagentInfo] {
+        switch settings.subagentSortOrder {
+        case .recent:
+            return subagents.sorted { $0.lastModified > $1.lastModified }
+        case .cost:
+            return subagents.sorted { $0.cost > $1.cost }
+        case .context:
+            return subagents.sorted { $0.lastInputTokens > $1.lastInputTokens }
+        case .name:
+            return subagents.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+        }
+    }
+
     /// Sum of the first N rows' actual heights — precise regardless of variable row heights.
     private var viewportHeight: CGFloat? {
+        // Window mode: no fixed viewport, scroll fills available space
+        if settings.displayMode == .window { return nil }
         let n = min(subagents.count, settings.maxVisibleSubagents)
         guard rowHeights.count >= n else { return nil }
         let h = (0..<n).compactMap { rowHeights[$0] }.reduce(0, +)
@@ -85,23 +101,62 @@ public struct SubagentDetailView: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Header
-            HStack {
-                Button { onDismiss() } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chevron.left")
-                        Text("Back")
-                    }
-                    .font(.caption)
+        if let target = logTarget, settings.displayMode == .window {
+            LogViewerView(agent: agent, target: target, settings: settings, stickyHeader: true) { logTarget = nil }
+        } else if let target = logTarget {
+            LogViewerView(agent: agent, target: target, settings: settings) { logTarget = nil }
+        } else if settings.displayMode == .window {
+            VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 0) {
+                    detailHeader
+                        .padding(.vertical, 8)
+                    Divider()
+                }
+                .padding(.horizontal, 16)
+                ScrollView {
+                    detailContent
+                }
+                .scrollIndicators(.visible)
+            }
+        } else {
+            detailContent
+        }
+    }
+
+    private var navFont: Font { settings.displayMode == .window ? .body : .caption }
+    private var titleFont: Font { settings.displayMode == .window ? .title3 : .headline }
+
+    private var detailHeader: some View {
+        HStack {
+            Button { onDismiss() } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.left")
+                    Text("Back")
+                }
+                .font(navFont)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.blue)
+            Spacer()
+            Text(agent.displayName).font(titleFont)
+            if !agent.sessionID.isEmpty {
+                Button { logTarget = .parent } label: {
+                    Image(systemName: "doc.text.magnifyingglass")
+                        .font(navFont)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.blue)
-                Spacer()
-                Text(agent.displayName).font(.headline)
+                .help("View session logs")
             }
+        }
+    }
 
-            Divider()
+    private var detailContent: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if settings.displayMode == .popover {
+                detailHeader
+                Divider()
+            }
 
             // Agent summary — two-column receipt layout
             let subTotal = subagents.reduce(0.0) { $0 + $1.cost }
@@ -206,8 +261,10 @@ public struct SubagentDetailView: View {
             } else {
                 ScrollView {
                     VStack(spacing: rowSpacing) {
-                        ForEach(Array(subagents.enumerated()), id: \.element.id) { idx, sub in
+                        ForEach(Array(sortedSubagents.enumerated()), id: \.element.id) { idx, sub in
                             subagentRow(sub)
+                                .contentShape(Rectangle())
+                                .onTapGesture { logTarget = .subagent(sub) }
                                 .background(GeometryReader { geo in
                                     Color.clear.preference(
                                         key: RowHeightsKey.self,
@@ -225,7 +282,6 @@ public struct SubagentDetailView: View {
             }
         }
         .padding(16)
-        .frame(width: 320)
         .task {
             await loadFromFile()
             while !Task.isCancelled {
@@ -250,6 +306,15 @@ public struct SubagentDetailView: View {
                 Text(String(format: "$%.2f", sub.cost))
                     .font(.caption).fontWeight(.semibold).foregroundStyle(.orange)
                     .frame(minWidth: 48, alignment: .trailing)
+            }
+            // Description + type rows
+            if !sub.description.isEmpty {
+                Text(sub.description)
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            if !sub.subagentType.isEmpty {
+                Text(sub.subagentType)
+                    .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
             }
             HStack(spacing: 8) {
                 GeometryReader { geo in
@@ -279,6 +344,7 @@ public struct SubagentDetailView: View {
             }
         }
         .padding(8)
-        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 6))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
     }
 }

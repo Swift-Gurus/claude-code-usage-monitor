@@ -31,11 +31,14 @@ popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
   receives keyboard events.
 - When already shown, `popover.performClose(nil)` is called instead.
 
-**Source:** `Sources/App/ClaudeUsageBarApp.swift:86`
+**Source:** `Sources/App/ClaudeUsageBarApp.swift`
 
 **Action for rebuilder:** Use exactly `.minY` as the preferred edge and `button.bounds` as
 the rect. Using a zero rect or `.maxY` will produce visually different or broken positioning
-on macOS menu bars. Verify that `makeKey()` is called in `popoverDidShow`.
+on macOS menu bars. Verify that `makeKey()` is called in `popoverDidShow`. Note that in
+window mode (`DisplayMode.window`), an `NSPanel` is used instead of `NSPopover`, with
+`isFloatingPanel = true`, `.floating` level, `setFrameAutosaveName` for position persistence,
+and `hidesOnDeactivate = false`.
 
 ---
 
@@ -78,7 +81,9 @@ private static func cpuUsage(for pid: Int) -> Double {
 
 **Action for rebuilder:** A single `ps` call returning a momentary CPU value is correct.
 Do not add smoothing or retry logic unless you observe that agents flicker between idle and
-active — if so, note that the idle threshold is `cpuUsage >= 1.0` (line 176), not `> 0`.
+active — if so, note that the idle threshold is `cpuUsage >= 1.0`, not `> 0`. The idle
+detection now also checks JSONL file mtimes (parent and subagent) within 60 seconds, so
+agents with active subagents are no longer falsely classified as idle.
 
 ---
 
@@ -272,7 +277,7 @@ trailing-newline inflation is symmetric and largely cancels out.
 For Write: every Write call counts at least 1 line, even for an empty file.
 
 This exact method is used identically in three places: `parseSession`, `parseSubagents(in:)`,
-and `parseSubagentDetails(in:)`.
+and `parseSubagentDetails(in:meta:)`.
 
 **Source:** `Sources/Commander/JSONLParser.swift:176-183` (parseSession),
 `Sources/Commander/JSONLParser.swift:296-305` (parseSubagents),
@@ -397,7 +402,8 @@ AgentTracker.reload()           ← main thread
   └── subagentQueue.async       ← dispatched to serial background queue
         └── writeSubagentFiles(...)
               ├── JSONLParser.parseSubagents(in:)        ← background, reads all .jsonl files
-              └── JSONLParser.parseSubagentDetails(in:)  ← background, reads same files again
+              ├── JSONLParser.parseSubagentMeta(...)      ← background, reads parent JSONL
+              └── JSONLParser.parseSubagentDetails(in:meta:)  ← background, reads subagent files
                     └── DispatchQueue.main.async { subagentDetails[pid] = details }  ← back to main
 ```
 
@@ -526,7 +532,7 @@ shows.
 
 ## Gap 10: Dominant model detection in subagents
 
-**Question:** In `parseSubagents(in:)` and `parseSubagentDetails(in:)`, which method is
+**Question:** In `parseSubagents(in:)` and `parseSubagentDetails(in:meta:)`, which method is
 used to pick the "dominant model" for attributing line changes: first seen or most
 frequent?
 
@@ -550,7 +556,7 @@ if linesAdded > 0 || linesRemoved > 0, !dominantModel.isEmpty {
 `dominantModel` is set once — on the first assistant message with a non-empty model field —
 and never updated. Lines are attributed to this first-seen model.
 
-**`parseSubagentDetails(in:)`** — uses **most frequent** (by message count):
+**`parseSubagentDetails(in:meta:)`** — uses **most frequent** (by message count):
 
 ```swift
 var modelCounts: [String: Int] = [:]

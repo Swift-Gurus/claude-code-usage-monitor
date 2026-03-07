@@ -16,17 +16,19 @@
 │   ├── {PPID}.models              ← TSV: cost\tla\tlr\tmodel (one row per model switch)
 │   ├── {PPID}.agent.json          ← AgentFileData JSON (written by statusline, read by AgentTracker)
 │   ├── {PPID}.subagents.json      ← [String: SourceModelStats] (written by AgentTracker)
-│   └── {PPID}.subagent-details.json ← [SubagentInfo] (written by AgentTracker)
+│   ├── {PPID}.subagent-details.json ← [SubagentInfo] (written by AgentTracker)
+│   └── {PPID}.parent-tools.json   ← [String: Int] tool counts (written by AgentTracker)
 └── commander/
     ├── .last_cleanup
     └── YYYY-MM-DD/                ← Commander source (written by CommanderSupport)
         ├── {pid}.dat
         ├── {pid}.agent.json
         ├── {pid}.subagents.json
-        └── {pid}.subagent-details.json
+        ├── {pid}.subagent-details.json
+        └── {pid}.parent-tools.json
 ```
 
-`UsageData` reads only `.dat`, `.models`, and `.subagents.json`. The `.agent.json` and `.subagent-details.json` files are read by `AgentTracker` and `SubagentDetailView` respectively.
+`UsageData` reads only `.dat`, `.models`, and `.subagents.json`. The `.agent.json` and `.subagent-details.json` files are read by `AgentTracker` and `SubagentDetailView` respectively. The `.parent-tools.json` file is read by `SubagentDetailView`.
 
 ---
 

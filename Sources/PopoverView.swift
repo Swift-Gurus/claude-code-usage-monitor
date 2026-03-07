@@ -33,19 +33,34 @@ public struct PopoverView: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if showSettings {
+        content
+            .preferredColorScheme(settings.appearanceMode.colorScheme)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if showSettings {
+            ScrollView {
                 SettingsView(settings: settings) { showSettings = false }
-            } else if let agent = selectedAgent {
-                SubagentDetailView(agent: agent, agentTracker: agentTracker, settings: settings) { selectedAgent = nil }
-            } else if let label = selectedPeriod {
-                detailView(label: label, stats: statsFor(label))
-            } else {
-                mainView
+                    .padding(16)
             }
+            .frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity)
+        } else if let agent = selectedAgent {
+            SubagentDetailView(agent: agent, agentTracker: agentTracker, settings: settings) { selectedAgent = nil }
+                .frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity)
+        } else if let label = selectedPeriod {
+            ScrollView {
+                detailView(label: label, stats: statsFor(label))
+                    .padding(16)
+            }
+            .frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            ScrollView {
+                mainView
+                    .padding(16)
+            }
+            .frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity)
         }
-        .padding(16)
-        .frame(width: 320)
     }
 
     // MARK: - Main View
@@ -231,7 +246,8 @@ public struct PopoverView: View {
 
         }
         .padding(8)
-        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 6))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
         .opacity(agent.isIdle ? idleOpacity : 1.0)
         .contentShape(Rectangle())
         .onTapGesture { selectedAgent = agent }
@@ -321,7 +337,7 @@ public struct PopoverView: View {
                         Image(systemName: "chevron.left")
                         Text("Back")
                     }
-                    .font(.caption)
+                    .font(settings.displayMode == .window ? .body : .caption)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.blue)
@@ -329,7 +345,7 @@ public struct PopoverView: View {
                 Spacer()
 
                 Text("\(label) Breakdown")
-                    .font(.headline)
+                    .font(settings.displayMode == .window ? .title3 : .headline)
             }
 
             Divider()

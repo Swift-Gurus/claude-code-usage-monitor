@@ -2,7 +2,7 @@
 
 ## Purpose
 
-ClaudeUsageBar is a macOS menu bar application that monitors Claude Code API usage in real time. It aggregates cost, token, and lines-changed data from Claude Code sessions running on the local machine and presents them in a compact popover attached to the macOS status bar.
+ClaudeUsageBar is a macOS menu bar application that monitors Claude Code API usage in real time. It aggregates cost, token, and lines-changed data from Claude Code sessions running on the local machine and presents them in either a compact popover attached to the macOS status bar or a floating window (configurable via Display Mode setting).
 
 The app addresses two scenarios:
 
@@ -18,19 +18,20 @@ The app addresses two scenarios:
 │                        macOS Status Bar                             │
 │  [chart.bar.fill] D: $1.23    ← NSStatusItem (variableLength)      │
 └──────────────────────────┬──────────────────────────────────────────┘
-                           │ click → togglePopover
+                           │ click → toggleUI
                            ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                        NSPopover (320pt wide)                       │
+│              NSPopover (320pt wide) or NSPanel (window mode)        │
 │  PopoverView (SwiftUI, @Observable)                                 │
 │  ┌─────────────┐  ┌──────────────────┐  ┌──────────────────────┐   │
 │  │ MainView    │  │ DetailView       │  │ SubagentDetailView   │   │
 │  │ (period     │  │ (source +        │  │ (per-subagent        │   │
-│  │  table +    │  │  model           │  │  context bars)       │   │
-│  │  agents)    │  │  breakdown)      │  │                      │   │
+│  │  table +    │  │  model           │  │  context bars +      │   │
+│  │  agents)    │  │  breakdown)      │  │  log viewer)         │   │
 │  └─────────────┘  └──────────────────┘  └──────────────────────┘   │
-│           │                                                          │
-│           └── SettingsView (picker-based settings)                  │
+│           │                                   │                      │
+│           └── SettingsView                    └── LogViewerView     │
+│               (picker-based settings)             (chat bubbles)    │
 └─────────────────────────────────────────────────────────────────────┘
          ▲                    ▲
          │ .reload()          │ .reload()
@@ -155,17 +156,19 @@ Aggregation (triggered by FSEvent on ~/.claude/usage/ or 5s poll):
 Display:
   PopoverView reads from UsageData and AgentTracker via @Observable
   NSStatusItem title updated from UsageData.day/week/month
+  Display mode: NSPopover (popover mode) or NSPanel (window mode)
+  Appearance: System/Dark/Light via .preferredColorScheme()
 ```
 
 ---
 
 ## Key User Flows
 
-### 1. Open Popover
+### 1. Open UI
 1. User clicks the status bar icon
-2. `AppDelegate.togglePopover()` fires
+2. `AppDelegate.toggleUI()` dispatches to `togglePopover()` or `toggleWindow()` based on `settings.displayMode`
 3. `settings.isLoading = true` is set immediately
-4. Popover opens — shows existing (possibly stale) data at once
+4. UI opens — shows existing (possibly stale) data at once. In popover mode: `NSPopover.show()`. In window mode: `NSPanel.orderFront()` + `NSApp.activate()`.
 5. Background thread runs `CommanderSupport.refreshFiles()`
 6. Main thread runs `usageData.reload()` and `agentTracker.reload()`
 7. `settings.isLoading = false` — loading indicator disappears
@@ -177,10 +180,25 @@ The main view always shows Today / Week / Month cost and lines. Tapping any row 
 The main view lists all agents from today's `.agent.json` files, grouped by source (CLI, Commander). Active agents appear with a green dot; idle agents (low CPU + stale + project not active elsewhere) are dimmed with a moon icon and idle duration.
 
 ### 4. Drill Into Agent
-Tapping an agent row navigates to `SubagentDetailView`. On `.onAppear`, it reads `{pid}.subagent-details.json` from the appropriate usage directory and lists each subagent with model, cost, context bar, and lines changed.
+Tapping an agent row navigates to `SubagentDetailView`. A `.task` modifier polls `{pid}.subagent-details.json` every 2 seconds from the appropriate usage directory and lists each subagent with model, cost, context bar, lines changed, description, and type. The subagent list is sorted according to `AppSettings.subagentSortOrder` (Recent, Cost, Context, or Name).
 
-### 5. Settings
-Tapping the gear icon navigates to `SettingsView`. Changes to status bar period, agent sort order, or context budget take effect immediately via `@Bindable` and `@Observable`; status bar title re-renders via `withObservationTracking`.
+### 5. View Session Logs
+From `SubagentDetailView`, tapping the log icon (top-right) opens `LogViewerView` for the parent session. Tapping a subagent row opens `LogViewerView` for that subagent. The log viewer shows a chat-bubble-style conversation with user messages, assistant text, expandable tool calls (with full content), and collapsible thinking blocks. It polls the JSONL file every 2 seconds with mtime caching and auto-scrolls to the latest message.
+
+### Window Mode: Sticky Navigation Headers
+
+In window mode, navigation headers (Back button + title) are pinned above the scrollable content at all three navigation levels:
+
+| Level | Sticky Header Contains |
+|-------|----------------------|
+| Settings / Detail | Back button + "Settings" or period label |
+| SubagentDetailView | Back button + agent name + log icon |
+| LogViewerView | Back button + title + open-in-editor icon |
+
+In popover mode, headers are inline (no sticky pinning needed due to compact size).
+
+### 6. Settings
+Tapping the gear icon navigates to `SettingsView`. Changes to status bar period, agent sort order, subagent sort order, appearance mode, or context budget take effect immediately via `@Bindable` and `@Observable`; status bar title re-renders via `withObservationTracking`. Display mode changes require an "Apply & Restart" to take effect.
 
 ---
 
@@ -197,14 +215,16 @@ Tapping the gear icon navigates to `SettingsView`. Changes to status bar period,
 │   │   ├── {PPID}.models            ← TSV: cost\tla\tlr\tmodel per model switch
 │   │   ├── {PPID}.agent.json        ← Full AgentFileData JSON
 │   │   ├── {PPID}.subagents.json    ← [String: SourceModelStats] JSON (written by AgentTracker)
-│   │   └── {PPID}.subagent-details.json  ← [SubagentInfo] JSON (written by AgentTracker)
+│   │   ├── {PPID}.subagent-details.json  ← [SubagentInfo] JSON (written by AgentTracker)
+│   │   └── {PPID}.parent-tools.json ← [String: Int] tool counts (written by AgentTracker)
 │   └── commander/
 │       ├── .last_cleanup            ← Same pattern, separate from CLI cleanup
 │       └── YYYY-MM-DD/              ← Commander source (same file structure as CLI)
 │           ├── {pid}.dat
 │           ├── {pid}.agent.json
 │           ├── {pid}.subagents.json
-│           └── {pid}.subagent-details.json
+│           ├── {pid}.subagent-details.json
+│           └── {pid}.parent-tools.json
 └── projects/
     └── {encoded_path}/              ← e.g. "-Users-alice-myproject"
         └── {sessionID}.jsonl        ← Claude Code's own conversation log
@@ -227,9 +247,12 @@ Tapping the gear icon navigates to `SettingsView`. Changes to status bar period,
 | `CommanderSupport` | `SessionScanner.findActiveSessions()` | refreshFiles | Discovers Commander-spawned claude PIDs |
 | `CommanderSupport` | `JSONLParser.parseSession()` | Per active session | Computes cost from JSONL |
 | `AgentTracker` | `JSONLParser.parseSubagents()` | Per live session with sessionID | Scans subagents dir, computes per-model stats |
-| `AgentTracker` | `JSONLParser.parseSubagentDetails()` | Per live session with sessionID | Produces per-file SubagentInfo list |
+| `AgentTracker` | `JSONLParser.parseSubagentMeta()` | Per live session with sessionID | Maps Agent tool_use calls to subagent IDs with descriptions |
+| `AgentTracker` | `JSONLParser.parseSubagentDetails()` | Per live session with sessionID | Produces per-file SubagentInfo list (with meta from parseSubagentMeta) |
 | `PopoverView` | `UsageData` (read) | On render | Reads day/week/month PeriodStats |
 | `PopoverView` | `AgentTracker.activeAgents` (read) | On render | Reads live agent list |
-| `SubagentDetailView` | filesystem (read) | `.onAppear` | Reads {pid}.subagent-details.json |
+| `SubagentDetailView` | filesystem (read) | `.task` (2s poll) | Reads {pid}.subagent-details.json |
+| `SubagentDetailView` | `LogViewerView` | On row tap or log button | Navigates to log viewer for parent or subagent |
+| `LogViewerView` | `LogParser.parseMessages()` | `.task` (2s poll with mtime cache) | Parses JSONL into display-ready messages |
 | `AppSettings` | `UserDefaults` | On property change | Persists settings |
 | `AppDelegate` | `AppSettings` (observe) | `withObservationTracking` | Re-renders status bar on period change |

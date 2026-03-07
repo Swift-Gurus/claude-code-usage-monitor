@@ -34,11 +34,25 @@ public enum SessionScanner {
         let pidToCwd = findClaudeProcesses()
         var sessions: [ActiveSession] = []
 
+        // Find which .jsonl files each PID has open — avoids picking a CLI session's JSONL
+        let pidToJSONL = findOpenJSONLFiles(pids: Array(pidToCwd.keys))
+
         for (pid, cwd) in pidToCwd {
             let encoded = encodeProjectPath(cwd)
             let projectDir = projectsDir.appendingPathComponent(encoded)
 
-            guard let (jsonlURL, sessionID) = mostRecentJSONL(in: projectDir) else { continue }
+            // Prefer the JSONL file actually open by this process
+            let resolved: (URL, String)?
+            if let jsonlPath = pidToJSONL[pid] {
+                let url = URL(fileURLWithPath: jsonlPath)
+                let sessionID = url.deletingPathExtension().lastPathComponent
+                resolved = (url, sessionID)
+            } else {
+                // Fallback to most recent JSONL in project dir
+                resolved = mostRecentJSONL(in: projectDir)
+            }
+
+            guard let (jsonlURL, sessionID) = resolved else { continue }
 
             sessions.append(ActiveSession(
                 pid: pid,
@@ -112,6 +126,28 @@ public enum SessionScanner {
         path.replacingOccurrences(of: "/", with: "-")
             .replacingOccurrences(of: ".", with: "-")
             .replacingOccurrences(of: "_", with: "-")
+    }
+
+    /// Find which .jsonl files are open by the given PIDs using lsof.
+    /// Returns PID → full path to the .jsonl file.
+    private static func findOpenJSONLFiles(pids: [Int]) -> [Int: String] {
+        guard !pids.isEmpty else { return [:] }
+        let pidArg = pids.map(String.init).joined(separator: ",")
+        guard let output = runCommand("/usr/sbin/lsof", ["-a", "-p", pidArg, "-Fn"]) else { return [:] }
+
+        var result: [Int: String] = [:]
+        var currentPID: Int?
+        for line in output.split(separator: "\n") {
+            if line.hasPrefix("p") {
+                currentPID = Int(line.dropFirst())
+            } else if line.hasPrefix("n"), let pid = currentPID {
+                let path = String(line.dropFirst())
+                if path.hasSuffix(".jsonl") && !path.contains("/subagents/") {
+                    result[pid] = path
+                }
+            }
+        }
+        return result
     }
 
     /// Find the most recently modified .jsonl file in a project directory (top level only).

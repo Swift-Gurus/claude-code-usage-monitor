@@ -67,10 +67,10 @@ public final class UsageData {
         reload()
     }
 
-    /// Test-only initializer with custom usage directory (no Commander data).
-    init(testUsageDir: URL) {
+    /// Test-only initializer with custom usage directory.
+    init(testUsageDir: URL, includeCommander: Bool = false) {
         usageDir = testUsageDir
-        includeCommander = false
+        self.includeCommander = includeCommander
         reload()
     }
 
@@ -102,7 +102,8 @@ public final class UsageData {
         var subagents: [String: [String: SourceModelStats]] = [:]
         collectEntries(under: usageDir, source: .cli, since: monthStart, into: &entries, histories: &histories, subagents: &subagents)
         if includeCommander {
-            collectEntries(under: CommanderSupport.baseDir, source: .commander, since: monthStart, into: &entries, histories: &histories, subagents: &subagents)
+            let commanderDir = usageDir.appendingPathComponent("commander")
+            collectEntries(under: commanderDir, source: .commander, since: monthStart, into: &entries, histories: &histories, subagents: &subagents)
         }
         modelHistories = histories
         subagentStats = subagents
@@ -111,22 +112,24 @@ public final class UsageData {
         // has entries in each day's folder. Keep only the latest day per PID — that has the
         // most up-to-date cumulative cost.
         // For "today" specifically, subtract the previous day's value to get incremental cost.
-        var latestByPID: [String: DatEntry] = [:]     // PID → latest entry
-        var previousByPID: [String: DatEntry] = [:]   // PID → second-latest entry
+        // Key includes source to avoid CLI/Commander PID collisions for the same project.
+        var latestByPID: [String: DatEntry] = [:]     // "PID\tsource" → latest entry
+        var previousByPID: [String: DatEntry] = [:]   // "PID\tsource" → second-latest entry
 
         for entry in entries.sorted(by: { $0.day < $1.day }) {
-            if let existing = latestByPID[entry.pid] {
-                previousByPID[entry.pid] = existing
+            let key = "\(entry.pid)\t\(entry.source.rawValue)"
+            if let existing = latestByPID[key] {
+                previousByPID[key] = existing
             }
-            latestByPID[entry.pid] = entry
+            latestByPID[key] = entry
         }
 
         var d = PeriodStats()
         var w = PeriodStats()
         var m = PeriodStats()
 
-        for (pid, latest) in latestByPID {
-            let prev = previousByPID[pid]
+        for (key, latest) in latestByPID {
+            let prev = previousByPID[key]
 
             // Month: use latest cumulative value (no double-count)
             accumulate(latest, into: &m)

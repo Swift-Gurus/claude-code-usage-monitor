@@ -51,14 +51,19 @@ This pattern ensures:
 
 ---
 
-## DispatchQueue.global(qos: .userInitiated).async in togglePopover
+## DispatchQueue.global(qos: .userInitiated).async in toggleUI
 
-When the user clicks the status bar icon:
+When the user clicks the status bar icon, `toggleUI()` dispatches to either `togglePopover()` or `toggleWindow()` based on `settings.displayMode`:
 
+**Popover mode** (`togglePopover()`):
 1. `settings.isLoading = true` is set immediately on the main thread (shows a loading indicator in the popover)
 2. The popover is shown immediately with potentially stale data — the UI is responsive at once
 3. A `DispatchQueue.global(qos: .userInitiated).async` block is dispatched for the heavy work
 4. When `refreshFiles()` completes, a nested `DispatchQueue.main.async` dispatches the reload and UI update back to main
+
+**Window mode** (`toggleWindow()`):
+1. If the window is visible, `window.orderOut(nil)` hides it
+2. If the window is not visible: `settings.isLoading = true`, `window.orderFront(nil)`, `NSApp.activate(ignoringOtherApps: true)`, then the same background refresh pattern as popover mode
 
 The `.userInitiated` QoS signals to the OS that this work is in direct response to a user action and should be prioritized accordingly.
 
@@ -121,9 +126,9 @@ The `Task { @MainActor in ... }` wrapper ensures the recursive call and `updateS
 
 ---
 
-## Why NSStatusItem + NSPopover Replaced MenuBarExtra
+## Why NSStatusItem + NSPopover/NSPanel Replaced MenuBarExtra
 
-The app originally used SwiftUI's `MenuBarExtra` scene for the menu bar presence. This was replaced with a manual `NSStatusItem` + `NSPopover` setup.
+The app originally used SwiftUI's `MenuBarExtra` scene for the menu bar presence. This was replaced with a manual `NSStatusItem` + `NSPopover` (or `NSPanel` in window mode) setup.
 
 ### The Re-entrant NSHostingView Crash
 
@@ -164,8 +169,9 @@ All file write operations follow a consistent pattern to minimize race condition
 | `.dat` | `CommanderSupport.writeAgentData` (background) | `String.write(atomically: true, ...)` | Atomic (temp + rename) |
 | `.agent.json` | `CommanderSupport.writeAgentData` (background) | `Data.write(options: .atomic)` | Atomic (temp + rename) |
 | `.agent.json` | `statusline-command.sh` (shell, external) | `cat > .tmp && mv` | Atomic (manual temp + rename) |
-| `.subagents.json` | `AgentTracker.writeSubagentFiles` (main) | `Data.write(options: .atomic)` | Atomic (temp + rename) |
-| `.subagent-details.json` | `AgentTracker.writeSubagentFiles` (main) | `Data.write(options: .atomic)` | Atomic (temp + rename) |
+| `.subagents.json` | `AgentTracker.writeSubagentFiles` (subagentQueue) | `Data.write(options: .atomic)` | Atomic (temp + rename) |
+| `.subagent-details.json` | `AgentTracker.writeSubagentFiles` (subagentQueue) | `Data.write(options: .atomic)` | Atomic (temp + rename) |
+| `.parent-tools.json` | `AgentTracker.writeSubagentFiles` (subagentQueue) | `Data.write(options: .atomic)` | Atomic (temp + rename) |
 
 ### Read/Write Ordering Guarantee
 
@@ -188,6 +194,31 @@ Note: In the monitor callback, `CommanderSupport.refreshFiles()` runs synchronou
 `refreshFiles()` runs on the background thread; the `DispatchQueue.main.async` block that calls `reload()` is not dispatched until `refreshFiles()` returns.
 
 This ordering guarantees `.dat` and `.agent.json` files exist in the commander directory before `UsageData` and `AgentTracker` attempt to read them.
+
+---
+
+## LogViewerView: Task.detached Polling with Mtime Cache
+
+`LogViewerView.loadMessages()` uses `Task.detached(priority: .utility)` for file I/O, with mtime-based caching to skip re-parsing unchanged files:
+
+```swift
+private func loadMessages() async {
+    let url = fileURL
+    let cached = lastMtime
+    let (msgs, mtime) = await Task.detached(priority: .utility) {
+        let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
+        let mtime = attrs?[.modificationDate] as? Date
+        if let cached, let mtime, cached == mtime {
+            return ([], mtime)  // unchanged — skip parsing
+        }
+        return (LogParser.parseMessages(at: url), mtime)
+    }.value
+    if let mtime { lastMtime = mtime }
+    if !msgs.isEmpty { messages = msgs }
+}
+```
+
+The polling loop is identical to `SubagentDetailView`: a `.task` modifier runs `loadMessages()` initially, then every 2 seconds. The mtime cache prevents re-reading the JSONL file on most polls when the file has not changed.
 
 ---
 
@@ -227,16 +258,21 @@ The `.value` `await` suspends the calling task (attached to the view's `.task` m
 
 ---
 
-## AgentTracker Runs Synchronously on Main Thread
+## AgentTracker: Main Thread + Background Queue
 
-`AgentTracker.reload()` runs entirely on the main thread. This means:
+`AgentTracker.reload()` runs partially on the main thread and partially on a dedicated serial background queue:
 
+**Main thread work:**
 - The `kill(pid, 0)` liveness checks are synchronous main-thread syscalls (fast, no I/O)
 - The `ps -p {pid} -o %cpu=` process spawn for CPU usage is a synchronous main-thread `Process.run()` + `waitUntilExit()` call
+- JSONL mtime checks for idle detection (checking parent and subagent JSONL modification dates)
 - With 1–3 agents, this is typically 3–6 `ps` invocations per `reload()`, each completing in under 10ms
-- `writeSubagentFiles()` is also synchronous on main — it calls `JSONLParser.parseSubagents()` which reads JSONL files synchronously
 
-For typical usage (1–3 agents) the total blocking time is under 50ms, which is acceptable. The mtime cache in `writeSubagentFiles()` prevents JSONL rescanning on most calls, keeping the hot path fast.
+**Background queue work** (`subagentQueue`, serial, `.utility` QoS):
+- `writeSubagentFiles()` is dispatched to `subagentQueue.async` — it calls `JSONLParser.parseSubagents()`, `JSONLParser.parseSubagentMeta()`, and `JSONLParser.parseSubagentDetails()` which read JSONL files
+- `@Observable` property mutations (`subagentDetails`, `parentToolCounts`) are dispatched back to `DispatchQueue.main.async`
+
+The mtime cache in `writeSubagentFiles()` prevents JSONL rescanning on most calls, keeping the hot path fast.
 
 ---
 

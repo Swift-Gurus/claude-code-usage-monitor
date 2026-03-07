@@ -73,8 +73,13 @@ AgentTracker.reload()
   │       │   └── DEAD:  removeItem(at: file), skip
   │       └── Append AgentInfo to agents[] (isIdle = true initially)
   ├── Build activeWorkDirs = Set of workingDir for agents with cpuUsage >= 1.0
+  ├── Check JSONL activity for each agent with sessionID:
+  │   ├── Check parent JSONL mtime (< 60s → active)
+  │   └── If not: check max subagent JSONL mtime (< 60s → active)
+  │   └── Build jsonlActivePIDs set
   ├── Re-evaluate each agent's idle status
-  │   └── idle = (cpu < 1.0) AND (not recently updated) AND (workDir not in activeWorkDirs)
+  │   └── idle = (cpu < 1.0) AND (not recently updated within 60s)
+  │         AND (workDir not in activeWorkDirs) AND (pid not in jsonlActivePIDs)
   ├── Sort result by pid ascending
   └── writeSubagentFiles(agents:todayStr:)
 ```
@@ -118,14 +123,15 @@ private static func cpuUsage(for pid: Int) -> Double {
 
 ## Idle Detection
 
-An agent is considered idle when **all three** conditions are true:
+An agent is considered idle when **all four** conditions are true:
 1. `cpuUsage < 1.0` — less than 1% CPU
-2. `Date().timeIntervalSince1970 - agent.updatedAt >= 300` — not updated in the last 5 minutes
+2. `Date().timeIntervalSince1970 - agent.updatedAt >= 60` — not updated in the last 60 seconds
 3. `!activeWorkDirs.contains(agent.workingDir)` — no other agent in the same working directory is actively consuming CPU
+4. `!jsonlActivePIDs.contains(agent.pid)` — no JSONL file activity within the last 60 seconds
 
 ### Project-Level Active State
 
-If an agent has CPU ≥ 1.0, all agents with the same `workingDir` are considered non-idle — even if their own CPU is below 1%. This handles cases where:
+If an agent has CPU >= 1.0, all agents with the same `workingDir` are considered non-idle — even if their own CPU is below 1%. This handles cases where:
 - A supervisor agent spawns subagents and waits (0% CPU while subagent is active)
 - Multiple Claude Code windows are open in the same project
 
@@ -134,6 +140,17 @@ let activeWorkDirs = Set(
     agents.filter { $0.cpuUsage >= 1.0 }.map(\.workingDir)
 )
 ```
+
+### JSONL Activity Check
+
+Before idle evaluation, `reload()` checks JSONL file modification times for each agent with a non-empty `sessionID`:
+
+1. **Parent JSONL mtime**: Checks `~/.claude/projects/{encoded}/{sessionID}.jsonl`. If modified within the last 60 seconds, the agent's PID is added to `jsonlActivePIDs`.
+2. **Subagent JSONL mtimes**: If the parent JSONL is not recent, checks all files in `~/.claude/projects/{encoded}/{sessionID}/subagents/`. If the maximum mtime across all subagent JSONL files is within the last 60 seconds, the agent's PID is added to `jsonlActivePIDs`.
+
+This catches cases where Claude Code is actively working (writing to JSONL) but has low CPU usage momentarily, or where subagents are actively running even though the parent agent shows low CPU.
+
+The 60-second threshold (reduced from the previous 5-minute `updatedAt` threshold) provides faster idle/active transitions.
 
 ### Initial Value
 
@@ -218,11 +235,16 @@ Two files are written per agent with subagents:
 - One entry per subagent JSONL file
 - Sorted by cost descending (done by `JSONLParser.parseSubagentDetails`)
 - Written only if the list is non-empty
-- Used by `SubagentDetailView.load()`
+- Used by `SubagentDetailView.loadFromFile()`
+- Now includes `description`, `subagentType`, and `lastModified` fields per subagent, populated via `JSONLParser.parseSubagentMeta()` which is called before `parseSubagentDetails(in:meta:)`
 
 Both files are written atomically with `options: .atomic`.
 
 After writing both files, `writeSubagentFiles` also updates `subagentDetails[agent.pid]` in-memory with the freshly parsed details.
+
+### Subagent Meta Parsing
+
+Before calling `parseSubagentDetails`, `writeSubagentFiles` calls `JSONLParser.parseSubagentMeta(sessionID:workingDir:)` to build a map of `agentID -> SubagentMeta`. This map is passed as the `meta` parameter to `parseSubagentDetails(in:meta:)`, which uses it to populate the `description` and `subagentType` fields on each `SubagentInfo`.
 
 ### Parent Session Tool Count Parsing
 

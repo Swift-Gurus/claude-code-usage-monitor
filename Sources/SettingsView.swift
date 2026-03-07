@@ -19,7 +19,7 @@ public struct SettingsView: View {
                         Image(systemName: "chevron.left")
                         Text("Back")
                     }
-                    .font(.caption)
+                    .font(settings.displayMode == .window ? .body : .caption)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.blue)
@@ -27,7 +27,48 @@ public struct SettingsView: View {
                 Spacer()
 
                 Text("Settings")
-                    .font(.headline)
+                    .font(settings.displayMode == .window ? .title3 : .headline)
+            }
+
+            Divider()
+
+            // Display Mode
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Display Mode")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                Picker("", selection: $settings.displayMode) {
+                    ForEach(DisplayMode.allCases, id: \.self) { mode in
+                        Text(mode.label).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                Button {
+                    AppSettings.relaunch()
+                } label: {
+                    Text("Apply & Restart")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .disabled(!settings.displayModeChanged)
+            }
+
+            Divider()
+
+            // Appearance
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Appearance")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                Picker("", selection: $settings.appearanceMode) {
+                    ForEach(AppearanceMode.allCases, id: \.self) { mode in
+                        Text(mode.label).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
             }
 
             Divider()
@@ -64,6 +105,22 @@ public struct SettingsView: View {
 
             Divider()
 
+            // Subagent Sort Order
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Subagent Sort Order")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                Picker("", selection: $settings.subagentSortOrder) {
+                    ForEach(SubagentSortOrder.allCases, id: \.self) { order in
+                        Text(order.label).tag(order)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+            }
+
+            Divider()
+
             // Subagent Context Budget
             VStack(alignment: .leading, spacing: 6) {
                 Text("Subagent Context Budget")
@@ -81,23 +138,53 @@ public struct SettingsView: View {
                 .labelsHidden()
             }
 
+            if settings.displayMode == .popover {
+                Divider()
+
+                // Max visible subagents
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Visible Subagents Before Scroll")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    Picker("", selection: $settings.maxVisibleSubagents) {
+                        ForEach([3, 5, 8, 10, 15], id: \.self) { n in
+                            Text("\(n)").tag(n)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                }
+
+                Divider()
+
+                // Max visible log messages
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Visible Log Messages Before Scroll")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    Picker("", selection: $settings.maxVisibleLogMessages) {
+                        ForEach([5, 8, 12, 20, 50], id: \.self) { n in
+                            Text("\(n)").tag(n)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                }
+            }
+
             Divider()
 
-            // Max visible subagents
+            // Log viewer expand defaults
             VStack(alignment: .leading, spacing: 6) {
-                Text("Visible Subagents Before Scroll")
+                Text("Log Viewer Defaults")
                     .font(.subheadline)
                     .fontWeight(.medium)
-                Picker("", selection: $settings.maxVisibleSubagents) {
-                    ForEach([3, 5, 8, 10, 15], id: \.self) { n in
-                        Text("\(n)").tag(n)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
+                Toggle("Always expand thinking", isOn: $settings.expandThinking)
+                    .font(.caption)
+                Toggle("Always expand tools", isOn: $settings.expandTools)
+                    .font(.caption)
             }
         }
         .padding(16)
-        .frame(width: 320)
     }
 }

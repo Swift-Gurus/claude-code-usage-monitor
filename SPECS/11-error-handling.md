@@ -202,15 +202,15 @@ guard let attrs = try? fm.attributesOfItem(atPath: subagentsDir.path),
       let mtime = attrs[.modificationDate] as? Date else { continue }
 ```
 
-If the subagents directory does not exist (agent has not spawned any subagents), `attributesOfItem` throws `NSFileNoSuchFile`, which becomes `nil` via `try?`. The agent is skipped in the subagent scanning loop and no `.subagents.json` is written for it. `SubagentDetailView.load()` finds no data and the view shows "No subagents recorded".
+If the subagents directory does not exist (agent has not spawned any subagents), `attributesOfItem` throws `NSFileNoSuchFile`, which becomes `nil` via `try?`. The agent is skipped in the subagent scanning loop and no `.subagents.json` is written for it. `SubagentDetailView.loadFromFile()` finds no data and the view shows "No subagents recorded".
 
 ---
 
 ## Missing .subagent-details.json
 
-Location: `SubagentDetailView.load()`
+Location: `SubagentDetailView.loadFromFile()`
 
-The `load()` function attempts to read and decode the `.subagent-details.json` file:
+The `loadFromFile()` function attempts to read and decode the `.subagent-details.json` file:
 
 ```swift
 guard let data = try? Data(contentsOf: detailsURL),
@@ -256,7 +256,7 @@ var statusBarPeriod: StatusBarPeriod {
 }
 ```
 
-If `UserDefaults` returns a string that does not correspond to a valid `StatusBarPeriod` rawValue (e.g., the stored value was written by a previous version), the `?? .day` fallback provides the default enum case. The invalid stored value is left in `UserDefaults` until the user changes the setting and writes a valid value.
+If `UserDefaults` returns a string that does not correspond to a valid enum rawValue (e.g., the stored value was written by a previous version), the `?? .default` fallback provides the default enum case. This pattern is used uniformly across all enum-backed settings: `StatusBarPeriod` (default `.day`), `AgentSortOrder` (default `.recentlyUpdated`), `SubagentContextBudget` (default `.m1`), `SubagentSortOrder` (default `.cost`), `DisplayMode` (default `.popover`), and `AppearanceMode` (default `.system`). For Bool settings (`expandThinking`, `expandTools`), `UserDefaults.standard.object(forKey:) as? Bool ?? false` provides the fallback. The invalid stored value is left in `UserDefaults` until the user changes the setting and writes a valid value.
 
 ---
 
@@ -316,7 +316,9 @@ let dlr = max(0, nextLR - current.lr)
 | `lsof` failure | `SessionScanner` | skip affected PIDs | Those Commander sessions not shown |
 | `kill(pid, 0)` failure | `AgentTracker.reload`, `cleanupDeadPIDs` | remove `.agent.json`, skip | Agent removed from list |
 | Subagents dir missing | `AgentTracker.writeSubagentFiles` | `guard ... else { continue }` | "No subagents recorded" |
-| `.subagent-details.json` missing | `SubagentDetailView.load` | `guard ... else { return }` | "No subagents recorded" |
+| `.subagent-details.json` missing | `SubagentDetailView.loadFromFile` | `guard ... else { return }` | "No subagents recorded" |
+| JSONL file for log viewer | `LogParser.parseMessages` | `guard ... else { return [] }` | "No messages found" |
+| JSONL mtime check failure | `LogViewerView.loadMessages` | `try?` on attributesOfItem | Skips mtime cache, re-parses |
 | File write failure | `AgentTracker`, `CommanderSupport` | `try? data.write(...)` | Missing until next reload |
 | `jq` not installed / install fail | `StatuslineInstaller.install` | returns `false` | Warning banner in popover |
 | UserDefaults invalid value | `AppSettings` | `?? .defaultCase` fallback | Default setting used |

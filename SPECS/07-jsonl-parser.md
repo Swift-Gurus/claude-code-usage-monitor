@@ -4,7 +4,7 @@
 
 `JSONLParser.swift` parses Claude Code's JSONL conversation files to extract token usage, model information, cost, line counts, and subagent data. It is used exclusively by the Commander integration; CLI sessions get cost data directly from Claude Code's statusline JSON.
 
-The parser is implemented as a pure `enum` (no instance state) with four public entry points: `parseSession`, `parseSubagents`, `parseSubagentDetails`, and `parseParentTools`.
+The parser is implemented as a pure `enum` (no instance state) with five public entry points: `parseSession`, `parseSubagents`, `parseSubagentDetails`, `parseParentTools`, and `parseSubagentMeta`.
 
 ---
 
@@ -158,9 +158,45 @@ The result is a flat map: `"Opus 4.6" → SourceModelStats(cost: X, linesAdded: 
 
 Builds the subagents directory path from session ID and working dir, then calls `parseSubagents(in:)`. Used during `parseSession` to add subagent costs to the total.
 
-### parseSubagentDetails(in:) — Per-File Detail
+### parseSubagentMeta(sessionID:workingDir:) — Subagent Naming
+
+```swift
+public static func parseSubagentMeta(sessionID: String, workingDir: String) -> [String: SubagentMeta]
+```
+
+Parses the parent session's JSONL file to build a map of `agentID -> SubagentMeta`, linking Agent tool_use calls to their corresponding subagent IDs.
+
+**SubagentMeta struct:**
+```swift
+public struct SubagentMeta {
+    public let description: String    // from Agent tool_use input.description
+    public let subagentType: String   // from Agent tool_use input.subagent_type
+}
+```
+
+**Algorithm (three-pass over JSONL lines using raw JSON parsing):**
+
+1. **Pass 1**: Scan assistant entries for `tool_use` items with `name == "Agent"`. Extract the `id` (tool_use ID), `input.description`, and `input.subagent_type` from each. Store in `agentCalls: [String: AgentCall]` keyed by tool_use ID. Uses `JSONSerialization` (not `Decodable`) because the tool_use `id` field is not part of the `ToolCall` decodable struct.
+
+2. **Pass 2**: Scan user entries for `tool_result` items whose `tool_use_id` matches a known Agent call. Extract the `agentId` from the tool_result content text, which follows the format `"agentId: abc123def456 (for resuming..."`. The agent ID is extracted as a hex string prefix after `"agentId: "` using `$0.isHexDigit`.
+
+3. **Result**: Maps `"agent-{hexID}"` to `SubagentMeta(description:subagentType:)`. The `"agent-"` prefix matches the filename convention used for subagent JSONL files.
+
+**Return value:** `[String: SubagentMeta]` where keys are subagent IDs (e.g. `"agent-abc123"`) matching JSONL filenames. Returns `[:]` if the parent file cannot be read.
+
+**Usage:** Called by `AgentTracker.writeSubagentFiles` and passed as the `meta` parameter to `parseSubagentDetails(in:meta:)`.
+
+---
+
+### parseSubagentDetails(in:meta:) — Per-File Detail
+
+```swift
+public static func parseSubagentDetails(in dir: URL, meta: [String: SubagentMeta] = [:]) -> [SubagentInfo]
+```
 
 Returns `[SubagentInfo]`, one per JSONL file (one per subagent invocation), sorted by cost descending.
+
+The optional `meta` parameter provides description and subagentType from the parent session's Agent tool calls (via `parseSubagentMeta`). If not provided, defaults to empty.
 
 For each file:
 - Same deduplication and line counting
@@ -172,6 +208,9 @@ For each file:
 - **cost**: total across all deduplicated messages
 - **agentID**: stem of the JSONL filename
 - **toolCounts**: `[String: Int]` of all `tool_use` entries counted by name across all assistant messages (populated alongside line counting; same pass)
+- **description**: `meta[agentID]?.description ?? ""`
+- **subagentType**: `meta[agentID]?.subagentType ?? ""`
+- **lastModified**: file's `contentModificationDate` as `timeIntervalSince1970`
 
 ### parseParentTools(sessionID:workingDir:) — Parent Session Tool Counts
 
@@ -215,8 +254,18 @@ public struct SubagentInfo: Codable, Identifiable {
     public let linesAdded: Int           // lines added via Edit/Write
     public let linesRemoved: Int         // lines removed via Edit tool
     public let toolCounts: [String: Int] // tool name → invocation count, default [:]
+    public let description: String       // e.g. "Explore UI navigation and views" (from Agent tool_use)
+    public let subagentType: String      // e.g. "Explore", "solid-coder:validate-findings-agent"
+    public let lastModified: Double      // file mtime as timeIntervalSince1970
 
     public var id: String { agentID }
+
+    /// Display label: description if available, otherwise subagentType, otherwise agentID.
+    public var displayName: String {
+        if !description.isEmpty { return description }
+        if !subagentType.isEmpty { return subagentType }
+        return agentID
+    }
 }
 ```
 
@@ -229,8 +278,15 @@ public struct SubagentInfo: Codable, Identifiable {
 | `linesAdded` | `parseSubagentDetails` | `0` |
 | `linesRemoved` | `parseSubagentDetails` | `0` |
 | `toolCounts` | `parseSubagentDetails` | `[:]` |
+| `description` | `parseSubagentDetails` (via `meta` parameter from `parseSubagentMeta`) | `""` |
+| `subagentType` | `parseSubagentDetails` (via `meta` parameter from `parseSubagentMeta`) | `""` |
+| `lastModified` | `parseSubagentDetails` (from JSONL file's `contentModificationDate`) | `0` |
 
 `toolCounts` is populated during the same pass as line counting: every `tool_use` content item encountered in any assistant message increments `toolCounts[toolCall.name, default: 0]`. The field is included in the `Codable` serialization and is read back by `SubagentDetailView` to render per-subagent tool chip rows.
+
+`description` and `subagentType` come from `parseSubagentMeta`, which parses the parent session's JSONL to extract metadata from Agent tool_use calls and maps them to subagent IDs via tool_result responses. The `displayName` computed property prefers `description`, then `subagentType`, then falls back to `agentID`.
+
+`lastModified` stores the file's `contentModificationDate` as `timeIntervalSince1970`, enabling sort-by-recent in the subagent detail view.
 
 ---
 
@@ -271,7 +327,7 @@ Example format: `"2026-03-06T10:00:05.123Z"`
 
 ### Pricing Note
 
-Pricing values are the actual Anthropic API rates published at platform.claude.com/docs/en/about-claude/pricing. These are used directly for cost estimation from JSONL token counts.
+Pricing values are the Anthropic API rates (source: platform.claude.com/docs/en/about-claude/pricing). The comment in the source notes these are used for JSONL cost estimation from token counts.
 
 ### Fallback Matching
 
@@ -322,13 +378,24 @@ struct MessageContent: Decodable {
 
 `ContentItem` is decoded via a custom `init(from:)`:
 - If `"type"` is `"tool_use"`: decoded as `.toolCall(ToolCall)`
+- If `"type"` is `"text"`: decoded as `.text(String)` with the value from the `text` JSON key
 - Otherwise: decoded as `.other` (ignored)
+
+The `.text` case enables the `textBlocks` computed property on `MessageContent`:
+```swift
+var textBlocks: [String] {
+    content?.compactMap {
+        if case .text(let t) = $0 { return t }
+        return nil
+    } ?? []
+}
+```
 
 ### ToolCall
 
 ```swift
 struct ToolCall: Decodable {
-    let name: String              // "Edit", "Write", or other
+    let name: String              // "Edit", "Write", "Read", "Bash", etc.
     let input: ToolInput
 }
 
@@ -336,8 +403,16 @@ struct ToolInput: Decodable {
     let old_string: String?       // Edit: text being replaced
     let new_string: String?       // Edit: replacement text
     let content: String?          // Write: file content
+    let file_path: String?        // Read/Edit/Write: target file path
+    let command: String?          // Bash: shell command
+    let pattern: String?          // Grep/Glob: search pattern
+    let query: String?            // WebSearch: search query
+    let url: String?              // WebFetch: URL to fetch
+    let prompt: String?           // WebFetch: prompt for content extraction
 }
 ```
+
+The additional `ToolInput` fields (`file_path`, `command`, `pattern`, `query`, `url`, `prompt`) are used by `LogParser` to generate tool call summaries and detail text in the log viewer, not by the cost/lines calculation in `JSONLParser`.
 
 ### Usage
 
@@ -423,4 +498,4 @@ For parent sessions, the model is at `entry.message.model` (i.e., `JSONLEntry.Me
 {"type": "assistant", "message": {"id": "msg_01...", "model": "claude-sonnet-4-5", "usage": {...}, "content": [...]}}
 ```
 
-Content items are decoded via the custom `ContentItem` enum that checks `type == "tool_use"` to identify tool calls. Non-tool-use content items (e.g., `type == "text"`) are decoded as `.other` and discarded.
+Content items are decoded via the custom `ContentItem` enum: `type == "tool_use"` produces `.toolCall(ToolCall)`, `type == "text"` produces `.text(String)`, and all other types produce `.other` (ignored). The `textBlocks` computed property on `MessageContent` filters for `.text` cases.

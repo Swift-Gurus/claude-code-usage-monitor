@@ -9,12 +9,24 @@ public struct SubagentInfo: Codable, Identifiable {
     public let linesAdded: Int
     public let linesRemoved: Int
     public let toolCounts: [String: Int]  // e.g. ["Read": 15, "Edit": 42, "Bash": 1]
+    public let description: String   // e.g. "Explore UI navigation and views"
+    public let subagentType: String  // e.g. "Explore", "solid-coder:validate-findings-agent"
+    public let lastModified: Double  // file mtime as timeIntervalSince1970
 
     public var id: String { agentID }
 
+    /// Display label: description if available, otherwise subagentType, otherwise agentID.
+    public var displayName: String {
+        if !description.isEmpty { return description }
+        if !subagentType.isEmpty { return subagentType }
+        return agentID
+    }
+
     public init(agentID: String, model: String, cost: Double, lastInputTokens: Int,
                 linesAdded: Int = 0, linesRemoved: Int = 0,
-                toolCounts: [String: Int] = [:]) {
+                toolCounts: [String: Int] = [:],
+                description: String = "", subagentType: String = "",
+                lastModified: Double = 0) {
         self.agentID = agentID
         self.model = model
         self.cost = cost
@@ -22,6 +34,9 @@ public struct SubagentInfo: Codable, Identifiable {
         self.linesAdded = linesAdded
         self.linesRemoved = linesRemoved
         self.toolCounts = toolCounts
+        self.description = description
+        self.subagentType = subagentType
+        self.lastModified = lastModified
     }
 }
 
@@ -380,8 +395,125 @@ public enum JSONLParser {
         return result
     }
 
+    /// Metadata for a subagent extracted from the parent session's Agent tool call.
+    public struct SubagentMeta {
+        public let description: String
+        public let subagentType: String
+    }
+
+    /// Parse the parent JSONL to build a map of agentID -> SubagentMeta.
+    /// Links Agent tool_use calls to their tool_result which contains the agentId.
+    public static func parseSubagentMeta(sessionID: String, workingDir: String) -> [String: SubagentMeta] {
+        let projectsDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude/projects")
+        let encoded = SessionScanner.encodeProjectPath(workingDir)
+        let jsonlURL = projectsDir
+            .appendingPathComponent(encoded)
+            .appendingPathComponent("\(sessionID).jsonl")
+
+        guard let data = try? Data(contentsOf: jsonlURL),
+              let content = String(data: data, encoding: .utf8) else { return [:] }
+
+        let decoder = JSONDecoder()
+
+        // Step 1: Collect Agent tool_use calls
+        struct AgentCall { let description: String; let subagentType: String }
+        var agentCalls: [String: AgentCall] = [:]  // tool_use_id -> AgentCall
+
+        // Step 2: Find tool_results that match and extract agentId
+        var result: [String: SubagentMeta] = [:]
+
+        // Two-pass: first collect Agent calls, then find results
+        let lines = content.split(separator: "\n")
+        for line in lines {
+            guard let lineData = line.data(using: .utf8),
+                  let entry = try? decoder.decode(JSONLEntry.self, from: lineData)
+            else { continue }
+
+            if entry.type == "assistant", let message = entry.message {
+                // Look for Agent tool calls in content
+                for item in message.content ?? [] {
+                    if case .toolCall(let tc) = item, tc.name == "Agent" {
+                        // The Agent tool's input has description and subagent_type
+                        // But our ToolCall only decodes known fields — need to get id from raw JSON
+                        // We'll match via a different approach below
+                        _ = tc
+                    }
+                }
+            }
+        }
+
+        // Use raw JSON parsing for the Agent tool calls since we need the tool_use id
+        for line in lines {
+            guard let lineData = line.data(using: .utf8),
+                  let raw = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
+                  raw["type"] as? String == "assistant",
+                  let msg = raw["message"] as? [String: Any],
+                  let contentArr = msg["content"] as? [[String: Any]]
+            else { continue }
+
+            for item in contentArr {
+                guard item["type"] as? String == "tool_use",
+                      item["name"] as? String == "Agent",
+                      let toolID = item["id"] as? String,
+                      let input = item["input"] as? [String: Any]
+                else { continue }
+                let desc = input["description"] as? String ?? ""
+                let stype = input["subagent_type"] as? String ?? ""
+                agentCalls[toolID] = AgentCall(description: desc, subagentType: stype)
+            }
+        }
+
+        // Now find tool_results for these Agent calls
+        for line in lines {
+            guard let lineData = line.data(using: .utf8),
+                  let raw = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
+                  raw["type"] as? String == "user",
+                  let msg = raw["message"] as? [String: Any],
+                  let contentArr = msg["content"] as? [[String: Any]]
+            else { continue }
+
+            for item in contentArr {
+                guard item["type"] as? String == "tool_result",
+                      let toolUseID = item["tool_use_id"] as? String,
+                      let call = agentCalls[toolUseID]
+                else { continue }
+
+                // Extract agentId from the tool_result content
+                // Format: "agentId: abc123def456 (for resuming..."
+                if let contentList = item["content"] as? [[String: Any]] {
+                    for ci in contentList {
+                        if let text = ci["text"] as? String,
+                           let range = text.range(of: "agentId: ") {
+                            let after = text[range.upperBound...]
+                            let aid = String(after.prefix(while: { $0.isHexDigit }))
+                            if !aid.isEmpty {
+                                result["agent-\(aid)"] = SubagentMeta(
+                                    description: call.description,
+                                    subagentType: call.subagentType
+                                )
+                            }
+                        }
+                    }
+                } else if let text = item["content"] as? String,
+                          let range = text.range(of: "agentId: ") {
+                    let after = text[range.upperBound...]
+                    let aid = String(after.prefix(while: { $0.isHexDigit }))
+                    if !aid.isEmpty {
+                        result["agent-\(aid)"] = SubagentMeta(
+                            description: call.description,
+                            subagentType: call.subagentType
+                        )
+                    }
+                }
+            }
+        }
+
+        return result
+    }
+
     /// Parse all subagent JSONL files in a directory, returning one SubagentInfo per file.
-    public static func parseSubagentDetails(in dir: URL) -> [SubagentInfo] {
+    public static func parseSubagentDetails(in dir: URL, meta: [String: SubagentMeta] = [:]) -> [SubagentInfo] {
         let fm = FileManager.default
         guard let files = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else {
             return []
@@ -461,6 +593,9 @@ public enum JSONLParser {
             let displayModel = ClaudeModel.from(modelID: dominantModel).displayName
             let agentID = file.deletingPathExtension().lastPathComponent
 
+            let agentMeta = meta[agentID]
+            let mtime = (try? file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)?
+                .timeIntervalSince1970 ?? 0
             results.append(SubagentInfo(
                 agentID: agentID,
                 model: displayModel,
@@ -468,7 +603,10 @@ public enum JSONLParser {
                 lastInputTokens: lastInputTokens,
                 linesAdded: linesAdded,
                 linesRemoved: linesRemoved,
-                toolCounts: toolCounts
+                toolCounts: toolCounts,
+                description: agentMeta?.description ?? "",
+                subagentType: agentMeta?.subagentType ?? "",
+                lastModified: mtime
             ))
         }
 
@@ -509,8 +647,16 @@ public enum JSONLParser {
                 }
             }
 
+            var textBlocks: [String] {
+                content?.compactMap {
+                    if case .text(let t) = $0 { return t }
+                    return nil
+                } ?? []
+            }
+
             enum ContentItem: Decodable {
                 case toolCall(ToolCall)
+                case text(String)
                 case other
 
                 init(from decoder: Decoder) throws {
@@ -518,12 +664,15 @@ public enum JSONLParser {
                     let type = try? c.decode(String.self, forKey: .type)
                     if type == "tool_use" {
                         self = .toolCall(try ToolCall(from: decoder))
+                    } else if type == "text" {
+                        let text = (try? c.decode(String.self, forKey: .text)) ?? ""
+                        self = .text(text)
                     } else {
                         self = .other
                     }
                 }
 
-                enum CodingKeys: String, CodingKey { case type }
+                enum CodingKeys: String, CodingKey { case type, text }
             }
         }
 
@@ -535,6 +684,12 @@ public enum JSONLParser {
                 let old_string: String?
                 let new_string: String?
                 let content: String?
+                let file_path: String?
+                let command: String?
+                let pattern: String?
+                let query: String?
+                let url: String?
+                let prompt: String?
             }
         }
 

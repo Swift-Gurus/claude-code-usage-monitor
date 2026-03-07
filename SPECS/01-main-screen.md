@@ -2,7 +2,7 @@
 
 ## Overview
 
-The main screen is the default view rendered inside the `NSPopover`. It is implemented as `mainView` inside `PopoverView.swift`. The popover is 320pt wide, padded 16pt on all sides. Navigation replaces the main view in-place (no sheet or push stack); the `@State` variables `showSettings`, `selectedAgent`, and `selectedPeriod` control which view is visible.
+The main screen is the default view rendered inside the `NSPopover` (popover mode) or `NSPanel` (window mode). It is implemented as `mainView` inside `PopoverView.swift`. The content area has a minimum width of 320pt, padded 16pt on all sides. In window mode, the content is wrapped in a `ScrollView` with visible scroll indicators. Navigation replaces the main view in-place (no sheet or push stack); the `@State` variables `showSettings`, `selectedAgent`, and `selectedPeriod` control which view is visible. The view applies `.preferredColorScheme(settings.appearanceMode.colorScheme)` to control light/dark appearance.
 
 ---
 
@@ -117,7 +117,7 @@ Active (non-idle) agents are listed first, followed by idle agents. Both are sor
 
 **Row Container:**
 - 8pt padding on all sides
-- Background: `Color.primary.opacity(0.04)` in `RoundedRectangle(cornerRadius: 6)`
+- Background: `Color.primary.opacity(0.08)` in `RoundedRectangle(cornerRadius: 6)`
 - Opacity: 0.85 (dark) / 0.6 (light) when idle, 1.0 when active
 - `.contentShape(Rectangle())` + `.onTapGesture { selectedAgent = agent }` — navigates to `SubagentDetailView`
 
@@ -192,5 +192,8 @@ or
 | Tap Back in Settings | `showSettings = false` | Main view |
 | Tap Back in Detail | `selectedPeriod = nil` | Main view |
 | Tap Back in Agent Detail | `selectedAgent = nil` | Main view |
+| Tap log icon in Agent Detail | `logTarget = .parent` | `LogViewerView` (parent session) |
+| Tap subagent row in Agent Detail | `logTarget = .subagent(sub)` | `LogViewerView` (subagent session) |
+| Tap Back in Log Viewer | `logTarget = nil` | `SubagentDetailView` |
 
-All navigation is managed by a single `if/else if/else if/else` chain in `PopoverView.body`. There is no navigation stack — only one view is visible at a time and state is replaced, not pushed.
+The top-level navigation is managed by a single `if/else if/else if/else` chain in `PopoverView.body`. Within `SubagentDetailView`, a secondary `logTarget` state controls navigation to `LogViewerView`. There is no navigation stack — only one view is visible at a time and state is replaced, not pushed.
