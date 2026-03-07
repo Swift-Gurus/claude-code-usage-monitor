@@ -137,6 +137,14 @@ public final class AgentTracker {
             (CommanderSupport.baseDir.appendingPathComponent(todayStr), .commander)
         ]
 
+        // First pass: read agent.json files, check PID liveness
+        struct RawAgent {
+            let json: AgentFileData
+            let source: AgentSource
+            let file: URL
+        }
+        var candidates: [RawAgent] = []
+
         for (todayDir, source) in dirs {
             guard let files = try? fm.contentsOfDirectory(
                 at: todayDir, includingPropertiesForKeys: nil
@@ -147,41 +155,53 @@ public final class AgentTracker {
                       let json = try? decoder.decode(AgentFileData.self, from: data)
                 else { continue }
 
-                let pid32 = Int32(json.pid)
-
-                // Check PID liveness — remove file if process is dead
-                guard kill(pid32, 0) == 0 else {
+                // Quick liveness check (no subprocess)
+                guard kill(Int32(json.pid), 0) == 0 else {
                     try? fm.removeItem(at: file)
                     continue
                 }
 
-                let cpu = Self.cpuUsage(for: json.pid)
-
-                agents.append(AgentInfo(
-                    pid: json.pid,
-                    model: json.model,
-                    agentName: json.agentName,
-                    contextPercent: json.contextPercent,
-                    contextWindow: json.contextWindow ?? 0,
-                    cost: json.cost,
-                    linesAdded: json.linesAdded,
-                    linesRemoved: json.linesRemoved,
-                    workingDir: json.workingDir,
-                    sessionID: json.sessionID,
-                    durationMs: json.durationMs ?? 0,
-                    apiDurationMs: json.apiDurationMs ?? 0,
-                    updatedAt: json.updatedAt,
-                    cpuUsage: cpu,
-                    isIdle: true, // recalculated below
-                    source: source
-                ))
+                candidates.append(RawAgent(json: json, source: source, file: file))
             }
         }
 
-        // Build set of active working dirs (any agent with CPU > 0 makes the dir active)
-        let activeWorkDirs = Set(
-            agents.filter { $0.cpuUsage >= 1.0 }.map(\.workingDir)
-        )
+        // Single ps call to verify which PIDs are actually claude (handles PID reuse)
+        let claudePIDs = Self.verifyClaudePIDs(candidates.map(\.json.pid))
+        var rawAgents: [RawAgent] = []
+        for candidate in candidates {
+            if claudePIDs.contains(candidate.json.pid) {
+                rawAgents.append(candidate)
+            } else {
+                // PID reused by non-claude process — clean up
+                try? fm.removeItem(at: candidate.file)
+            }
+        }
+
+        for raw in rawAgents {
+            let json = raw.json
+            // Resolve project root — statusline may report a subdirectory
+            let resolvedDir = json.sessionID.isEmpty
+                ? json.workingDir
+                : SessionScanner.resolveProjectRoot(workingDir: json.workingDir, sessionID: json.sessionID)
+            agents.append(AgentInfo(
+                pid: json.pid,
+                model: json.model,
+                agentName: json.agentName,
+                contextPercent: json.contextPercent,
+                contextWindow: json.contextWindow ?? 0,
+                cost: json.cost,
+                linesAdded: json.linesAdded,
+                linesRemoved: json.linesRemoved,
+                workingDir: resolvedDir,
+                sessionID: json.sessionID,
+                durationMs: json.durationMs ?? 0,
+                apiDurationMs: json.apiDurationMs ?? 0,
+                updatedAt: json.updatedAt,
+                cpuUsage: 0,
+                isIdle: true, // recalculated below
+                source: raw.source
+            ))
+        }
 
         // Check JSONL activity: if parent or any subagent JSONL modified within 60s, agent is active
         let projectsDir = fm.homeDirectoryForCurrentUser.appendingPathComponent(".claude/projects")
@@ -215,13 +235,11 @@ public final class AgentTracker {
             }
         }
 
-        // Re-evaluate idle: agent is active if it has CPU, was recently updated,
-        // another agent in the same project is active, OR subagents are actively running
+        // Re-evaluate idle: agent is active if recently updated OR JSONL recently modified
         activeAgents = agents.map { agent in
-            let projectActive = activeWorkDirs.contains(agent.workingDir)
             let recentlyUpdated = Date().timeIntervalSince1970 - agent.updatedAt < 60
-            let subagentsActive = jsonlActivePIDs.contains(agent.pid)
-            let idle = agent.cpuUsage < 1.0 && !recentlyUpdated && !projectActive && !subagentsActive
+            let jsonlActive = jsonlActivePIDs.contains(agent.pid)
+            let idle = !recentlyUpdated && !jsonlActive
             guard idle != agent.isIdle else { return agent }
             return AgentInfo(
                 pid: agent.pid, model: agent.model, agentName: agent.agentName,
@@ -325,22 +343,38 @@ public final class AgentTracker {
         }
     }
 
-    /// Get CPU usage for a PID via `ps`
-    private static func cpuUsage(for pid: Int) -> Double {
+    /// Single ps call to check which PIDs are actually claude processes.
+    /// Returns the set of PIDs that are confirmed claude.
+    private static func verifyClaudePIDs(_ pids: [Int]) -> Set<Int> {
+        guard !pids.isEmpty else { return [] }
+        let pidArg = pids.map(String.init).joined(separator: ",")
         let pipe = Pipe()
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/ps")
-        process.arguments = ["-p", "\(pid)", "-o", "%cpu="]
+        process.arguments = ["-p", pidArg, "-o", "pid=,comm="]
         process.standardOutput = pipe
         process.standardError = FileHandle.nullDevice
         do {
             try process.run()
-            process.waitUntilExit()
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespaces) ?? ""
-            return Double(output) ?? 0
+            process.waitUntilExit()
+            let output = String(data: data, encoding: .utf8) ?? ""
+            var result = Set<Int>()
+            for line in output.split(separator: "\n") {
+                let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                let parts = trimmed.split(maxSplits: 1, whereSeparator: { $0.isWhitespace })
+                guard parts.count == 2,
+                      let pid = Int(parts[0])
+                else { continue }
+                let comm = String(parts[1])
+                if comm.contains("claude") {
+                    result.insert(pid)
+                }
+            }
+            return result
         } catch {
-            return 0
+            // If ps fails, assume all PIDs are valid (fail open)
+            return Set(pids)
         }
     }
 }

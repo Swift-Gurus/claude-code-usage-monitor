@@ -75,13 +75,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window = win
     }
 
+    private let refreshQueue = DispatchQueue(label: "com.swiftgurus.refresh", qos: .userInitiated)
+    private var refreshInFlight = false
+
     private func setupMonitor() {
         monitor = UsageMonitor { [weak self] in
+            self?.scheduleRefresh()
+        }
+    }
+
+    private func scheduleRefresh() {
+        guard !refreshInFlight else { return }
+        refreshInFlight = true
+        refreshQueue.async { [weak self] in
             guard let self else { return }
             CommanderSupport.refreshFiles()
-            self.usageData.reload()
-            self.agentTracker.reload()
-            self.updateStatusItemTitle()
+            DispatchQueue.main.async {
+                self.usageData.reload()
+                self.agentTracker.reload()
+                self.updateStatusItemTitle()
+                self.refreshInFlight = false
+            }
         }
     }
 

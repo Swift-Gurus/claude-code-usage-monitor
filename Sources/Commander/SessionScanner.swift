@@ -119,6 +119,25 @@ public enum SessionScanner {
         return result
     }
 
+    /// Resolve the actual project root for a working directory and session ID.
+    /// Claude Code's statusline may report a subdirectory (e.g. a skill's scripts folder)
+    /// instead of the project root. This walks up from `workingDir` until it finds the
+    /// directory whose encoded form contains the session's JSONL file.
+    public static func resolveProjectRoot(workingDir: String, sessionID: String) -> String {
+        let fm = FileManager.default
+        var path = workingDir
+        while path.count > 1 {
+            let encoded = encodeProjectPath(path)
+            let jsonl = projectsDir.appendingPathComponent(encoded)
+                .appendingPathComponent("\(sessionID).jsonl")
+            if fm.fileExists(atPath: jsonl.path) {
+                return path
+            }
+            path = (path as NSString).deletingLastPathComponent
+        }
+        return workingDir
+    }
+
     /// Encode a filesystem path into the project directory name format Claude Code uses.
     /// Claude Code replaces `/`, `.`, and `_` with `-`.
     /// e.g. "/Users/foo/.ai_rules" → "-Users-foo--ai-rules"

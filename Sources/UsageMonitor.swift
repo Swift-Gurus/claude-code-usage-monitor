@@ -46,7 +46,7 @@ public final class UsageMonitor {
             &context,
             [usageDir] as CFArray,
             FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
-            0.5, // 500ms latency — fires quickly after writes
+            2.0, // 2s latency — batches rapid writes to reduce reload frequency
             UInt32(kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagFileEvents)
         ) else { return }
 
