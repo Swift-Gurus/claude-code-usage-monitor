@@ -274,22 +274,34 @@ public struct LogViewerView: View {
         }
     }
 
+    // MARK: - Tool Chip Label
+
+    private func toolChipLabel(_ tc: LogToolCall) -> some View {
+        HStack(spacing: 4) {
+            Text(tc.name)
+                .font(.system(size: 10, weight: .medium))
+            let summary = tc.data.summary
+            if !summary.isEmpty {
+                Text(summary)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+        }
+    }
+
+    // MARK: - Tool Views
+
     @ViewBuilder
     private func toolCallChip(_ tc: LogToolCall) -> some View {
-        if tc.detail.isEmpty {
+        if !tc.data.hasDetail {
+            // Non-expandable chip
             HStack(spacing: 4) {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 8, weight: .bold))
                     .foregroundStyle(.blue.opacity(0.7))
-                Text(tc.name)
-                    .font(.system(size: 10, weight: .medium))
-                if !tc.summary.isEmpty {
-                    Text(tc.summary)
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
+                toolChipLabel(tc)
             }
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
@@ -299,30 +311,175 @@ public struct LogViewerView: View {
                 expanded: settings.expandTools,
                 tintColor: .blue.opacity(0.7)
             ) {
-                Text(tc.detail)
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-                    .padding(6)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 4))
+                toolExpandedContent(tc.data)
             } label: {
-                HStack(spacing: 4) {
-                    Text(tc.name)
-                        .font(.system(size: 10, weight: .medium))
-                    if !tc.summary.isEmpty {
-                        Text(tc.summary)
-                            .font(.system(size: 10))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-                }
+                toolChipLabel(tc)
             }
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
             .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 4))
         }
+    }
+
+    @ViewBuilder
+    private func toolExpandedContent(_ data: ToolData) -> some View {
+        switch data {
+        case .edit(let d):
+            editDiffView(d)
+        case .write(let d):
+            writeDiffView(d)
+        case .bash(let d):
+            monoText(d.command)
+        case .grep(let d):
+            monoText("pattern: \(d.pattern)" + (d.path.isEmpty ? "" : "\npath: \(d.path)"))
+        case .glob(let d):
+            monoText("pattern: \(d.pattern)" + (d.path.isEmpty ? "" : "\npath: \(d.path)"))
+        case .agent(let d):
+            VStack(alignment: .leading, spacing: 4) {
+                if !d.subagentType.isEmpty {
+                    Text("type: \(d.subagentType)")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+                if !d.prompt.isEmpty {
+                    monoText(d.prompt)
+                }
+            }
+            .padding(6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 4))
+        case .taskCreate(let d):
+            VStack(alignment: .leading, spacing: 2) {
+                if !d.description.isEmpty {
+                    Text(d.description).font(.system(size: 10)).foregroundStyle(.secondary)
+                }
+                if !d.activeForm.isEmpty {
+                    Text(d.activeForm).font(.system(size: 9, design: .monospaced)).foregroundStyle(.tertiary)
+                }
+            }
+            .textSelection(.enabled)
+            .padding(6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 4))
+        case .todoWrite(let d):
+            todoChecklist(d.todos)
+        case .webSearch(let d):
+            monoText(d.query)
+        case .webFetch(let d):
+            monoText(d.url + (d.prompt.isEmpty ? "" : "\n\(d.prompt)"))
+        case .other(let raw):
+            monoText(raw.sorted(by: { $0.key < $1.key }).map { "\($0.key): \($0.value)" }.joined(separator: "\n"))
+        default:
+            EmptyView()
+        }
+    }
+
+    // MARK: - Custom Tool Renderers
+
+    private func editDiffView(_ d: EditToolData) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if !d.filePath.isEmpty {
+                Text(d.filePath)
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+                    .padding(.bottom, 4)
+            }
+            if !d.oldString.isEmpty {
+                ForEach(Array(d.oldString.components(separatedBy: "\n").enumerated()), id: \.offset) { _, line in
+                    Text("- \(line)")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.red.opacity(0.9))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(Color.red.opacity(0.1))
+                }
+            }
+            if !d.newString.isEmpty {
+                ForEach(Array(d.newString.components(separatedBy: "\n").enumerated()), id: \.offset) { _, line in
+                    Text("+ \(line)")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.green.opacity(0.9))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(Color.green.opacity(0.1))
+                }
+            }
+        }
+        .textSelection(.enabled)
+        .padding(4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 4))
+    }
+
+    private func writeDiffView(_ d: WriteToolData) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if !d.filePath.isEmpty {
+                Text(d.filePath)
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+                    .padding(.bottom, 4)
+            }
+            ForEach(Array(d.content.components(separatedBy: "\n").enumerated()), id: \.offset) { _, line in
+                Text("+ \(line)")
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.green.opacity(0.9))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 1)
+                    .background(Color.green.opacity(0.1))
+            }
+        }
+        .textSelection(.enabled)
+        .padding(4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 4))
+    }
+
+    private func todoChecklist(_ todos: [TodoWriteToolData.TodoItem]) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(Array(todos.enumerated()), id: \.offset) { _, item in
+                HStack(spacing: 6) {
+                    Image(systemName: todoIcon(item.status))
+                        .font(.system(size: 10))
+                        .foregroundStyle(todoColor(item.status))
+                    Text(item.content)
+                        .font(.system(size: 10))
+                        .foregroundStyle(item.status == "completed" ? .secondary : .primary)
+                        .strikethrough(item.status == "completed")
+                }
+            }
+        }
+        .padding(6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 4))
+    }
+
+    private func todoIcon(_ status: String) -> String {
+        switch status {
+        case "completed": return "checkmark.circle.fill"
+        case "in_progress": return "circle.dotted.circle"
+        default: return "circle"
+        }
+    }
+
+    private func todoColor(_ status: String) -> Color {
+        switch status {
+        case "completed": return .green
+        case "in_progress": return .orange
+        default: return .secondary
+        }
+    }
+
+    private func monoText(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 10, design: .monospaced))
+            .foregroundStyle(.secondary)
+            .textSelection(.enabled)
+            .padding(6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 4))
     }
 }
 
