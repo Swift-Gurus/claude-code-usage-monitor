@@ -139,7 +139,7 @@ public struct LogMessage: Identifiable {
 }
 
 public struct LogToolCall: Identifiable {
-    public let id = UUID()
+    public let id: String       // tool_use id from JSONL (for dedup)
     public let name: String
     public let data: ToolData
 }
@@ -221,8 +221,9 @@ public enum LogParser {
                     case "tool_use":
                         if let name = item["name"] as? String,
                            let input = item["input"] as? [String: Any] {
+                            let toolId = item["id"] as? String ?? UUID().uuidString
                             let toolData = parseToolData(name: name, input: input)
-                            tools.append(LogToolCall(name: name, data: toolData))
+                            tools.append(LogToolCall(id: toolId, name: name, data: toolData))
                         }
                     default: break
                     }
@@ -240,13 +241,19 @@ public enum LogParser {
 
                 if let existing = assistantByID[msgID] {
                     let prev = existing.msg
+                    // Merge tool calls: union by tool_use id (streaming sends one tool per entry)
+                    var mergedTools = prev.toolCalls
+                    let existingIds = Set(mergedTools.map(\.id))
+                    for tc in logMsg.toolCalls where !existingIds.contains(tc.id) {
+                        mergedTools.append(tc)
+                    }
                     let merged = LogMessage(
                         id: msgID, role: .assistant,
                         model: logMsg.model ?? prev.model,
                         timestamp: logMsg.timestamp ?? prev.timestamp,
                         thinking: logMsg.thinking ?? prev.thinking,
                         textContent: logMsg.textContent.isEmpty ? prev.textContent : logMsg.textContent,
-                        toolCalls: logMsg.toolCalls.isEmpty ? prev.toolCalls : logMsg.toolCalls
+                        toolCalls: mergedTools
                     )
                     result[existing.index] = merged
                     assistantByID[msgID] = (existing.index, merged)

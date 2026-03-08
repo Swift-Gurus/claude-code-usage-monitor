@@ -1,6 +1,14 @@
 import SwiftUI
 import AppKit
 
+/// A task item reconstructed from TaskCreate/TaskUpdate/TodoWrite tool calls.
+struct TaskListItem: Identifiable {
+    let id: String
+    var content: String
+    var status: String
+    var activeForm: String
+}
+
 public struct LogViewerView: View {
     let agent: AgentInfo
     let target: LogTarget
@@ -11,6 +19,7 @@ public struct LogViewerView: View {
     @State private var messages: [LogMessage] = []
     @State private var isLoading = true
     @State private var lastMtime: Date?
+    @State private var showTaskPanel = true
 
     private let rowSpacing: CGFloat = 10
 
@@ -34,6 +43,37 @@ public struct LogViewerView: View {
     private var navFont: Font { settings.displayMode == .window ? .body : .caption }
     private var titleFont: Font { settings.displayMode == .window ? .title3 : .headline }
 
+    /// Reconstruct task list by replaying TaskCreate/TaskUpdate/TodoWrite calls in order.
+    private var taskList: [TaskListItem] {
+        var tasks: [TaskListItem] = []
+        var nextId = 1
+
+        for msg in messages {
+            for tc in msg.toolCalls {
+                switch tc.data {
+                case .todoWrite(let d):
+                    // TodoWrite replaces the entire list
+                    tasks = d.todos.enumerated().map { idx, item in
+                        TaskListItem(id: "todo-\(idx)", content: item.content, status: item.status, activeForm: "")
+                    }
+                case .taskCreate(let d):
+                    let id = "\(nextId)"
+                    nextId += 1
+                    tasks.append(TaskListItem(id: id, content: d.subject, status: "pending", activeForm: d.activeForm))
+                case .taskUpdate(let d):
+                    if let idx = tasks.firstIndex(where: { $0.id == d.taskId }) {
+                        if !d.status.isEmpty {
+                            tasks[idx].status = d.status
+                        }
+                    }
+                default:
+                    break
+                }
+            }
+        }
+        return tasks
+    }
+
     private var logHeader: some View {
         HStack {
             Button { onDismiss() } label: {
@@ -53,6 +93,16 @@ public struct LogViewerView: View {
                 .lineLimit(1)
 
             Spacer()
+
+            if !taskList.isEmpty {
+                Button { showTaskPanel.toggle() } label: {
+                    Image(systemName: showTaskPanel ? "checklist.checked" : "checklist")
+                        .font(navFont)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(showTaskPanel ? .blue : .secondary)
+                .help(showTaskPanel ? "Hide tasks" : "Show tasks")
+            }
 
             Button {
                 NSWorkspace.shared.open(fileURL)
@@ -75,7 +125,17 @@ public struct LogViewerView: View {
                     Divider()
                 }
                 .padding(.horizontal, 16)
-                logContent
+                // Window mode: side-by-side log + task panel
+                if showTaskPanel && !taskList.isEmpty {
+                    HStack(alignment: .top, spacing: 0) {
+                        logContent
+                        Divider()
+                        taskPanelView
+                            .frame(width: 200)
+                    }
+                } else {
+                    logContent
+                }
             }
         } else {
             logContent
@@ -86,6 +146,12 @@ public struct LogViewerView: View {
         VStack(alignment: .leading, spacing: 8) {
             if !stickyHeader {
                 logHeader
+                Divider()
+            }
+
+            // Popover mode: inline task panel
+            if !stickyHeader && showTaskPanel && !taskList.isEmpty {
+                taskPanelView
                 Divider()
             }
 
@@ -480,6 +546,79 @@ public struct LogViewerView: View {
             .padding(6)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 4))
+    }
+
+    // MARK: - Task Panel
+
+    private var taskPanelView: some View {
+        let tasks = taskList
+        let completed = tasks.filter { $0.status == "completed" }.count
+
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Image(systemName: "checklist")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text("Tasks")
+                    .font(.caption)
+                    .fontWeight(.medium)
+                Spacer()
+                Text("\(completed)/\(tasks.count)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            // Progress bar
+            if !tasks.isEmpty {
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(Color.green.opacity(0.2))
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(Color.green)
+                            .frame(width: geo.size.width * CGFloat(completed) / CGFloat(tasks.count))
+                    }
+                }
+                .frame(height: 4)
+            }
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 3) {
+                    ForEach(tasks) { item in
+                        HStack(alignment: .top, spacing: 6) {
+                            Image(systemName: taskIcon(item.status))
+                                .font(.system(size: 10))
+                                .foregroundStyle(taskColor(item.status))
+                                .frame(width: 12)
+                            Text(item.content)
+                                .font(.system(size: 10))
+                                .foregroundStyle(item.status == "completed" ? .secondary : .primary)
+                                .strikethrough(item.status == "completed")
+                                .lineLimit(2)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(10)
+    }
+
+    private func taskIcon(_ status: String) -> String {
+        switch status {
+        case "completed": return "checkmark.circle.fill"
+        case "in_progress": return "circle.dotted.circle"
+        case "deleted": return "xmark.circle"
+        default: return "circle"
+        }
+    }
+
+    private func taskColor(_ status: String) -> Color {
+        switch status {
+        case "completed": return .green
+        case "in_progress": return .orange
+        case "deleted": return .red
+        default: return .secondary
+        }
     }
 }
 
