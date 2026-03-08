@@ -1,5 +1,13 @@
 import SwiftUI
 
+/// Collects each agent row's actual rendered height for precise viewport sizing.
+private struct AgentRowHeightsKey: PreferenceKey {
+    static var defaultValue: [Int: CGFloat] = [:]
+    static func reduce(value: inout [Int: CGFloat], nextValue: () -> [Int: CGFloat]) {
+        value.merge(nextValue()) { $1 }
+    }
+}
+
 public struct PopoverView: View {
     public var data: UsageData
     public var agentTracker: AgentTracker
@@ -10,6 +18,7 @@ public struct PopoverView: View {
     @State private var selectedPeriod: String?
     @State private var showSettings = false
     @State private var selectedAgent: AgentInfo?
+    @State private var agentRowHeights: [Int: CGFloat] = [:]
 
     // Colors that adapt to dark/light mode
     private var idleColor: Color { colorScheme == .dark ? Color(white: 0.7) : .gray }
@@ -40,26 +49,41 @@ public struct PopoverView: View {
     @ViewBuilder
     private var content: some View {
         if showSettings {
-            ScrollView {
+            if settings.displayMode == .window {
+                ScrollView {
+                    SettingsView(settings: settings) { showSettings = false }
+                        .padding(16)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
                 SettingsView(settings: settings) { showSettings = false }
                     .padding(16)
             }
-            .frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity)
         } else if let agent = selectedAgent {
             SubagentDetailView(agent: agent, agentTracker: agentTracker, settings: settings) { selectedAgent = nil }
-                .frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let label = selectedPeriod {
-            ScrollView {
+            if settings.displayMode == .window {
+                ScrollView {
+                    detailView(label: label, stats: statsFor(label))
+                        .padding(16)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
                 detailView(label: label, stats: statsFor(label))
                     .padding(16)
             }
-            .frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            ScrollView {
+            if settings.displayMode == .window {
+                ScrollView {
+                    mainView
+                        .padding(16)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
                 mainView
                     .padding(16)
             }
-            .frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
@@ -85,8 +109,30 @@ public struct PopoverView: View {
             Divider()
 
             if !workingAgents.isEmpty || !idleAgents.isEmpty {
-                ForEach(groupedSources, id: \.source) { group in
-                    sourceSection(group)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: agentRowSpacing) {
+                        ForEach(Array(allAgentsFlat.enumerated()), id: \.element.id) { idx, item in
+                            Group {
+                                switch item {
+                                case .header(let group):
+                                    sourceHeader(group)
+                                case .agent(let agent):
+                                    agentRow(agent)
+                                }
+                            }
+                            .background(GeometryReader { geo in
+                                Color.clear.preference(
+                                    key: AgentRowHeightsKey.self,
+                                    value: [idx: geo.size.height]
+                                )
+                            })
+                        }
+                    }
+                }
+                .scrollIndicators(.never)
+                .frame(height: agentViewportHeight)
+                .onPreferenceChange(AgentRowHeightsKey.self) { heights in
+                    agentRowHeights = heights
                 }
             } else if settings.isLoading {
                 HStack(spacing: 8) {
@@ -135,6 +181,28 @@ public struct PopoverView: View {
         }
     }
 
+    private let agentRowSpacing: CGFloat = 6
+
+    /// Sum of enough flat items (headers + agents) to show maxVisibleAgents agent cards.
+    private var agentViewportHeight: CGFloat? {
+        if settings.displayMode == .window { return nil }
+        let items = allAgentsFlat
+        guard !items.isEmpty else { return nil }
+
+        // Count flat items needed to show N agent cards (headers don't count toward the limit)
+        var agentsSeen = 0
+        var n = 0
+        for item in items {
+            n += 1
+            if case .agent = item { agentsSeen += 1 }
+            if agentsSeen >= settings.maxVisibleAgents { break }
+        }
+
+        guard agentRowHeights.count >= n else { return nil }
+        let h = (0..<n).compactMap { agentRowHeights[$0] }.reduce(0, +)
+        return h + agentRowSpacing * CGFloat(max(0, n - 1))
+    }
+
     // MARK: - Agents
 
     private func sortAgents(_ agents: [AgentInfo]) -> [AgentInfo] {
@@ -169,8 +237,30 @@ public struct PopoverView: View {
         }
     }
 
-    @ViewBuilder
-    private func sourceSection(_ group: SourceGroup) -> some View {
+    private enum AgentListItem: Identifiable {
+        case header(SourceGroup)
+        case agent(AgentInfo)
+
+        var id: String {
+            switch self {
+            case .header(let g): return "header-\(g.source.rawValue)"
+            case .agent(let a): return "agent-\(a.pid)"
+            }
+        }
+    }
+
+    /// Flat list of headers + agents for indexed measurement.
+    private var allAgentsFlat: [AgentListItem] {
+        var items: [AgentListItem] = []
+        for group in groupedSources {
+            items.append(.header(group))
+            for agent in group.active { items.append(.agent(agent)) }
+            for agent in group.idle { items.append(.agent(agent)) }
+        }
+        return items
+    }
+
+    private func sourceHeader(_ group: SourceGroup) -> some View {
         HStack {
             Image(systemName: group.source == .cli ? "terminal" : "app.connected.to.app.below.fill")
                 .font(.caption)
@@ -182,18 +272,6 @@ public struct PopoverView: View {
             Text("\(group.active.count + group.idle.count)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-        }
-
-        if !group.active.isEmpty {
-            ForEach(group.active) { agent in
-                agentRow(agent)
-            }
-        }
-
-        if !group.idle.isEmpty {
-            ForEach(group.idle) { agent in
-                agentRow(agent)
-            }
         }
     }
 
@@ -462,6 +540,38 @@ public struct PopoverView: View {
                         costCell(stats.cost, font: .caption2)
                     }
                     .padding(.leading, 28)
+                }
+            }
+
+            // Projects subsection
+            let projects = source.byProject.sorted { ($0.value.main.cost + $0.value.subagents.cost) > ($1.value.main.cost + $1.value.subagents.cost) }
+            if !projects.isEmpty {
+                Text("Projects").font(.caption).fontWeight(.medium).foregroundStyle(.secondary)
+                    .padding(.top, 4)
+
+                ForEach(projects, id: \.key) { project, stats in
+                    let totalCost = stats.main.cost + stats.subagents.cost
+                    HStack(spacing: 0) {
+                        Image(systemName: "folder").font(.caption2).foregroundStyle(.secondary)
+                        Text(" \(project)").font(.caption).lineLimit(1).truncationMode(.middle)
+                        Spacer(minLength: 2)
+                        addedCell(stats.main.linesAdded + stats.subagents.linesAdded)
+                        removedCell(stats.main.linesRemoved + stats.subagents.linesRemoved)
+                        costCell(totalCost)
+                    }
+                    .padding(.leading, 8)
+
+                    if stats.subagents.cost > 0 {
+                        HStack(spacing: 0) {
+                            Image(systemName: "arrow.turn.down.right").font(.caption2).foregroundStyle(.secondary)
+                            Text(" Subs").font(.caption2).foregroundStyle(.secondary)
+                            Spacer(minLength: 2)
+                            addedCell(stats.subagents.linesAdded)
+                            removedCell(stats.subagents.linesRemoved)
+                            costCell(stats.subagents.cost, font: .caption2)
+                        }
+                        .padding(.leading, 20)
+                    }
                 }
             }
         }

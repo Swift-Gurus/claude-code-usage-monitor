@@ -12,19 +12,32 @@ public struct SourceModelStats: Codable {
     }
 }
 
+public struct ProjectStats {
+    public var main = SourceModelStats()
+    public var subagents = SourceModelStats()
+
+    public init(main: SourceModelStats = SourceModelStats(), subagents: SourceModelStats = SourceModelStats()) {
+        self.main = main
+        self.subagents = subagents
+    }
+}
+
 public struct SourceStats {
     public var total = SourceModelStats()
     public var byModel: [String: SourceModelStats] = [:]
     public var subagentsByModel: [String: SourceModelStats] = [:]
+    public var byProject: [String: ProjectStats] = [:]
 
     public init(
         total: SourceModelStats = SourceModelStats(),
         byModel: [String: SourceModelStats] = [:],
-        subagentsByModel: [String: SourceModelStats] = [:]
+        subagentsByModel: [String: SourceModelStats] = [:],
+        byProject: [String: ProjectStats] = [:]
     ) {
         self.total = total
         self.byModel = byModel
         self.subagentsByModel = subagentsByModel
+        self.byProject = byProject
     }
 }
 
@@ -84,6 +97,7 @@ public final class UsageData {
         let linesRemoved: Int
         let model: String
         let source: AgentSource
+        let project: String      // short project name from {pid}.project file, empty if unknown
     }
 
     public func reload() {
@@ -168,7 +182,8 @@ public final class UsageData {
             linesAdded: max(0, latest.linesAdded - previous.linesAdded),
             linesRemoved: max(0, latest.linesRemoved - previous.linesRemoved),
             model: latest.model,
-            source: latest.source
+            source: latest.source,
+            project: latest.project
         )
     }
 
@@ -203,12 +218,26 @@ public final class UsageData {
 
         // Merge subagent breakdown
         let subagentKey = "\(entry.pid)\t\(entry.source.rawValue)"
+        var subagentTotal = SourceModelStats()
         if let subs = subagentStats[subagentKey] {
             for (model, stats) in subs {
                 p[keyPath: kp].subagentsByModel[model, default: SourceModelStats()].cost += stats.cost
                 p[keyPath: kp].subagentsByModel[model, default: SourceModelStats()].linesAdded += stats.linesAdded
                 p[keyPath: kp].subagentsByModel[model, default: SourceModelStats()].linesRemoved += stats.linesRemoved
+                subagentTotal.cost += stats.cost
+                subagentTotal.linesAdded += stats.linesAdded
+                subagentTotal.linesRemoved += stats.linesRemoved
             }
+        }
+
+        // Aggregate by project
+        if !entry.project.isEmpty {
+            p[keyPath: kp].byProject[entry.project, default: ProjectStats()].main.cost += entry.cost
+            p[keyPath: kp].byProject[entry.project, default: ProjectStats()].main.linesAdded += entry.linesAdded
+            p[keyPath: kp].byProject[entry.project, default: ProjectStats()].main.linesRemoved += entry.linesRemoved
+            p[keyPath: kp].byProject[entry.project, default: ProjectStats()].subagents.cost += subagentTotal.cost
+            p[keyPath: kp].byProject[entry.project, default: ProjectStats()].subagents.linesAdded += subagentTotal.linesAdded
+            p[keyPath: kp].byProject[entry.project, default: ProjectStats()].subagents.linesRemoved += subagentTotal.linesRemoved
         }
     }
 
@@ -293,6 +322,15 @@ public final class UsageData {
                 at: dateDir, includingPropertiesForKeys: nil
             ) else { continue }
 
+            // Build PID → project name map from .project files in this date folder
+            var pidToProject: [String: String] = [:]
+            for file in files where file.pathExtension == "project" {
+                guard let raw = try? String(contentsOf: file, encoding: .utf8) else { continue }
+                let pid = file.deletingPathExtension().lastPathComponent
+                let path = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                pidToProject[pid] = (path as NSString).lastPathComponent
+            }
+
             for file in files where file.pathExtension == "dat" {
                 guard let content = try? String(contentsOf: file, encoding: .utf8) else { continue }
                 let parts = content.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -307,7 +345,8 @@ public final class UsageData {
                 entries.append(DatEntry(
                     pid: pid, day: dirDay, cost: cost, absoluteCost: cost,
                     linesAdded: la, linesRemoved: lr,
-                    model: model, source: source
+                    model: model, source: source,
+                    project: pidToProject[pid] ?? ""
                 ))
 
                 // Read .models file for per-model breakdown

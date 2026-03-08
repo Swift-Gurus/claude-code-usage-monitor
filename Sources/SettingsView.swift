@@ -141,6 +141,22 @@ public struct SettingsView: View {
             if settings.displayMode == .popover {
                 Divider()
 
+                // Max visible agents
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Visible Agents Before Scroll")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    Picker("", selection: $settings.maxVisibleAgents) {
+                        ForEach([2, 3, 5, 8, 10], id: \.self) { n in
+                            Text("\(n)").tag(n)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                }
+
+                Divider()
+
                 // Max visible subagents
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Visible Subagents Before Scroll")
@@ -185,6 +201,5 @@ public struct SettingsView: View {
                     .font(.caption)
             }
         }
-        .padding(16)
     }
 }

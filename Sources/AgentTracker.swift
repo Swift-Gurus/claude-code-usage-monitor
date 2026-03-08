@@ -201,6 +201,13 @@ public final class AgentTracker {
                 isIdle: true, // recalculated below
                 source: raw.source
             ))
+
+            // Persist project association so UsageData can aggregate by project historically
+            let todayDir = raw.source == .cli
+                ? usageDir.appendingPathComponent(todayStr)
+                : CommanderSupport.baseDir.appendingPathComponent(todayStr)
+            let projectFile = todayDir.appendingPathComponent("\(json.pid).project")
+            try? resolvedDir.write(to: projectFile, atomically: true, encoding: .utf8)
         }
 
         // Check JSONL activity: if parent or any subagent JSONL modified within 60s, agent is active
