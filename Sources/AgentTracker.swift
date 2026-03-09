@@ -155,9 +155,10 @@ public final class AgentTracker {
                       let json = try? decoder.decode(AgentFileData.self, from: data)
                 else { continue }
 
-                // Quick liveness check (no subprocess)
+                // Quick liveness check (no subprocess) — skip dead processes
+                // but do NOT delete agent.json: UsageData needs the session_id
+                // for cross-PID deduplication of cumulative costs.
                 guard kill(Int32(json.pid), 0) == 0 else {
-                    try? fm.removeItem(at: file)
                     continue
                 }
 
@@ -171,10 +172,9 @@ public final class AgentTracker {
         for candidate in candidates {
             if claudePIDs.contains(candidate.json.pid) {
                 rawAgents.append(candidate)
-            } else {
-                // PID reused by non-claude process — clean up
-                try? fm.removeItem(at: candidate.file)
             }
+            // Don't delete agent.json for non-claude PIDs either —
+            // session_id is needed for cost deduplication in UsageData.
         }
 
         for raw in rawAgents {

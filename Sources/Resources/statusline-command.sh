@@ -126,42 +126,52 @@ TOTALS=$(find "$USAGE_DIR" -name "*.dat" -type f 2>/dev/null | sort | \
       sid = pid2sid[k]
       if (sid in ses_best) {
         b = ses_best[sid]
-        if (latest_cost[k] >= latest_cost[b]) { w = k; lo = b }
-        else { w = b; lo = k }
+        if (latest_cost[k] >= latest_cost[b]) { wn = k; lo = b }
+        else { wn = b; lo = k }
         # Carry earliest previous to winner from loser
-        if (lo in prev_date && (!(w in prev_date) || prev_date[lo] < prev_date[w])) {
-          prev_cost[w] = prev_cost[lo]; prev_la[w] = prev_la[lo]
-          prev_lr[w] = prev_lr[lo]; prev_date[w] = prev_date[lo]
+        if (lo in prev_date && (!(wn in prev_date) || prev_date[lo] < prev_date[wn])) {
+          prev_cost[wn] = prev_cost[lo]; prev_la[wn] = prev_la[lo]
+          prev_lr[wn] = prev_lr[lo]; prev_date[wn] = prev_date[lo]
         }
         # Loser latest may be an even earlier previous
-        if (latest_date[lo] < latest_date[w] && \
-            (!(w in prev_date) || latest_date[lo] < prev_date[w])) {
-          prev_cost[w] = latest_cost[lo]; prev_la[w] = latest_la[lo]
-          prev_lr[w] = latest_lr[lo]; prev_date[w] = latest_date[lo]
+        if (latest_date[lo] < latest_date[wn] && \
+            (!(wn in prev_date) || latest_date[lo] < prev_date[wn])) {
+          prev_cost[wn] = latest_cost[lo]; prev_la[wn] = latest_la[lo]
+          prev_lr[wn] = latest_lr[lo]; prev_date[wn] = latest_date[lo]
         }
         skip[lo] = 1
-        ses_best[sid] = w
+        ses_best[sid] = wn
       } else {
         ses_best[sid] = k
       }
     }
 
     # Compute period totals (skipping merged duplicates)
+    # .dat files store cumulative session cost, so we must use incremental
+    # (latest - prev) when a session spans a period boundary.
     for (key in latest_cost) {
       if (key in skip) continue
       date = latest_date[key]
       cost = latest_cost[key]; la = latest_la[key]; lr = latest_lr[key]
-      # Month: latest cumulative value
-      if (date >= month) { m += cost; m_la += la; m_lr += lr }
-      # Week: latest if in week, else skip
+      # Month: incremental if session spans from before monthStart
+      if (date >= month) {
+        if (key in prev_cost && prev_date[key] < month) {
+          m += cost - prev_cost[key]; m_la += la - prev_la[key]; m_lr += lr - prev_lr[key]
+        } else {
+          m += cost; m_la += la; m_lr += lr
+        }
+      }
+      # Week: incremental if session spans from before weekStart
       if (date >= week) {
-        if (key in prev_cost && prev_date[key] >= week) {
+        if (key in prev_cost && prev_date[key] < week) {
+          w += cost - prev_cost[key]; w_la += la - prev_la[key]; w_lr += lr - prev_lr[key]
+        } else if (key in prev_cost && prev_date[key] >= week) {
           w += cost - prev_cost[key]; w_la += la - prev_la[key]; w_lr += lr - prev_lr[key]
         } else {
           w += cost; w_la += la; w_lr += lr
         }
       }
-      # Today: incremental (subtract previous day if session spans midnight)
+      # Today: incremental if session spans from before today
       if (date == today) {
         if (key in prev_cost && prev_date[key] < today) {
           d += cost - prev_cost[key]; d_la += la - prev_la[key]; d_lr += lr - prev_lr[key]
