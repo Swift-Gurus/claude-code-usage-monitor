@@ -23,14 +23,53 @@ The following always run on the main thread:
 
 ## Background Thread Operations
 
-The following run on a background thread, explicitly dispatched in `togglePopover()`:
+The following run on a background thread:
 
 - `CommanderSupport.refreshFiles()` — the entire flow: `cleanupDeadPIDs`, `cleanupOldData`, `writeAgentData`
   - `SessionScanner.findActiveSessions()` — spawns `/bin/ps` and `/usr/sbin/lsof` via `Process`
   - `JSONLParser.parseSession()` — reads JSONL file from disk via `Data(contentsOf:)`
   - Writing `.dat` and `.agent.json` files to `~/.claude/usage/commander/YYYY-MM-DD/`
 
-The background work is dispatched via:
+### Monitor Callback: scheduleRefresh() with Deduplication
+
+The `UsageMonitor` callback (triggered by FSEvents and the 5-second Timer) calls `scheduleRefresh()`, which dispatches the heavy work to a dedicated background queue with an in-flight deduplication guard:
+
+```swift
+private let refreshQueue = DispatchQueue(label: "com.swiftgurus.refresh", qos: .userInitiated)
+private var refreshInFlight = false
+
+private func setupMonitor() {
+    monitor = UsageMonitor { [weak self] in
+        self?.scheduleRefresh()
+    }
+}
+
+private func scheduleRefresh() {
+    guard !refreshInFlight else { return }
+    refreshInFlight = true
+    refreshQueue.async { [weak self] in
+        guard let self else { return }
+        CommanderSupport.refreshFiles()
+        DispatchQueue.main.async {
+            self.usageData.reload()
+            self.agentTracker.reload()
+            self.updateStatusItemTitle()
+            self.refreshInFlight = false
+        }
+    }
+}
+```
+
+Key design points:
+1. `refreshQueue` is a dedicated serial queue (`com.swiftgurus.refresh`, `.userInitiated` QoS) — not `DispatchQueue.global`. This prevents concurrent refresh work.
+2. `refreshInFlight` is a Boolean guard that prevents queueing a second refresh while one is already in progress. It is set to `true` before dispatching and reset to `false` on the main thread after the reload completes.
+3. `CommanderSupport.refreshFiles()` (the slow I/O and process spawning) runs on the background queue, not the main thread.
+4. All `@Observable` mutations still happen on the main thread, inside the nested `DispatchQueue.main.async`.
+5. The guard prevents the double-reload problem when FSEvents and the Timer fire close together — the second `scheduleRefresh()` call is a no-op if the first is still in flight.
+
+### togglePopover / toggleWindow: Explicit Background Dispatch
+
+The `togglePopover()` and `toggleWindow()` methods use `DispatchQueue.global(qos: .userInitiated).async` for the same background refresh pattern:
 
 ```swift
 DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -51,7 +90,7 @@ This pattern ensures:
 
 ---
 
-## DispatchQueue.global(qos: .userInitiated).async in toggleUI
+## toggleUI: Popover and Window Modes
 
 When the user clicks the status bar icon, `toggleUI()` dispatches to either `togglePopover()` or `toggleWindow()` based on `settings.displayMode`:
 
@@ -177,21 +216,11 @@ All file write operations follow a consistent pattern to minimize race condition
 
 `CommanderSupport.refreshFiles()` always runs before `UsageData.reload()` and `AgentTracker.reload()`. This ordering is enforced in two places:
 
-**In `setupMonitor()` (the `UsageMonitor` callback, triggered synchronously on main):**
-```swift
-monitor = UsageMonitor { [weak self] in
-    guard let self else { return }
-    CommanderSupport.refreshFiles()
-    self.usageData.reload()
-    self.agentTracker.reload()
-    self.updateStatusItemTitle()
-}
-```
+**In `scheduleRefresh()` (the `UsageMonitor` callback path):**
+`refreshFiles()` runs on the `refreshQueue` background thread; the `DispatchQueue.main.async` block that calls `reload()` is not dispatched until `refreshFiles()` returns. The `refreshInFlight` guard ensures only one such cycle runs at a time.
 
-Note: In the monitor callback, `CommanderSupport.refreshFiles()` runs synchronously on the main thread (no background dispatch). The background dispatch is used only in `togglePopover()` where the responsiveness of the UI is critical. The monitor callback runs at 5-second intervals where a brief main-thread block is acceptable.
-
-**In `togglePopover()` (user-initiated, background dispatch):**
-`refreshFiles()` runs on the background thread; the `DispatchQueue.main.async` block that calls `reload()` is not dispatched until `refreshFiles()` returns.
+**In `togglePopover()` / `toggleWindow()` (user-initiated, background dispatch):**
+`refreshFiles()` runs on `DispatchQueue.global(qos: .userInitiated)`; the `DispatchQueue.main.async` block that calls `reload()` is not dispatched until `refreshFiles()` returns.
 
 This ordering guarantees `.dat` and `.agent.json` files exist in the commander directory before `UsageData` and `AgentTracker` attempt to read them.
 
@@ -264,9 +293,9 @@ The `.value` `await` suspends the calling task (attached to the view's `.task` m
 
 **Main thread work:**
 - The `kill(pid, 0)` liveness checks are synchronous main-thread syscalls (fast, no I/O)
-- The `ps -p {pid} -o %cpu=` process spawn for CPU usage is a synchronous main-thread `Process.run()` + `waitUntilExit()` call
+- A single `verifyClaudePIDs()` call runs `/bin/ps` once with all candidate PIDs to verify they are claude processes (handles PID reuse)
 - JSONL mtime checks for idle detection (checking parent and subagent JSONL modification dates)
-- With 1–3 agents, this is typically 3–6 `ps` invocations per `reload()`, each completing in under 10ms
+- CPU usage is always set to `0` — no per-PID `ps` CPU sampling calls are made
 
 **Background queue work** (`subagentQueue`, serial, `.utility` QoS):
 - `writeSubagentFiles()` is dispatched to `subagentQueue.async` — it calls `JSONLParser.parseSubagents()`, `JSONLParser.parseSubagentMeta()`, and `JSONLParser.parseSubagentDetails()` which read JSONL files
@@ -282,9 +311,11 @@ A summary of all callbacks that trigger `onChange()` and their threading:
 
 | Source | Dispatch queue | `onChange()` called on | Notes |
 |--------|---------------|----------------------|-------|
-| FSEventStream | `.main` (via `FSEventStreamSetDispatchQueue(stream, .main)`) | Main (deferred) | `DispatchQueue.main.async` adds one run loop hop |
+| FSEventStream | `.main` (via `FSEventStreamSetDispatchQueue(stream, .main)`) | Main (deferred) | 2.0s coalescing latency; `DispatchQueue.main.async` adds one run loop hop |
 | Timer (`pollTimer`) | Main run loop | Main (deferred) | `DispatchQueue.main.async` adds one run loop hop |
 
 Both already fire on the main thread (FSEvents via `FSEventStreamSetDispatchQueue(.main)`, Timer via `RunLoop.main`). The additional `DispatchQueue.main.async` inside each callback adds one run loop hop — deferring `onChange()` to after the current run loop iteration completes. This is the critical mechanism that prevents re-entrant `NSHostingView` layout.
 
-Without the deferral, `onChange()` → `reload()` → `@Observable` mutation → SwiftUI layout notification would all happen synchronously within the same run loop iteration that may already be executing a layout pass.
+FSEvents is configured with a 2.0-second coalescing latency, meaning the kernel batches rapid filesystem events and delivers them at most every 2 seconds. This reduces reload frequency during bursts of rapid file writes (e.g., when a Claude session is actively streaming output tokens).
+
+Without the deferral, `onChange()` → `scheduleRefresh()` → `@Observable` mutation → SwiftUI layout notification would all happen synchronously within the same run loop iteration that may already be executing a layout pass. The `scheduleRefresh()` method additionally deduplicates overlapping refreshes via the `refreshInFlight` guard.

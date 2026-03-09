@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let usageData = UsageData()
     private let agentTracker = AgentTracker()
     private let settings = AppSettings()
+    private let sessionManager = SessionManager()
     private var monitor: UsageMonitor?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -44,13 +45,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         popover?.behavior = .transient
         popover?.delegate = self
         popover?.contentViewController = NSHostingController(
-            rootView: PopoverView(data: usageData, agentTracker: agentTracker, settings: settings)
+            rootView: PopoverView(data: usageData, agentTracker: agentTracker, settings: settings, sessionManager: sessionManager)
         )
     }
 
     private func setupWindow() {
         let hostingView = NSHostingController(
-            rootView: PopoverView(data: usageData, agentTracker: agentTracker, settings: settings)
+            rootView: PopoverView(data: usageData, agentTracker: agentTracker, settings: settings, sessionManager: sessionManager)
         )
         // Prevent SwiftUI from trying to auto-resize the window (causes re-entrant layout crash)
         hostingView.sizingOptions = []

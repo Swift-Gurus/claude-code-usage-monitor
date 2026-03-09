@@ -176,6 +176,37 @@ Subagent files with no valid assistant messages are skipped entirely. They do no
 
 ---
 
+## verifyClaudePIDs Failure
+
+Location: `AgentTracker.verifyClaudePIDs(_:)`
+
+```swift
+private static func verifyClaudePIDs(_ pids: [Int]) -> Set<Int> {
+    guard !pids.isEmpty else { return [] }
+    let pidArg = pids.map(String.init).joined(separator: ",")
+    let pipe = Pipe()
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/bin/ps")
+    process.arguments = ["-p", pidArg, "-o", "pid=,comm="]
+    process.standardOutput = pipe
+    process.standardError = FileHandle.nullDevice
+    do {
+        try process.run()
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        // ... parse output, return PIDs whose comm contains "claude"
+        return result
+    } catch {
+        // If ps fails, assume all PIDs are valid (fail open)
+        return Set(pids)
+    }
+}
+```
+
+This function runs a single `/bin/ps` call to verify that candidate PIDs are actually `claude` processes (guards against PID reuse by non-claude processes). If the `ps` invocation fails for any reason (`Process.run()` throws, `/bin/ps` not found, etc.), the function **fails open** — it returns the full set of input PIDs, treating all candidates as valid. This means that in the rare event of a `ps` failure, a PID that has been reused by a non-claude process would not be cleaned up, but the app would not crash or lose track of legitimate agents.
+
+---
+
 ## PID Liveness (kill(pid, 0))
 
 Location: `AgentTracker.reload()`, `CommanderSupport.cleanupDeadPIDs`
@@ -313,6 +344,7 @@ let dlr = max(0, nextLR - current.lr)
 | JSONL no output tokens | `JSONLParser.parseSession` | `guard totalOutput > 0 else { return nil }` | Commander session not shown |
 | `ps` launch failure (Commander) | `SessionScanner` | `guard let ... else { return [:] }` | No Commander agents shown |
 | `ps` CPU query failure | `AgentTracker.cpuUsage` | `catch { return 0 }` | Agent may show as idle |
+| `ps` PID verification failure | `AgentTracker.verifyClaudePIDs` | `catch { return Set(pids) }` | Non-claude PIDs not cleaned up |
 | `lsof` failure | `SessionScanner` | skip affected PIDs | Those Commander sessions not shown |
 | `kill(pid, 0)` failure | `AgentTracker.reload`, `cleanupDeadPIDs` | remove `.agent.json`, skip | Agent removed from list |
 | Subagents dir missing | `AgentTracker.writeSubagentFiles` | `guard ... else { continue }` | "No subagents recorded" |

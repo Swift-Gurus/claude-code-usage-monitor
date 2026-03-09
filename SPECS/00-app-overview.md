@@ -32,6 +32,9 @@ The app addresses two scenarios:
 │           │                                   │                      │
 │           └── SettingsView                    └── LogViewerView     │
 │               (picker-based settings)             (chat bubbles)    │
+│                                                       │             │
+│                                               LogParser + LogMessage│
+│                                               (JSONL → display msgs)│
 └─────────────────────────────────────────────────────────────────────┘
          ▲                    ▲
          │ .reload()          │ .reload()
@@ -42,7 +45,7 @@ The app addresses two scenarios:
 │                │  │                    │
 │  Reads .dat    │  │  Reads .agent.json │
 │  .models       │  │  Checks PID liveness│
-│  .subagents    │  │  Gets CPU usage    │
+│  .subagents    │  │  Writes .project   │
 │  .json files   │  │  Writes subagent   │
 │                │  │  detail files      │
 └────────┬───────┘  └─────────┬──────────┘
@@ -57,7 +60,8 @@ The app addresses two scenarios:
 │  │   ├── {PPID}.models                                               │
 │  │   ├── {PPID}.agent.json                                           │
 │  │   ├── {pid}.subagents.json   ← AgentTracker writes               │
-│  │   └── {pid}.subagent-details.json                                 │
+│  │   ├── {pid}.subagent-details.json                                 │
+│  │   └── {pid}.project         ← plain text, resolved workingDir    │
 │  ├── commander/                                                      │
 │  │   └── YYYY-MM-DD/            ← CommanderSupport writes           │
 │  │       ├── {pid}.dat                                               │
@@ -141,6 +145,12 @@ Commander:
       → ~/.claude/usage/commander/YYYY-MM-DD/{pid}.agent.json
 
 Aggregation (triggered by FSEvent on ~/.claude/usage/ or 5s poll):
+  UsageMonitor.onChange → AppDelegate.scheduleRefresh()
+    → coalesces via refreshInFlight flag
+    → dispatches to background refreshQueue
+    → CommanderSupport.refreshFiles()
+    → main thread: usageData.reload(), agentTracker.reload(), updateStatusItemTitle()
+
   UsageData.reload()
     → reads all .dat, .models, .subagents.json from both trees
     → deduplicates multi-day PIDs (keep latest, compute incremental)
@@ -148,9 +158,10 @@ Aggregation (triggered by FSEvent on ~/.claude/usage/ or 5s poll):
 
   AgentTracker.reload()
     → reads all .agent.json from today's folders
-    → checks PID liveness (kill -0)
-    → fetches CPU usage (ps)
-    → computes idle state
+    → checks PID liveness (kill -0, then ps to verify "claude" in command)
+    → checks JSONL mtime activity (parent + subagent files within 60s)
+    → computes idle state (recently updated OR JSONL active)
+    → writes {pid}.project files (plain text, resolved workingDir)
     → scans subagents/ dirs, writes .subagents.json and .subagent-details.json
 
 Display:
@@ -216,7 +227,8 @@ Tapping the gear icon navigates to `SettingsView`. Changes to status bar period,
 │   │   ├── {PPID}.agent.json        ← Full AgentFileData JSON
 │   │   ├── {PPID}.subagents.json    ← [String: SourceModelStats] JSON (written by AgentTracker)
 │   │   ├── {PPID}.subagent-details.json  ← [SubagentInfo] JSON (written by AgentTracker)
-│   │   └── {PPID}.parent-tools.json ← [String: Int] tool counts (written by AgentTracker)
+│   │   ├── {PPID}.parent-tools.json ← [String: Int] tool counts (written by AgentTracker)
+│   │   └── {PPID}.project          ← Plain text, resolved workingDir (written by AgentTracker)
 │   └── commander/
 │       ├── .last_cleanup            ← Same pattern, separate from CLI cleanup
 │       └── YYYY-MM-DD/              ← Commander source (same file structure as CLI)
@@ -224,7 +236,8 @@ Tapping the gear icon navigates to `SettingsView`. Changes to status bar period,
 │           ├── {pid}.agent.json
 │           ├── {pid}.subagents.json
 │           ├── {pid}.subagent-details.json
-│           └── {pid}.parent-tools.json
+│           ├── {pid}.parent-tools.json
+│           └── {pid}.project       ← Plain text, resolved workingDir (written by AgentTracker)
 └── projects/
     └── {encoded_path}/              ← e.g. "-Users-alice-myproject"
         └── {sessionID}.jsonl        ← Claude Code's own conversation log
@@ -243,7 +256,7 @@ Tapping the gear icon navigates to `SettingsView`. Changes to status bar period,
 | `AppDelegate` | `UsageData.reload()` | After refreshFiles | Re-reads all .dat/.models/.subagents |
 | `AppDelegate` | `AgentTracker.reload()` | After UsageData.reload | Re-reads .agent.json, writes subagent files |
 | `AppDelegate` | `updateStatusItemTitle()` | After reload, and on settings change | Updates status bar text |
-| `UsageMonitor` | `AppDelegate.onChange` | FSEvent on ~/.claude/usage/ or 5s poll | Triggers full refresh cycle |
+| `UsageMonitor` | `AppDelegate.scheduleRefresh()` | FSEvent on ~/.claude/usage/ or 5s poll | Coalesces via `refreshInFlight` flag, dispatches to background `refreshQueue`, then main-thread reload |
 | `CommanderSupport` | `SessionScanner.findActiveSessions()` | refreshFiles | Discovers Commander-spawned claude PIDs |
 | `CommanderSupport` | `JSONLParser.parseSession()` | Per active session | Computes cost from JSONL |
 | `AgentTracker` | `JSONLParser.parseSubagents()` | Per live session with sessionID | Scans subagents dir, computes per-model stats |

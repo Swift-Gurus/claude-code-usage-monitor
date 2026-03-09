@@ -2,7 +2,7 @@
 
 ## Overview
 
-`JSONLParser.swift` parses Claude Code's JSONL conversation files to extract token usage, model information, cost, line counts, and subagent data. It is used exclusively by the Commander integration; CLI sessions get cost data directly from Claude Code's statusline JSON.
+`JSONLParser.swift` parses Claude Code's JSONL conversation files to extract token usage, model information, cost, line counts, and subagent data. The `parseSession` entry point is used by the Commander integration (CLI sessions get cost data directly from Claude Code's statusline JSON). However, `parseParentTools` and `parseSubagentMeta` are used for **all** sessions regardless of source (both CLI and Commander), since both session types store JSONL files in the same `~/.claude/projects/` directory structure with the same format.
 
 The parser is implemented as a pure `enum` (no instance state) with five public entry points: `parseSession`, `parseSubagents`, `parseSubagentDetails`, `parseParentTools`, and `parseSubagentMeta`.
 

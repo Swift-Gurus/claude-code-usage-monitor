@@ -12,6 +12,7 @@ public struct PopoverView: View {
     public var data: UsageData
     public var agentTracker: AgentTracker
     public var settings: AppSettings
+    public var sessionManager: SessionManager
     @Environment(\.colorScheme) private var colorScheme
     @State private var installed = StatuslineInstaller.isInstalled
     @State private var installError = false
@@ -26,10 +27,11 @@ public struct PopoverView: View {
     private var addedColor: Color { colorScheme == .dark ? .green : Color(red: 0.1, green: 0.55, blue: 0.1) }
     private var removedColor: Color { colorScheme == .dark ? Color(red: 1.0, green: 0.4, blue: 0.4) : .red }
 
-    public init(data: UsageData, agentTracker: AgentTracker, settings: AppSettings) {
+    public init(data: UsageData, agentTracker: AgentTracker, settings: AppSettings, sessionManager: SessionManager) {
         self.data = data
         self.agentTracker = agentTracker
         self.settings = settings
+        self.sessionManager = sessionManager
     }
 
     private func statsFor(_ label: String) -> PeriodStats {
@@ -60,7 +62,9 @@ public struct PopoverView: View {
                     .padding(16)
             }
         } else if let agent = selectedAgent {
-            SubagentDetailView(agent: agent, agentTracker: agentTracker, settings: settings) { selectedAgent = nil }
+            // Use live data from AgentTracker if available, fall back to initial synthetic AgentInfo
+            let liveAgent = agentTracker.activeAgents.first(where: { $0.pid == agent.pid }) ?? agent
+            SubagentDetailView(agent: liveAgent, agentTracker: agentTracker, settings: settings, sessionManager: sessionManager) { selectedAgent = nil }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let label = selectedPeriod {
             if settings.displayMode == .window {
@@ -151,6 +155,22 @@ public struct PopoverView: View {
 
             Divider()
 
+            Button {
+                openProject()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "plus.circle.fill")
+                        .foregroundStyle(.blue)
+                    Text("Open Project")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+
+            Divider()
+
             HStack(spacing: 6) {
                 Image(systemName: installed
                       ? "checkmark.circle.fill" : "xmark.circle.fill")
@@ -179,6 +199,29 @@ public struct PopoverView: View {
             .foregroundStyle(.secondary)
             .font(.caption)
         }
+    }
+
+    private func openProject() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.message = "Select a project directory to open with Claude"
+        panel.prompt = "Open"
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard let bridge = sessionManager.spawn(workingDir: url.path) else { return }
+
+        // Navigate immediately — construct minimal AgentInfo from what we know
+        selectedAgent = AgentInfo(
+            pid: bridge.childPID, model: "Starting...", agentName: "",
+            contextPercent: 0, contextWindow: 0, cost: 0,
+            linesAdded: 0, linesRemoved: 0,
+            workingDir: url.path, sessionID: "",
+            durationMs: 0, apiDurationMs: 0,
+            updatedAt: Date().timeIntervalSince1970, cpuUsage: 0,
+            isIdle: false, source: .cli
+        )
     }
 
     private let agentRowSpacing: CGFloat = 6

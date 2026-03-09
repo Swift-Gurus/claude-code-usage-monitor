@@ -10,10 +10,10 @@ The view is always 320pt wide with 16pt padding on all sides, matching all other
 
 ## Navigation
 
-- **Back button**: Top-left, `chevron.left` + `"Back"` text, `.plain` style, `.blue` foreground, `.caption` font
+- **Back button**: Top-left, `chevron.left` + `"Back"` text, `.plain` style, `.blue` foreground. Font adapts via `navFont`: `.caption` in popover mode, `.body` in window mode.
   - On tap: calls `onDismiss()` which sets `selectedAgent = nil` in `PopoverView`
-- **Title**: Top-right, `agent.displayName` (agent name if non-empty, else model name); `.headline` font
-- **Log viewer button**: To the right of the title, `doc.text.magnifyingglass` icon, `.caption` font, `.plain` style, `.blue` foreground. Only shown when `!agent.sessionID.isEmpty`. On tap: sets `logTarget = .parent`, navigating to `LogViewerView` for the parent session.
+- **Title**: Top-right, `agent.displayName` (agent name if non-empty, else model name). Font adapts via `titleFont`: `.headline` in popover mode, `.title3` in window mode.
+- **Log viewer button**: To the right of the title, `doc.text.magnifyingglass` icon, font uses `navFont` (`.caption` / `.body`), `.plain` style, `.blue` foreground. Only shown when `!agent.sessionID.isEmpty`. On tap: sets `logTarget = .parent`, navigating to `LogViewerView` for the parent session.
 
 ```
 ← Back                         My Agent Name  [log]
@@ -417,9 +417,28 @@ try? data.write(
 | `maxVisibleSubagents` | Int | 5 | Number of rows visible before scroll (popover mode only); options: 3, 5, 8, 10, 15 |
 | `subagentContextBudget` | SubagentContextBudget | `.m1` | Denominator for context % per subagent row |
 | `subagentSortOrder` | SubagentSortOrder | `.cost` | Sort order for subagent list; options: Recent, Cost, Context, Name |
-| `displayMode` | DisplayMode | `.popover` | Controls viewport height behavior (nil in window mode) |
+| `displayMode` | DisplayMode | `.popover` | Controls viewport height behavior (nil in window mode) and adaptive font sizes |
 | `expandThinking` | Bool | `false` | Initial expand state for thinking blocks in log viewer |
 | `expandTools` | Bool | `false` | Initial expand state for tool call details in log viewer |
+
+---
+
+## Adaptive Font Sizes for Window Mode
+
+The view defines two computed font properties that adapt based on `settings.displayMode`:
+
+```swift
+private var navFont: Font { settings.displayMode == .window ? .body : .caption }
+private var titleFont: Font { settings.displayMode == .window ? .title3 : .headline }
+```
+
+| Element | Popover mode | Window mode |
+|---------|-------------|-------------|
+| Back button (`navFont`) | `.caption` | `.body` |
+| Agent name title (`titleFont`) | `.headline` | `.title3` |
+| Log viewer button (`navFont`) | `.caption` | `.body` |
+
+In window mode, the navigation header (back button + title + log icon) is pinned above the scrollable content via a separate `VStack` with `.padding(.horizontal, 16)`. The `ScrollView` only wraps `detailContent`, keeping the header sticky.
 
 ---
 

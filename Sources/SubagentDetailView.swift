@@ -40,6 +40,7 @@ public struct SubagentDetailView: View {
     let agent: AgentInfo
     let agentTracker: AgentTracker
     let settings: AppSettings
+    var sessionManager: SessionManager?
     let onDismiss: () -> Void
 
     @State private var subagents: [SubagentInfo] = []
@@ -102,9 +103,9 @@ public struct SubagentDetailView: View {
 
     public var body: some View {
         if let target = logTarget, settings.displayMode == .window {
-            LogViewerView(agent: agent, target: target, settings: settings, stickyHeader: true) { logTarget = nil }
+            LogViewerView(agent: agent, target: target, settings: settings, sessionManager: sessionManager, stickyHeader: true, onStop: onDismiss) { logTarget = nil }
         } else if let target = logTarget {
-            LogViewerView(agent: agent, target: target, settings: settings) { logTarget = nil }
+            LogViewerView(agent: agent, target: target, settings: settings, sessionManager: sessionManager, onStop: onDismiss) { logTarget = nil }
         } else if settings.displayMode == .window {
             VStack(alignment: .leading, spacing: 0) {
                 VStack(alignment: .leading, spacing: 0) {

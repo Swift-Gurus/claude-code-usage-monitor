@@ -8,9 +8,9 @@ The stats detail screen is the `detailView(label:stats:)` function inside `Popov
 
 ## Navigation
 
-- **Back button**: Top-left, chevron.left + "Back" text, `.plain` style, `.blue` foreground, `.caption` font
+- **Back button**: Top-left, chevron.left + "Back" text, `.plain` style, `.blue` foreground. Font adapts: `.caption` in popover mode, `.body` in window mode.
   - On tap: sets `selectedPeriod = nil`, returning to main view
-- **Title**: Top-right, e.g. `"Today Breakdown"`, `"Week Breakdown"`, `"Month Breakdown"`; `.headline` font
+- **Title**: Top-right, e.g. `"Today Breakdown"`, `"Week Breakdown"`, `"Month Breakdown"`. Font adapts: `.headline` in popover mode, `.title3` in window mode.
 
 ```
 ← Back                        Today Breakdown
@@ -96,6 +96,33 @@ If `source.subagentsByModel` is non-empty, a subagent subsection appears after t
   - `addedCell` + `removedCell` + `costCell` (`.caption2` font)
   - Sorted by cost, descending
 
+### Projects Subsection
+
+If `source.byProject` is non-empty, a projects subsection appears after the subagents subsection. Projects are sorted by total cost (main + subagent) descending.
+
+```
+Projects
+  [folder] my-project          +5.1K   -2.0K     $10.50
+      ↳ Subs                    +900     -300      $2.50
+  [folder] other-repo          +3.3K   -1.1K      $4.00
+```
+
+- Section label: `Text("Projects")`, `.caption` + `.medium` + `.secondary`, top padding 4pt
+- Per-project rows: indented 8pt
+  - Icon: `folder`, `.caption2` + `.secondary`
+  - Project name: `.caption`, lineLimit 1, `truncationMode(.middle)`
+  - `addedCell` — combined main + subagent lines added
+  - `removedCell` — combined main + subagent lines removed
+  - `costCell` — combined `stats.main.cost + stats.subagents.cost`
+- Subagent sub-row (only shown when `stats.subagents.cost > 0`): indented 20pt
+  - Icon: `arrow.turn.down.right`, `.caption2` + `.secondary`
+  - Label: `" Subs"`, `.caption2` + `.secondary`
+  - `addedCell` — subagent lines added only
+  - `removedCell` — subagent lines removed only
+  - `costCell` — subagent cost only, `.caption2` font
+
+Each project represents the combined cost of all sessions running in that working directory during the period. The project name is the resolved working directory (last path component shown in the folder label). Data comes from `source.byProject`, which aggregates `{pid}.project` files written by `AgentTracker`.
+
 ---
 
 ## Column Layout (Fixed-Width Trailing Cells)
@@ -159,6 +186,10 @@ Total                                      $18.90
   ↳ Subagents           +1.2K     -400     $3.10
       Opus 4.6            +900     -300     $2.50
       Sonnet 4.5          +300     -100     $0.60
+  Projects
+    [folder] my-project   +5.1K   -2.0K   $10.50
+        ↳ Subs              +900     -300    $2.50
+    [folder] other-repo   +3.3K   -1.1K    $4.00
 ────────────────────────────────────────────────
 [app] Commander         +200K    -80K      $4.40
     Opus 4.6            +200K    -80K      $4.40
@@ -172,3 +203,18 @@ Total                                      $18.90
 - **Source has cost but no model breakdown**: Shows `"Model breakdown not available for older sessions"` instead of model rows. This can happen for `.dat` files written before the `.models` file format was introduced.
 - **Subagent cost not in byModel**: Subagent costs come from `{pid}.subagents.json`, not from `.models` transition history. They are displayed in the separate "Subagents" subsection and are not double-counted in the source total (they are included in `source.total.cost`).
 - **Long model names**: Truncated with `truncationMode(.tail)`, lineLimit 1 — the fixed-width cost/lines columns are preserved.
+- **Long project names**: Truncated with `truncationMode(.middle)`, lineLimit 1.
+- **Projects with no subagent cost**: The "Subs" sub-row is omitted entirely when `stats.subagents.cost == 0`.
+
+---
+
+## Adaptive Fonts for Window Mode
+
+The detail view navigation header uses adaptive fonts based on `settings.displayMode`:
+
+| Element | Popover mode | Window mode |
+|---------|-------------|-------------|
+| Back button | `.caption` | `.body` |
+| Screen title (e.g. "Today Breakdown") | `.headline` | `.title3` |
+
+In window mode, the entire `detailView` is wrapped in a `ScrollView` by `PopoverView.content`.

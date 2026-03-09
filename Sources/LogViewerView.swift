@@ -13,15 +13,34 @@ public struct LogViewerView: View {
     let agent: AgentInfo
     let target: LogTarget
     let settings: AppSettings
+    var sessionManager: SessionManager?
     var stickyHeader: Bool = false
+    var onStop: (() -> Void)?
     let onDismiss: () -> Void
 
     @State private var messages: [LogMessage] = []
     @State private var isLoading = true
     @State private var lastMtime: Date?
     @State private var showTaskPanel = true
+    @State private var inputText = ""
 
     private let rowSpacing: CGFloat = 10
+
+    /// The TTY bridge if this session was spawned by the app.
+    private var bridge: TTYBridge? {
+        sessionManager?.bridge(for: agent.pid)
+    }
+
+    /// Whether input is available (parent agent with PTY spawned by us).
+    private var canSendInput: Bool {
+        guard case .parent = target else { return false }
+        return bridge?.isAttached ?? false
+    }
+
+    private var isParentTarget: Bool {
+        if case .parent = target { return true }
+        return false
+    }
 
     private var fileURL: URL {
         LogParser.resolveURL(agent: agent, target: target)
@@ -88,9 +107,14 @@ public struct LogViewerView: View {
 
             Spacer()
 
-            Text(title)
-                .font(titleFont)
-                .lineLimit(1)
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(canSendInput ? .green : .gray)
+                    .frame(width: 6, height: 6)
+                Text(title)
+                    .font(titleFont)
+                    .lineLimit(1)
+            }
 
             Spacer()
 
@@ -102,6 +126,20 @@ public struct LogViewerView: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(showTaskPanel ? .blue : .secondary)
                 .help(showTaskPanel ? "Hide tasks" : "Show tasks")
+            }
+
+            if canSendInput {
+                Button {
+                    bridge?.detach()
+                    sessionManager?.sessions.removeValue(forKey: agent.pid)
+                    onStop?()
+                } label: {
+                    Image(systemName: "stop.circle.fill")
+                        .font(navFont)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.red)
+                .help("Stop session")
             }
 
             Button {
@@ -197,11 +235,25 @@ public struct LogViewerView: View {
                     }
                 }
             }
+
+            // Input field — parent agents spawned by us only
+            if canSendInput {
+                Divider()
+                inputField
+            }
         }
         .padding(16)
         .task {
+            // Set up TTY activity trigger if we own this session
+            if let bridge {
+                bridge.onActivity = {
+                    Task { await loadMessages() }
+                }
+            }
+
             await loadMessages()
             isLoading = false
+            // Fallback polling (also serves non-owned sessions and subagent logs)
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(2))
                 await loadMessages()
@@ -536,6 +588,56 @@ public struct LogViewerView: View {
         case "in_progress": return .orange
         default: return .secondary
         }
+    }
+
+    // MARK: - Input Field
+
+    private var inputField: some View {
+        HStack(alignment: .bottom, spacing: 8) {
+            ZStack(alignment: .topLeading) {
+                // Auto-sizing invisible text to drive height
+                Text(inputText.isEmpty ? " " : inputText)
+                    .font(.system(size: 12))
+                    .padding(8)
+                    .opacity(0)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                TextEditor(text: $inputText)
+                    .font(.system(size: 12))
+                    .scrollContentBackground(.hidden)
+                    .padding(4)
+
+                if inputText.isEmpty {
+                    Text("Type a message...")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.tertiary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 12)
+                        .allowsHitTesting(false)
+                }
+            }
+            .frame(minHeight: 36, maxHeight: 120)
+            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.1)))
+
+            Button {
+                sendInput()
+            } label: {
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.system(size: 24))
+                    .foregroundStyle(canSendInput && !inputText.isEmpty ? .blue : .gray)
+            }
+            .buttonStyle(.plain)
+            .disabled(!canSendInput || inputText.isEmpty)
+            .keyboardShortcut(.return, modifiers: .command)
+        }
+    }
+
+    private func sendInput() {
+        let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        bridge?.send(text)
+        inputText = ""
     }
 
     private func monoText(_ text: String) -> some View {

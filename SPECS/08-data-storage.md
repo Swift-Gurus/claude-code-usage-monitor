@@ -17,7 +17,8 @@
 │   ├── {PPID}.agent.json          ← AgentFileData JSON (written by statusline, read by AgentTracker)
 │   ├── {PPID}.subagents.json      ← [String: SourceModelStats] (written by AgentTracker)
 │   ├── {PPID}.subagent-details.json ← [SubagentInfo] (written by AgentTracker)
-│   └── {PPID}.parent-tools.json   ← [String: Int] tool counts (written by AgentTracker)
+│   ├── {PPID}.parent-tools.json   ← [String: Int] tool counts (written by AgentTracker)
+│   └── {PPID}.project             ← Project root path string (written by AgentTracker)
 └── commander/
     ├── .last_cleanup
     └── YYYY-MM-DD/                ← Commander source (written by CommanderSupport)
@@ -25,10 +26,11 @@
         ├── {pid}.agent.json
         ├── {pid}.subagents.json
         ├── {pid}.subagent-details.json
-        └── {pid}.parent-tools.json
+        ├── {pid}.parent-tools.json
+        └── {pid}.project
 ```
 
-`UsageData` reads only `.dat`, `.models`, and `.subagents.json`. The `.agent.json` and `.subagent-details.json` files are read by `AgentTracker` and `SubagentDetailView` respectively. The `.parent-tools.json` file is read by `SubagentDetailView`.
+`UsageData` reads `.dat`, `.models`, `.subagents.json`, and `.project` files. The `.agent.json` and `.subagent-details.json` files are read by `AgentTracker` and `SubagentDetailView` respectively. The `.parent-tools.json` file is read by `SubagentDetailView`.
 
 ---
 
@@ -46,6 +48,7 @@ struct DatEntry {
     let linesRemoved: Int
     let model: String        // Last model reported in .dat file
     let source: AgentSource  // .cli or .commander
+    let project: String      // Short project name from {pid}.project file, empty if unknown
 }
 ```
 
@@ -61,6 +64,17 @@ struct PeriodStats {
 }
 ```
 
+### ProjectStats (public)
+
+```swift
+struct ProjectStats {
+    var main = SourceModelStats()       // Main session cost/lines for this project
+    var subagents = SourceModelStats()  // Subagent cost/lines for this project
+}
+```
+
+Aggregates cost and lines for a single project, split between the main session and its subagents. Used in the `byProject` map on `SourceStats`.
+
 ### SourceStats (public)
 
 ```swift
@@ -68,6 +82,7 @@ struct SourceStats {
     var total: SourceModelStats                    // Sum across all models
     var byModel: [String: SourceModelStats]        // Cost/lines per model display name
     var subagentsByModel: [String: SourceModelStats] // Cost/lines for subagents, per model
+    var byProject: [String: ProjectStats]          // Cost/lines aggregated by project name
 }
 ```
 
@@ -134,6 +149,28 @@ return (cost: Double(cols[0]) ?? 0, la: Int(cols[1]) ?? 0, lr: Int(cols[2]) ?? 0
 ```
 
 A history with fewer than 2 rows is ignored (falls back to simple model attribution from `.dat`).
+
+---
+
+## .project File Format
+
+A plain text file containing the resolved project root path (a single line, no trailing newline required):
+
+```
+/Users/alice/myproject
+```
+
+Written by `AgentTracker.reload()` during the agent construction loop. The filename stem is the PID (e.g. `12345.project`). The content is the `resolvedDir` — the result of `SessionScanner.resolveProjectRoot(workingDir:sessionID:)`.
+
+### Reading in collectEntries
+
+During `collectEntries`, `.project` files in each date directory are read first to build a `pidToProject: [String: String]` map. The project name is extracted as the last path component of the stored path:
+
+```swift
+pidToProject[pid] = (path as NSString).lastPathComponent
+```
+
+This project name is then stored in `DatEntry.project` for each corresponding `.dat` entry and is used during `accumulate()` to populate `SourceStats.byProject`.
 
 ---
 
@@ -319,7 +356,8 @@ UsageData.reload()
   ├── Define period boundaries (today, weekStart, monthStart)
   ├── collectEntries(under: usageDir, source: .cli, ...)
   │   └── For each date dir ≥ monthStart:
-  │       ├── Read each .dat file → DatEntry
+  │       ├── Read {pid}.project files → pidToProject map
+  │       ├── Read each .dat file → DatEntry (with project from pidToProject)
   │       ├── Read {pid}.models → history
   │       └── Read {pid}.subagents.json → subagent stats
   ├── collectEntries(under: commander/baseDir, source: .commander, ...)
@@ -329,6 +367,13 @@ UsageData.reload()
       ├── Accumulate into month (latest.cost)
       ├── Accumulate into week (incremental if both in week)
       └── Accumulate into day (incremental if latest=today & prev=yesterday)
+          └── accumulate() for each period:
+              ├── Add to source.total
+              ├── Distribute across source.byModel (via model history or single model)
+              ├── Merge subagent stats into source.subagentsByModel
+              └── If entry.project non-empty: aggregate into source.byProject[project]
+                  ├── .main += entry cost/lines
+                  └── .subagents += subagent cost/lines for this PID
 ```
 
 ---

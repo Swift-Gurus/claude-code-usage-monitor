@@ -4,15 +4,15 @@
 
 The settings screen is `SettingsView.swift`. It is shown when the user taps the gear icon (`gearshape`) in the main screen header. It uses a `@Bindable` reference to `AppSettings` — changes are reflected immediately without requiring confirmation.
 
-The view is 320pt wide with 16pt padding on all sides.
+The view is 320pt wide. `SettingsView` itself does not apply padding -- `PopoverView` provides 16pt padding on all sides (via `.padding(16)` on the wrapping context). In window mode, `PopoverView` wraps the settings view in a `ScrollView` before applying padding.
 
 ---
 
 ## Navigation
 
-- **Back button**: Top-left, `chevron.left` + `"Back"` text, `.plain` style, `.blue` foreground, `.caption` font
+- **Back button**: Top-left, `chevron.left` + `"Back"` text, `.plain` style, `.blue` foreground. Font adapts: `.caption` in popover mode, `.body` in window mode.
   - On tap: calls `onDismiss()` which sets `showSettings = false` in `PopoverView`
-- **Title**: Top-right, `"Settings"`; `.headline` font
+- **Title**: Top-right, `"Settings"`. Font adapts: `.headline` in popover mode, `.title3` in window mode.
 
 ```
 ← Back                                   Settings
@@ -44,7 +44,7 @@ The view is 320pt wide with 16pt padding on all sides.
 - `PopoverView.body` wraps its content in a `ScrollView` with visible scroll indicators
 - `SubagentDetailView.viewportHeight` returns `nil` (no fixed viewport, scroll fills available space)
 - `LogViewerView.scrollHeight` returns `nil` (no fixed scroll height)
-- The "Visible Subagents Before Scroll" and "Visible Log Messages Before Scroll" settings are hidden in the settings view
+- The "Visible Agents Before Scroll", "Visible Subagents Before Scroll", and "Visible Log Messages Before Scroll" settings are hidden in the settings view
 
 ---
 
@@ -150,6 +150,30 @@ The view is 320pt wide with 16pt padding on all sides.
 
 ---
 
+## Visible Agents Before Scroll Setting (Popover Mode Only)
+
+**Label**: `"Visible Agents Before Scroll"` -- `.subheadline` + `.medium`
+
+**Visibility**: Only shown when `settings.displayMode == .popover`. Hidden in window mode because the window's scrollable content does not need a fixed viewport height.
+
+**Control**: Segmented `Picker` (`pickerStyle(.segmented)`, labels hidden)
+
+| Segment | Display | Value |
+|---------|---------|-------|
+| 2  | `"2"`  | `2`  |
+| 3  | `"3"`  | `3`  |
+| 5  | `"5"`  | `5`  |
+| 8  | `"8"`  | `8`  |
+| 10 | `"10"` | `10` |
+
+**Behavior**:
+- Selection bound to `$settings.maxVisibleAgents`
+- `AppSettings.maxVisibleAgents.didSet` writes the `Int` value to `UserDefaults.standard` under key `"ClaudeUsageBar.maxVisibleAgents"`
+- Used in `PopoverView` to compute `agentViewportHeight`: the number of agent cards (not headers) visible before the agent list scrolls
+- Default value is `3` if `UserDefaults.standard.integer(forKey:)` returns `0` (key absent)
+
+---
+
 ## Visible Subagents Before Scroll Setting (Popover Mode Only)
 
 **Label**: `"Visible Subagents Before Scroll"` — `.subheadline` + `.medium`
@@ -226,6 +250,7 @@ All settings are backed by `UserDefaults.standard`. The persistence happens in `
 | Agent sort order | `ClaudeUsageBar.agentSortOrder` | `String` (rawValue) | `"recentlyUpdated"` |
 | Subagent sort order | `ClaudeUsageBar.subagentSortOrder` | `String` (rawValue) | `"cost"` |
 | Subagent context budget | `ClaudeUsageBar.subagentContextBudget` | `String` (rawValue) | `"m1"` |
+| Max visible agents | `ClaudeUsageBar.maxVisibleAgents` | `Int` | `3` |
 | Max visible subagents | `ClaudeUsageBar.maxVisibleSubagents` | `Int` | `5` |
 | Max visible log messages | `ClaudeUsageBar.maxVisibleLogMessages` | `Int` | `8` |
 | Expand thinking | `ClaudeUsageBar.expandThinking` | `Bool` | `false` |
@@ -283,6 +308,9 @@ The `isLoading` property on `AppSettings` is not persisted — it is a transient
 │ Used to calculate context % in subagent drill-down│
 │ [    200K    |      1M      ]                     │
 ├──────────────────────────────────────────────────┤ ← below only in popover mode
+│ Visible Agents Before Scroll                      │
+│ [  2  |  3  |  5  |  8  |  10  ]                │
+├──────────────────────────────────────────────────┤
 │ Visible Subagents Before Scroll                   │
 │ [  3  |  5  |  8  |  10  |  15  ]               │
 ├──────────────────────────────────────────────────┤

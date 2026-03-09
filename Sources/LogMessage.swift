@@ -268,23 +268,62 @@ public enum LogParser {
     }
 
     /// Resolve the JSONL file URL for a given agent and log target.
+    /// When sessionID is empty (newly spawned), finds the most recent JSONL in the project directory.
     public static func resolveURL(agent: AgentInfo, target: LogTarget) -> URL {
         let projectsDir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude/projects")
         let encoded = SessionScanner.encodeProjectPath(agent.workingDir)
+        let projectDir = projectsDir.appendingPathComponent(encoded)
 
         switch target {
         case .parent:
-            return projectsDir
-                .appendingPathComponent(encoded)
-                .appendingPathComponent("\(agent.sessionID).jsonl")
+            return projectDir.appendingPathComponent("\(agent.sessionID).jsonl")
         case .subagent(let sub):
-            return projectsDir
-                .appendingPathComponent(encoded)
+            return projectDir
                 .appendingPathComponent(agent.sessionID)
                 .appendingPathComponent("subagents")
                 .appendingPathComponent("\(sub.agentID).jsonl")
         }
+    }
+
+    /// Find which .jsonl file a specific PID has open via lsof.
+    private static func jsonlForPID(_ pid: Int) -> String? {
+        let pipe = Pipe()
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
+        process.arguments = ["-a", "-p", "\(pid)", "-Fn"]
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            let output = String(data: data, encoding: .utf8) ?? ""
+            for line in output.split(separator: "\n") {
+                if line.hasPrefix("n"), line.hasSuffix(".jsonl"), !line.contains("/subagents/") {
+                    return String(line.dropFirst())
+                }
+            }
+        } catch {}
+        return nil
+    }
+
+    /// Find the most recently modified .jsonl file in a directory.
+    private static func mostRecentJSONL(in dir: URL) -> URL? {
+        let fm = FileManager.default
+        guard let files = try? fm.contentsOfDirectory(
+            at: dir, includingPropertiesForKeys: [.contentModificationDateKey]
+        ) else { return nil }
+
+        return files
+            .filter { $0.pathExtension == "jsonl" }
+            .compactMap { url -> (URL, Date)? in
+                let mtime = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
+                    .contentModificationDate ?? .distantPast
+                return (url, mtime)
+            }
+            .max(by: { $0.1 < $1.1 })?
+            .0
     }
 
     // MARK: - Tool Data Parsing

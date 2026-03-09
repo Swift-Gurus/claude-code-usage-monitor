@@ -42,48 +42,37 @@ and `hidesOnDeactivate = false`.
 
 ---
 
-## Gap 2: CPU sampling strategy
+## Gap 2: CPU sampling strategy — RESOLVED/REMOVED
 
 **Question:** Does `cpuUsage(for:)` take a single instantaneous `ps` sample or average
 multiple samples? What does it return when `ps` produces no output or fails?
 
-**Answer:** Resolved from source. It is a single instantaneous sample using `ps`.
+**Answer:** This gap no longer applies. The `cpuUsage(for:)` method has been removed from
+`AgentTracker`. CPU usage is now always set to `0`:
 
 ```swift
-private static func cpuUsage(for pid: Int) -> Double {
-    let pipe = Pipe()
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/bin/ps")
-    process.arguments = ["-p", "\(pid)", "-o", "%cpu="]
-    process.standardOutput = pipe
-    process.standardError = FileHandle.nullDevice
-    do {
-        try process.run()
-        process.waitUntilExit()
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespaces) ?? ""
-        return Double(output) ?? 0
-    } catch {
-        return 0
-    }
-}
+agents.append(AgentInfo(
+    // ...
+    cpuUsage: 0,
+    isIdle: true, // recalculated below
+    // ...
+))
 ```
 
-- One `ps` invocation per PID, per `reload()` call.
-- Arguments: `-p <pid> -o %cpu=` (the `=` suppresses the column header).
-- The output is trimmed of whitespace then parsed with `Double(output)`.
-- If `ps` returns a blank string (process not found, zombie, etc.), `Double("")` returns `nil`,
-  so the method returns `0`.
-- If `process.run()` throws (e.g. `/bin/ps` not found), the `catch` block returns `0`.
-- No averaging, no retries, no smoothing.
+There are no per-PID `ps -p {pid} -o %cpu=` calls. Idle detection is based entirely on
+two criteria:
+1. `updatedAt` timestamp recency (within 60 seconds of current time)
+2. JSONL file mtime activity (parent or subagent JSONL modified within 60 seconds)
 
-**Source:** `Sources/AgentTracker.swift:253-270`
+A single batch `verifyClaudePIDs()` call runs `/bin/ps` once with all candidate PIDs to
+confirm they are claude processes (handles PID reuse), but this is for liveness verification,
+not CPU sampling.
 
-**Action for rebuilder:** A single `ps` call returning a momentary CPU value is correct.
-Do not add smoothing or retry logic unless you observe that agents flicker between idle and
-active — if so, note that the idle threshold is `cpuUsage >= 1.0`, not `> 0`. The idle
-detection now also checks JSONL file mtimes (parent and subagent) within 60 seconds, so
-agents with active subagents are no longer falsely classified as idle.
+**Source:** `Sources/AgentTracker.swift`
+
+**Action for rebuilder:** Do not implement `cpuUsage(for:)`. Set `cpuUsage` to `0` in
+`AgentInfo` construction. Idle detection should use `updatedAt` recency and JSONL mtime
+checks only.
 
 ---
 
@@ -335,8 +324,9 @@ floating-point tolerance of $0.001) rather than strict equality.
 the same run loop iteration, causing a double reload? Is there any deduplication or
 coalescing between them?
 
-**Answer:** Resolved from source. There is no deduplication. Both sources call `onChange()`
-independently and can fire in quick succession.
+**Answer:** Resolved from source. Both sources call `onChange()` independently, but the
+`onChange()` callback now calls `scheduleRefresh()` on the `AppDelegate`, which has a
+`refreshInFlight` Boolean deduplication guard.
 
 ```swift
 // FSEvents callback
@@ -352,26 +342,35 @@ pollTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak sel
 }
 ```
 
-FSEvents is configured with a 500ms coalescing latency (`0.5` in the `FSEventStreamCreate`
-call), meaning the kernel will batch rapid filesystem events and deliver them at most every
-500ms. The Timer fires every 5 seconds. Both dispatch to the main queue via
-`DispatchQueue.main.async`.
+```swift
+// In AppDelegate:
+private func scheduleRefresh() {
+    guard !refreshInFlight else { return }
+    refreshInFlight = true
+    refreshQueue.async { [weak self] in
+        // ... refresh + reload ...
+        DispatchQueue.main.async {
+            self?.refreshInFlight = false
+        }
+    }
+}
+```
 
-The comment in the source explains the async dispatch: "Defer to next run loop iteration to
-avoid re-entrant layout cycles when SwiftUI's NSHostingView is mid-display-cycle." This
-deferral does not prevent two `onChange()` calls from being enqueued in the same Timer
-interval if an FSEvent also fires.
+FSEvents is configured with a 2.0-second coalescing latency (`2.0` in the
+`FSEventStreamCreate` call), meaning the kernel will batch rapid filesystem events and
+deliver them at most every 2 seconds. The Timer fires every 5 seconds. Both dispatch to
+the main queue via `DispatchQueue.main.async`.
 
-In practice a double reload is harmless because `UsageData.reload()` and
-`AgentTracker.reload()` are idempotent reads from disk. The cost is two filesystem scans
-within a short window, not data corruption.
+The `refreshInFlight` guard in `scheduleRefresh()` means that if both FSEvents and the
+Timer fire close together, only the first call dispatches a refresh — the second is
+silently dropped. This prevents double reloads.
 
-**Source:** `Sources/UsageMonitor.swift:33-75`
+**Source:** `Sources/UsageMonitor.swift:33-75`, `Sources/App/ClaudeUsageBarApp.swift:78-100`
 
-**Action for rebuilder:** Do not add deduplication unless profiling shows meaningful CPU
-overhead. If added, a simple `Date`-based guard (skip reload if last reload was within
-200ms) would suffice. Verify that FSEvents latency is 500ms (`0.5`) and Timer interval is
-5 seconds — these values affect perceived UI responsiveness.
+**Action for rebuilder:** The `refreshInFlight` guard provides effective deduplication.
+Verify that FSEvents latency is 2.0 seconds (`2.0`) and Timer interval is 5 seconds —
+these values affect perceived UI responsiveness. The 2.0-second FSEvents latency reduces
+reload frequency during bursts of rapid file writes.
 
 ---
 
@@ -396,9 +395,19 @@ The queue is declared as:
 private let subagentQueue = DispatchQueue(label: "com.swiftgurus.subagentScanner", qos: .utility)
 ```
 
+The main thread work in `reload()` includes:
+- `kill(pid, 0)` liveness checks (fast syscalls, no I/O)
+- A single `verifyClaudePIDs()` call — runs `/bin/ps` once with all candidate PIDs to
+  confirm they are claude processes. No per-PID `ps -p {pid} -o %cpu=` calls are made;
+  CPU usage is always set to `0`.
+- JSONL mtime checks for idle detection (checking parent and subagent JSONL modification dates)
+
 The full call chain is:
 ```
 AgentTracker.reload()           ← main thread
+  ├── kill(pid, 0)              ← per-PID liveness check (syscall)
+  ├── verifyClaudePIDs(pids)    ← single /bin/ps call for all PIDs
+  ├── JSONL mtime checks        ← idle detection
   └── subagentQueue.async       ← dispatched to serial background queue
         └── writeSubagentFiles(...)
               ├── JSONLParser.parseSubagents(in:)        ← background, reads all .jsonl files
@@ -594,12 +603,12 @@ without verifying that line attribution results remain acceptable.
 | Gap | Title | Status | Risk | Action |
 |-----|-------|--------|------|--------|
 | 1 | NSPopover positioning | Resolved | Medium | Use `.minY`, `button.bounds`; call `makeKey()` in delegate |
-| 2 | CPU sampling strategy | Resolved | Low | Single `ps` sample; `Double("") ?? 0` returns 0 |
+| 2 | CPU sampling strategy | REMOVED | N/A | `cpuUsage(for:)` no longer exists; CPU is always 0; idle uses updatedAt + JSONL mtime |
 | 3 | Statusline shell script | Resolved | High | Copy script verbatim; BSD `date -v-3m` syntax is macOS-only |
 | 4 | Line counting method | Resolved | Medium | Use `.components(separatedBy:)`, not `.split`; empty string returns count 1 |
 | 5 | Model history zero-cost guard | Resolved | High | `guard rawTotal > 0` on midnight-spanning path prevents divide-by-zero |
-| 6 | FSEvents + Timer interaction | Resolved | Low | No deduplication; double reload is harmless; FSEvents latency is 500ms |
-| 7 | AgentTracker subagent scanning thread model | Resolved | Medium | `writeSubagentFiles` runs on dedicated serial queue `com.swiftgurus.subagentScanner`; `@Observable` mutations dispatched back to main; cache uses max file mtime not dir mtime |
+| 6 | FSEvents + Timer interaction | Resolved | Low | `refreshInFlight` guard deduplicates; FSEvents latency is 2.0s |
+| 7 | AgentTracker subagent scanning thread model | Resolved | Medium | `writeSubagentFiles` runs on dedicated serial queue; no per-PID `ps` CPU calls; single batch `verifyClaudePIDs`; cache uses max file mtime |
 | 8 | PID reuse collision | Resolved | Low | Key is bare PID; `max(0,...)` clamp prevents negative costs from PID reuse |
 | 9 | Commander path encoding collision | Resolved | Low | Lossy by design; inherited from Claude Code; do not add collision detection |
 | 10 | Dominant model detection | Resolved | Medium | `parseSubagents` uses first-seen; `parseSubagentDetails` uses most-frequent — intentionally different |

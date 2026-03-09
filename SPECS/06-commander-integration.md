@@ -73,9 +73,26 @@ Parse: `p` lines set current PID; `n/` lines set the CWD for that PID.
 
 **Deadlock prevention**: The pipe is read to completion (`readDataToEndOfFile`) *before* `waitUntilExit` to avoid blocking when lsof output exceeds the pipe buffer.
 
-### Step 4: Locate JSONL File
+### Step 4: Locate JSONL File via lsof (Primary) or Filesystem Fallback
 
-For each `(pid, cwd)` pair:
+For each `(pid, cwd)` pair, JSONL discovery uses two strategies:
+
+**Primary: `findOpenJSONLFiles(pids:)` (lsof-based)**
+
+A single `lsof` call retrieves all open files for the batch of PIDs:
+
+```sh
+lsof -a -p {pid1,pid2,...} -Fn
+```
+
+The output is parsed for lines starting with `p` (PID) and `n` (file path). Files ending in `.jsonl` are collected, excluding any path containing `/subagents/` (to avoid matching subagent JSONL files). Returns `[Int: String]` mapping PID to JSONL path.
+
+If a PID has an open JSONL file, the session ID is extracted as the filename stem and the URL is constructed directly from the path.
+
+**Fallback: `mostRecentJSONL(in:)` (filesystem-based)**
+
+If `findOpenJSONLFiles` did not return a JSONL for a given PID (e.g. the file was closed between the two lsof calls):
+
 1. Encode the path: `SessionScanner.encodeProjectPath(cwd)` — replaces `/`, `.`, `_` all with `-`
    - Example: `/Users/alice/.ai_rules` → `-Users-alice--ai-rules`
 2. Look in `~/.claude/projects/{encoded_path}/` for the most recently modified `.jsonl` file (top-level directory only — not recursive)
@@ -156,9 +173,34 @@ Example:
 
 Note: This encoding is not reversible (multiple paths can encode to the same string), but Claude Code uses it as a lookup key, so we replicate the same logic.
 
-### Most Recent JSONL Selection
+### Most Recent JSONL Selection (Fallback Only)
 
-When multiple `.jsonl` files exist in a project directory, `SessionScanner.mostRecentJSONL(in:)` picks the one with the highest `contentModificationDate`. This handles the case where a user has run multiple sessions in the same project directory.
+When multiple `.jsonl` files exist in a project directory and the lsof-based primary discovery did not find an open JSONL for a given PID, `SessionScanner.mostRecentJSONL(in:)` picks the one with the highest `contentModificationDate`. This handles the case where a user has run multiple sessions in the same project directory.
+
+---
+
+## resolveProjectRoot()
+
+```swift
+public static func resolveProjectRoot(workingDir: String, sessionID: String) -> String
+```
+
+Claude Code's statusline may report a subdirectory (e.g. a skill's scripts folder) instead of the actual project root. `resolveProjectRoot` walks up from `workingDir` to find the true project root.
+
+### Algorithm
+
+Starting from `workingDir`, at each level:
+1. Encode the current path via `encodeProjectPath(path)`
+2. Check whether `~/.claude/projects/{encoded}/{sessionID}.jsonl` exists
+3. If the file exists, this is the project root — return it
+4. Otherwise, move to the parent directory (`(path as NSString).deletingLastPathComponent`)
+5. Stop when `path.count <= 1` (reached filesystem root)
+
+If no match is found at any level, the original `workingDir` is returned unchanged.
+
+### Usage
+
+Called by `AgentTracker.reload()` to resolve the working directory for each agent before constructing `AgentInfo`. Only invoked when `sessionID` is non-empty (empty session IDs cannot be matched to JSONL files).
 
 ---
 
@@ -262,6 +304,20 @@ Both checks are case-sensitive. A process must match at least one to be classifi
 - `comm.hasSuffix(" claude")` — catches cases where the name appears with a leading space in the comm field (unusual but defensive)
 
 The PPID of each matching `claude` process is checked against the set of known Commander PIDs to confirm parentage.
+
+### lsof Invocation for JSONL Discovery (findOpenJSONLFiles)
+
+```sh
+/usr/sbin/lsof -a -p {pids} -Fn
+```
+
+- `-a`: AND the following filters
+- `-p {pids}`: filter to the specified PIDs; multiple PIDs joined with commas
+- `-Fn`: produce output in field format, name-only
+
+Unlike the CWD lsof call (which uses `-d cwd`), this call does not filter by file descriptor, so it returns **all** open files. The parser filters for paths ending in `.jsonl` and excludes paths containing `/subagents/` to avoid matching subagent JSONL files.
+
+Returns `[Int: String]` — PID to the JSONL file path. If a PID has multiple open `.jsonl` files (excluding subagents), the last one encountered in lsof output wins.
 
 ### Cache TTL
 
