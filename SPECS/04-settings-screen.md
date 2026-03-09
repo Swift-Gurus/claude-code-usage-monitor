@@ -37,7 +37,8 @@ The view is 320pt wide. `SettingsView` itself does not apply padding -- `Popover
 - `AppSettings.displayMode.didSet` writes `rawValue` to `UserDefaults.standard` under key `"ClaudeUsageBar.displayMode"`
 - Below the picker: an "Apply & Restart" button (`borderedProminent` style, `controlSize(.small)`, full-width). Disabled when `!settings.displayModeChanged`. On tap, calls `AppSettings.relaunch()` which spawns a new instance via `open -n` and terminates the current app after 0.3s.
 - `AppSettings.launchedDisplayMode` stores the mode used at app launch (set once in `init()`, never changes). `displayModeChanged` is a computed property: `displayMode != launchedDisplayMode`.
-- Default value is `.popover` if no saved preference exists.
+- **Known bug:** The `AppSettings.init()` reads the persisted value from UserDefaults into `displayRaw` but never uses it — the mode is hardcoded to `.window` regardless of the saved preference. The `didSet` correctly writes changes to UserDefaults, but the value is ignored on next launch.
+- Effective default is `.window` (hardcoded in `init()`). The intended default is `.popover`.
 
 **Window mode effects** (when `displayMode == .window`):
 - The app uses an `NSPanel` instead of an `NSPopover` (see Spec 00 and Spec 13 for architecture details)
@@ -244,7 +245,7 @@ All settings are backed by `UserDefaults.standard`. The persistence happens in `
 
 | Setting | Key | Type | Default |
 |---------|-----|------|---------|
-| Display mode | `ClaudeUsageBar.displayMode` | `String` (rawValue) | `"popover"` |
+| Display mode | `ClaudeUsageBar.displayMode` | `String` (rawValue) | `"popover"` (intended), `"window"` (actual — hardcoded in init) |
 | Appearance mode | `ClaudeUsageBar.appearanceMode` | `String` (rawValue) | `"system"` |
 | Status bar period | `ClaudeUsageBar.statusBarPeriod` | `String` (rawValue) | `"day"` |
 | Agent sort order | `ClaudeUsageBar.agentSortOrder` | `String` (rawValue) | `"recentlyUpdated"` |
@@ -257,6 +258,8 @@ All settings are backed by `UserDefaults.standard`. The persistence happens in `
 | Expand tools | `ClaudeUsageBar.expandTools` | `Bool` | `false` |
 
 On `AppSettings.init()`, the raw values are read from `UserDefaults` and converted back to their enum cases (or Int/Bool values) with fallbacks to defaults if the stored value is missing or unrecognized. The `launchedDisplayMode` is also set from the initial `displayMode` value during `init()`.
+
+**Note:** Due to a bug, `displayMode` is hardcoded to `.window` in `init()` — the persisted UserDefaults value is read into `displayRaw` but never used. See SPEC 15 (Bugs) for details.
 
 ---
 

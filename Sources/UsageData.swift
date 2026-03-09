@@ -111,14 +111,18 @@ public final class UsageData {
         let weekStart = calendar.date(byAdding: .day, value: -daysSinceMonday, to: today)!
         let monthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: now))!
 
-        // Collect all .dat entries and model histories from both sources
+        // Collect entries from one extra day before monthStart so we have baseline
+        // values for sessions that span the month boundary. Without this, long-running
+        // sessions would have no `prev` entry and their full cumulative cost would be
+        // attributed to the current period.
+        let collectSince = calendar.date(byAdding: .day, value: -1, to: monthStart)!
         var entries: [DatEntry] = []
         var histories: [String: [(cost: Double, la: Int, lr: Int, model: String)]] = [:]
         var subagents: [String: [String: SourceModelStats]] = [:]
-        collectEntries(under: usageDir, source: .cli, since: monthStart, into: &entries, histories: &histories, subagents: &subagents)
+        collectEntries(under: usageDir, source: .cli, since: collectSince, into: &entries, histories: &histories, subagents: &subagents)
         if includeCommander {
             let commanderDir = usageDir.appendingPathComponent("commander")
-            collectEntries(under: commanderDir, source: .commander, since: monthStart, into: &entries, histories: &histories, subagents: &subagents)
+            collectEntries(under: commanderDir, source: .commander, since: collectSince, into: &entries, histories: &histories, subagents: &subagents)
         }
         modelHistories = histories
         subagentStats = subagents
@@ -240,13 +244,22 @@ public final class UsageData {
         for (key, latest) in latestByPID {
             let prev = previousByPID[key]
 
-            // Month: use latest cumulative value (no double-count)
-            accumulate(latest, into: &m)
+            // Month: use incremental if session spans from before monthStart
+            if latest.day >= monthStart {
+                if let prev, prev.day < monthStart {
+                    let incremental = incrementalEntry(latest: latest, previous: prev)
+                    accumulate(incremental, into: &m)
+                } else {
+                    accumulate(latest, into: &m)
+                }
+            }
 
-            // Week: use latest if within this week
+            // Week: use incremental if session spans from before weekStart
             if latest.day >= weekStart {
-                // If previous entry is also in this week, use incremental (latest - previous)
-                if let prev, prev.day >= weekStart {
+                if let prev, prev.day < weekStart {
+                    let incremental = incrementalEntry(latest: latest, previous: prev)
+                    accumulate(incremental, into: &w)
+                } else if let prev, prev.day >= weekStart {
                     let incremental = incrementalEntry(latest: latest, previous: prev)
                     accumulate(incremental, into: &w)
                 } else {
@@ -294,25 +307,9 @@ public final class UsageData {
         p[keyPath: kp].total.linesAdded += entry.linesAdded
         p[keyPath: kp].total.linesRemoved += entry.linesRemoved
 
-        // Distribute cost across models using transition history if available
-        let historyKey = "\(entry.pid)\t\(entry.source.rawValue)"
-        if let history = modelHistories[historyKey], history.count > 1 {
-            let breakdown = modelBreakdown(history: history,
-                                           absoluteCost: entry.absoluteCost,
-                                           periodCost: entry.cost,
-                                           totalLA: entry.linesAdded, totalLR: entry.linesRemoved)
-            for (model, stats) in breakdown {
-                p[keyPath: kp].byModel[model, default: SourceModelStats()].cost += stats.cost
-                p[keyPath: kp].byModel[model, default: SourceModelStats()].linesAdded += stats.linesAdded
-                p[keyPath: kp].byModel[model, default: SourceModelStats()].linesRemoved += stats.linesRemoved
-            }
-        } else if !entry.model.isEmpty {
-            p[keyPath: kp].byModel[entry.model, default: SourceModelStats()].cost += entry.cost
-            p[keyPath: kp].byModel[entry.model, default: SourceModelStats()].linesAdded += entry.linesAdded
-            p[keyPath: kp].byModel[entry.model, default: SourceModelStats()].linesRemoved += entry.linesRemoved
-        }
-
-        // Merge subagent breakdown
+        // Compute subagent totals first — .dat cost already includes subagent costs,
+        // so we must subtract them before distributing across main-session models
+        // and per-project main stats to avoid double-counting.
         let subagentKey = "\(entry.pid)\t\(entry.source.rawValue)"
         var subagentTotal = SourceModelStats()
         if let subs = subagentStats[subagentKey] {
@@ -326,11 +323,34 @@ public final class UsageData {
             }
         }
 
-        // Aggregate by project
+        // Main-session cost/lines excluding subagent contribution
+        let mainCost = max(0, entry.cost - subagentTotal.cost)
+        let mainLA = max(0, entry.linesAdded - subagentTotal.linesAdded)
+        let mainLR = max(0, entry.linesRemoved - subagentTotal.linesRemoved)
+
+        // Distribute main-session cost across models using transition history if available
+        let historyKey = "\(entry.pid)\t\(entry.source.rawValue)"
+        if let history = modelHistories[historyKey], history.count > 1 {
+            let breakdown = modelBreakdown(history: history,
+                                           absoluteCost: entry.absoluteCost - subagentTotal.cost,
+                                           periodCost: mainCost,
+                                           totalLA: mainLA, totalLR: mainLR)
+            for (model, stats) in breakdown {
+                p[keyPath: kp].byModel[model, default: SourceModelStats()].cost += stats.cost
+                p[keyPath: kp].byModel[model, default: SourceModelStats()].linesAdded += stats.linesAdded
+                p[keyPath: kp].byModel[model, default: SourceModelStats()].linesRemoved += stats.linesRemoved
+            }
+        } else if !entry.model.isEmpty {
+            p[keyPath: kp].byModel[entry.model, default: SourceModelStats()].cost += mainCost
+            p[keyPath: kp].byModel[entry.model, default: SourceModelStats()].linesAdded += mainLA
+            p[keyPath: kp].byModel[entry.model, default: SourceModelStats()].linesRemoved += mainLR
+        }
+
+        // Aggregate by project — main stats exclude subagent costs to avoid double-counting
         if !entry.project.isEmpty {
-            p[keyPath: kp].byProject[entry.project, default: ProjectStats()].main.cost += entry.cost
-            p[keyPath: kp].byProject[entry.project, default: ProjectStats()].main.linesAdded += entry.linesAdded
-            p[keyPath: kp].byProject[entry.project, default: ProjectStats()].main.linesRemoved += entry.linesRemoved
+            p[keyPath: kp].byProject[entry.project, default: ProjectStats()].main.cost += mainCost
+            p[keyPath: kp].byProject[entry.project, default: ProjectStats()].main.linesAdded += mainLA
+            p[keyPath: kp].byProject[entry.project, default: ProjectStats()].main.linesRemoved += mainLR
             p[keyPath: kp].byProject[entry.project, default: ProjectStats()].subagents.cost += subagentTotal.cost
             p[keyPath: kp].byProject[entry.project, default: ProjectStats()].subagents.linesAdded += subagentTotal.linesAdded
             p[keyPath: kp].byProject[entry.project, default: ProjectStats()].subagents.linesRemoved += subagentTotal.linesRemoved

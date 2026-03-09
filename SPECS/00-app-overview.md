@@ -45,6 +45,7 @@ The app addresses three scenarios:
 │  @Observable   │  │  @Observable       │
 │                │  │                    │
 │  Reads .dat    │  │  Reads .agent.json │
+│  + .agent.json │  │                    │
 │  .models       │  │  Checks PID liveness│
 │  .subagents    │  │  Writes .project   │
 │  .json files   │  │  Writes subagent   │
@@ -153,8 +154,12 @@ Aggregation (triggered by FSEvent on ~/.claude/usage/ or 5s poll):
     → main thread: usageData.reload(), agentTracker.reload(), updateStatusItemTitle()
 
   UsageData.reload()
-    → reads all .dat, .models, .subagents.json from both trees
-    → deduplicates multi-day PIDs (keep latest, compute incremental)
+    → reads all .dat, .models, .subagents.json, .agent.json from both trees
+    → deduplicates via 4-step algorithm:
+      1. PID → sessionID map (from .agent.json)
+      2. Build latestByPID / previousByPID
+      3. Exact-content duplicate detection
+      4. Session-ID-based merging
     → produces PeriodStats{day, week, month}
 
   AgentTracker.reload()
@@ -194,7 +199,7 @@ Display:
 1. User clicks the status bar icon
 2. `AppDelegate.toggleUI()` dispatches to `togglePopover()` or `toggleWindow()` based on `settings.displayMode`
 3. `settings.isLoading = true` is set immediately
-4. UI opens — shows existing (possibly stale) data at once. In popover mode: `NSPopover.show()`. In window mode: `NSPanel.orderFront()` + `NSApp.activate()`.
+4. UI opens — shows existing (possibly stale) data at once. In popover mode: `NSPopover.show()`. In window mode: `NSPanel.orderFront()` (note: `NSApp.activate()` is missing from the implementation — see SPEC 15, this is a known bug).
 5. Background thread runs `CommanderSupport.refreshFiles()`
 6. Main thread runs `usageData.reload()` and `agentTracker.reload()`
 7. `settings.isLoading = false` — loading indicator disappears

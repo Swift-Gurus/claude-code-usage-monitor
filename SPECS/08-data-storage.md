@@ -30,7 +30,7 @@
         └── {pid}.project
 ```
 
-`UsageData` reads `.dat`, `.models`, `.subagents.json`, and `.project` files. The `.agent.json` and `.subagent-details.json` files are read by `AgentTracker` and `SubagentDetailView` respectively. The `.parent-tools.json` file is read by `SubagentDetailView`.
+`UsageData` reads `.dat`, `.models`, `.subagents.json`, `.project`, and `.agent.json` files. The `.agent.json` files are read by both `UsageData` (for session ID extraction during deduplication) and `AgentTracker` (for live agent tracking). The `.subagent-details.json` files are read by `SubagentDetailView`. The `.parent-tools.json` file is read by `SubagentDetailView`.
 
 ---
 
@@ -49,6 +49,7 @@ struct DatEntry {
     let model: String        // Last model reported in .dat file
     let source: AgentSource  // .cli or .commander
     let project: String      // Short project name from {pid}.project file, empty if unknown
+    let sessionID: String    // from .agent.json if available, empty otherwise (used for session-aware dedup)
 }
 ```
 
@@ -207,9 +208,27 @@ Only date folders from `monthStart` onward are processed (`dirDay >= monthStart`
 
 A Claude Code session that runs across midnight will have `.dat` files in multiple day folders with increasing cumulative costs. Without deduplication, the session would be counted multiple times.
 
-### Deduplication Algorithm
+### Deduplication Algorithm (4-Step)
 
-After collecting all entries (sorted by `day` ascending):
+The deduplication has four steps, applied after collecting all entries:
+
+**Step 1: Build PID-to-session map.** During `collectEntries`, `.agent.json` files are read to extract `session_id` for each PID:
+
+```swift
+// Build PID → sessionID map from .agent.json files
+var pidToSession: [String: String] = [:]
+for file in files where file.lastPathComponent.hasSuffix(".agent.json") {
+    let pid = file.lastPathComponent.replacingOccurrences(of: ".agent.json", with: "")
+    guard let data = try? Data(contentsOf: file),
+          let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let sid = json["session_id"] as? String, !sid.isEmpty else { continue }
+    pidToSession[pid] = sid
+}
+```
+
+The `sessionID` is stored in each `DatEntry` for use in steps 3 and 4.
+
+**Step 2: Build per-PID latest/previous.** Standard two-pass deduplication:
 
 ```swift
 for entry in entries.sorted(by: { $0.day < $1.day }) {
@@ -223,6 +242,10 @@ for entry in entries.sorted(by: { $0.day < $1.day }) {
 After this pass:
 - `latestByPID[pid]` = the entry from the most recent folder
 - `previousByPID[pid]` = the entry from the second-most-recent folder (if any)
+
+**Step 3: Exact-content duplicate detection.** If two PIDs on the same day have identical `(cost, linesAdded, linesRemoved, model)`, one is merged into the other (keeps the first, removes the second). This handles cases where the same session writes identical data under different PIDs.
+
+**Step 4: Session-ID-based merging.** PIDs sharing the same non-empty `sessionID` are merged. The PID with the highest cost becomes the canonical entry; others are removed from `latestByPID`. The earliest `previousByPID` across all merged PIDs is kept as the canonical previous entry. This handles Claude Code session restarts where a new PID inherits the same session ID.
 
 ### Period Accumulation Rules
 
@@ -357,12 +380,17 @@ UsageData.reload()
   ├── collectEntries(under: usageDir, source: .cli, ...)
   │   └── For each date dir ≥ monthStart:
   │       ├── Read {pid}.project files → pidToProject map
-  │       ├── Read each .dat file → DatEntry (with project from pidToProject)
+  │       ├── Read {pid}.agent.json files → pidToSession map (sessionID extraction)
+  │       ├── Read each .dat file → DatEntry (with project + sessionID)
   │       ├── Read {pid}.models → history
   │       └── Read {pid}.subagents.json → subagent stats
   ├── collectEntries(under: commander/baseDir, source: .commander, ...)
   │   └── Same structure
-  ├── Deduplicate: build latestByPID and previousByPID
+  ├── Deduplicate (4-step):
+  │   ├── Step 1: PID → sessionID map (from .agent.json files read during collectEntries)
+  │   ├── Step 2: Build latestByPID and previousByPID
+  │   ├── Step 3: Exact-content duplicate detection (merge identical entries on same day)
+  │   └── Step 4: Session-ID-based merging (merge PIDs sharing same sessionID)
   └── For each (pid, latest):
       ├── Accumulate into month (latest.cost)
       ├── Accumulate into week (incremental if both in week)
@@ -431,18 +459,18 @@ There is no explicit file locking between readers and writers. The `.atomic` wri
 
 ### FSEvents Debouncing
 
-`FSEventStreamCreate` is called with a `latency` of `0.5` seconds:
+`FSEventStreamCreate` is called with a `latency` of `2.0` seconds:
 
 ```swift
 guard let stream = FSEventStreamCreate(
     nil, callback, &context, [usageDir] as CFArray,
     FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
-    0.5,   // 500ms latency
+    2.0,   // 2s latency — batches rapid writes to reduce reload frequency
     ...
 )
 ```
 
-The 500ms latency causes FSEvents to coalesce multiple rapid filesystem changes into a single callback firing. A statusline invocation that writes `.dat`, `.models`, and `.agent.json` in quick succession triggers only one `onChange()` call rather than three. This reduces redundant `reload()` cycles.
+The 2.0-second latency causes FSEvents to coalesce multiple rapid filesystem changes into a single callback firing. A statusline invocation that writes `.dat`, `.models`, and `.agent.json` in quick succession triggers only one `onChange()` call rather than three. This reduces redundant `reload()` cycles during bursts of rapid file writes (e.g., when a Claude session is actively streaming output tokens).
 
 ### Timer Period
 

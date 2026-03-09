@@ -471,6 +471,92 @@ this blocks the UI for 50ms.
 
 ---
 
+## Issue 25: `displayMode` init ignores UserDefaults
+
+**Severity:** Medium
+**Category:** Bug
+**File:** `Sources/AppSettings.swift:184-187`
+
+**Description:** `AppSettings.init()` reads the persisted display mode from UserDefaults
+into a local `displayRaw` variable, but then ignores it entirely — the mode is hardcoded
+to `.window`:
+
+```swift
+let displayRaw = UserDefaults.standard.string(forKey: "ClaudeUsageBar.displayMode") ?? ""
+let mode = DisplayMode.window  // ← hardcoded, ignores displayRaw
+displayMode = mode
+launchedDisplayMode = mode
+```
+
+This means:
+1. The user's display mode preference is lost on every app launch.
+2. The effective default is `.window`, not `.popover` as intended.
+3. Changing display mode in Settings and restarting will always result in window mode.
+
+**Fix:** Replace the hardcoded line with:
+```swift
+let mode = DisplayMode(rawValue: displayRaw) ?? .popover
+```
+
+---
+
+## Issue 26: Missing `NSApp.activate()` in window mode toggle
+
+**Severity:** Medium
+**Category:** Bug
+**File:** `Sources/App/ClaudeUsageBarApp.swift:162-180`
+
+**Description:** The `toggleWindow()` method calls `window.orderFront(nil)` but does
+not call `NSApp.activate(ignoringOtherApps: true)`. This can cause the window to appear
+behind the current frontmost application, since `orderFront` makes the window visible
+but does not activate the application.
+
+**Fix:** Add `NSApp.activate(ignoringOtherApps: true)` after `window.orderFront(nil)`.
+
+---
+
+## Issue 27: Array index crash on empty `questions` array
+
+**Severity:** High
+**Category:** Bug
+**File:** `Sources/LogViewerView.swift:730`
+
+**Description:** The `askUserQuestionPrompt` accesses `data.questions[0]` without a
+bounds check. If an `AskUserQuestion` tool call arrives with an empty `questions` array,
+this will crash at runtime.
+
+**Fix:** Add a guard: `guard !data.questions.isEmpty else { return emptyView }`.
+
+---
+
+## Issue 28: Dead `maxInputTokens` variable in `parseSession`
+
+**Severity:** Low
+**Category:** Code Quality
+**File:** `Sources/Commander/JSONLParser.swift:179,226`
+
+**Description:** `var maxInputTokens = 0` is computed (updated to the max of all
+`totalIn` values across messages) but is never used anywhere. This is dead code.
+
+**Fix:** Remove the variable and its update.
+
+---
+
+## Issue 29: Week start hardcoded to Monday
+
+**Severity:** Low
+**Category:** Bug
+**File:** `Sources/UsageData.swift:109-111`
+
+**Description:** The week start is calculated as `(weekday + 5) % 7` days before today,
+which always yields Monday as the start of the week. This ignores the user's locale
+`Calendar.firstWeekday` setting. Users who consider Sunday (or Saturday) as the first
+day of the week will see incorrect weekly totals.
+
+**Fix:** Use `calendar.firstWeekday` instead of hardcoding Monday.
+
+---
+
 ## Summary Table
 
 | # | Severity | Category | File | Issue |
@@ -499,3 +585,8 @@ this blocks the UI for 50ms.
 | 22 | Low | Bug | StatuslineInstaller.swift | Script path doesn't handle spaces |
 | 23 | Low | Bug | DebugLogger.swift | Force unwrap in logger |
 | 24 | Low | Code Quality | TTYBridge.swift | `usleep` blocks main thread |
+| 25 | Medium | Bug | AppSettings.swift | `displayMode` init ignores UserDefaults |
+| 26 | Medium | Bug | ClaudeUsageBarApp.swift | Missing `NSApp.activate()` in window mode |
+| 27 | High | Bug | LogViewerView.swift | Array index crash on empty `questions` |
+| 28 | Low | Code Quality | JSONLParser.swift | Dead `maxInputTokens` variable |
+| 29 | Low | Bug | UsageData.swift | Week start hardcoded to Monday |

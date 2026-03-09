@@ -129,22 +129,9 @@ If `ps` fails to execute, `findActiveSessions()` returns an empty dictionary —
 
 If `lsof` fails, working directories cannot be determined for the discovered PIDs, so those sessions are skipped individually.
 
-### CPU Usage ps Failure
+### CPU Usage — REMOVED
 
-Location: `AgentTracker.cpuUsage(for:)`
-
-```swift
-do {
-    try process.run()
-    process.waitUntilExit()
-    ...
-    return Double(output) ?? 0
-} catch {
-    return 0
-}
-```
-
-If the `ps` invocation for CPU usage throws (binary not found, launch failure) or returns unparseable output, `cpuUsage(for:)` returns `0.0`. The agent is treated as having 0% CPU, which makes it eligible for idle classification. This is a safe fallback: a live agent temporarily showing as idle is less problematic than a crash.
+The `cpuUsage(for:)` method has been removed from `AgentTracker`. CPU usage is now always set to `0`. Idle detection is based entirely on `updatedAt` timestamp recency (within 60 seconds) and JSONL file mtime activity. See SPEC 12 (Known Gaps), Gap 2 for details.
 
 ---
 
@@ -267,7 +254,7 @@ public static func install() -> Bool {
 `install()` returns `Bool` — `false` indicates that installation could not be completed. The most common cause is `jq` not being installed (the shell scripts depend on `jq` for JSON parsing).
 
 When `install()` returns `false`:
-- `AppDelegate` sets `settings.installError = true`
+- `PopoverView` sets its local `@State var installError = true` (this is view-local state on `PopoverView`, not a property on `AppSettings`)
 - `PopoverView` displays `"Install failed — check jq is installed"` in a warning banner
 - The app remains fully functional for Commander sessions; only CLI (statusline) tracking is affected
 - No crash, no alert dialog, no termination
@@ -343,7 +330,7 @@ let dlr = max(0, nextLR - current.lr)
 | JSONL line malformed | `JSONLParser.*` | `guard ... else { continue }` | Partial session data |
 | JSONL no output tokens | `JSONLParser.parseSession` | `guard totalOutput > 0 else { return nil }` | Commander session not shown |
 | `ps` launch failure (Commander) | `SessionScanner` | `guard let ... else { return [:] }` | No Commander agents shown |
-| `ps` CPU query failure | `AgentTracker.cpuUsage` | `catch { return 0 }` | Agent may show as idle |
+| ~~`ps` CPU query failure~~ | ~~`AgentTracker.cpuUsage`~~ | ~~`catch { return 0 }`~~ | ~~Removed — CPU always 0~~ |
 | `ps` PID verification failure | `AgentTracker.verifyClaudePIDs` | `catch { return Set(pids) }` | Non-claude PIDs not cleaned up |
 | `lsof` failure | `SessionScanner` | skip affected PIDs | Those Commander sessions not shown |
 | `kill(pid, 0)` failure | `AgentTracker.reload`, `cleanupDeadPIDs` | remove `.agent.json`, skip | Agent removed from list |
@@ -352,7 +339,7 @@ let dlr = max(0, nextLR - current.lr)
 | JSONL file for log viewer | `LogParser.parseMessages` | `guard ... else { return [] }` | "No messages found" |
 | JSONL mtime check failure | `LogViewerView.loadMessages` | `try?` on attributesOfItem | Skips mtime cache, re-parses |
 | File write failure | `AgentTracker`, `CommanderSupport` | `try? data.write(...)` | Missing until next reload |
-| `jq` not installed / install fail | `StatuslineInstaller.install` | returns `false` | Warning banner in popover |
+| `jq` not installed / install fail | `StatuslineInstaller.install` | returns `false` → `PopoverView` sets `@State installError` | Warning banner in popover |
 | UserDefaults invalid value | `AppSettings` | `?? .defaultCase` fallback | Default setting used |
 | Context window = 0 | `JSONLParser.parseSession` | `guard > 0 else { 0 }` | Context % shows 0 |
 | Negative cost/line delta | `UsageData.incrementalEntry` | `max(0, ...)` | Delta treated as 0 |

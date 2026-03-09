@@ -102,7 +102,7 @@ When the user clicks the status bar icon, `toggleUI()` dispatches to either `tog
 
 **Window mode** (`toggleWindow()`):
 1. If the window is visible, `window.orderOut(nil)` hides it
-2. If the window is not visible: `settings.isLoading = true`, `window.orderFront(nil)`, `NSApp.activate(ignoringOtherApps: true)`, then the same background refresh pattern as popover mode
+2. If the window is not visible: `settings.isLoading = true`, `window.orderFront(nil)`, then the same background refresh pattern as popover mode. **Known bug:** The `NSApp.activate(ignoringOtherApps: true)` call is missing from the implementation — the window may appear but not become the foreground app. See SPEC 15 (Bugs) for details.
 
 The `.userInitiated` QoS signals to the OS that this work is in direct response to a user action and should be prioritized accordingly.
 
