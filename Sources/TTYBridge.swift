@@ -181,9 +181,15 @@ public final class TTYBridge {
     public func sendRaw(_ text: String) {
         guard isAttached, masterFD >= 0,
               let data = text.data(using: .utf8)
-        else { return }
-        data.withUnsafeBytes { ptr in
-            _ = Darwin.write(masterFD, ptr.baseAddress!, ptr.count)
+        else {
+            logger.log("sendRaw failed: isAttached=\(isAttached) masterFD=\(masterFD)")
+            return
         }
+        let fd = masterFD, pid = childPID
+        let bytes = Array(data)
+        let written = data.withUnsafeBytes { ptr in
+            Darwin.write(fd, ptr.baseAddress!, ptr.count)
+        }
+        logger.log("sendRaw \(bytes.count) bytes=\(bytes.map { String(format: "0x%02X", $0) }) wrote=\(written) masterFD=\(fd) childPID=\(pid)")
     }
 }

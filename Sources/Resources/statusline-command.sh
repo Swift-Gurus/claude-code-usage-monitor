@@ -61,11 +61,29 @@ DOW=$(date +%u)
 WEEK_START=$(date -v-$(( DOW - 1 ))d +%Y-%m-%d)
 MONTH_START=$(date +%Y-%m-01)
 
+# Build PID → session_id map from .agent.json files for session-aware deduplication.
+# Claude Code may restart (new PID) while keeping the same session, creating duplicate
+# .dat files that inflate totals. We pass this map to awk for merging.
+_CUB_SIDMAP=$(for _agf in "$USAGE_DIR"/????-??-??/*.agent.json; do
+  [ -f "$_agf" ] || continue
+  _p="${_agf##*/}"; _p="${_p%.agent.json}"
+  _s=$(sed -n 's/.*"session_id":"\([^"]*\)".*/\1/p' "$_agf" 2>/dev/null)
+  [ -n "$_s" ] && printf '%s %s|' "$_p" "$_s"
+done)
+
 # Sum all tracked sessions with deduplication (same logic as the menu bar app):
 # A session spanning multiple days has .dat files in each day's folder with cumulative costs.
 # Keep only the latest day per PID and subtract the previous day's value for today's increment.
+# Session-aware dedup merges PIDs sharing a session_id; exact-content dedup catches orphans.
 TOTALS=$(find "$USAGE_DIR" -name "*.dat" -type f 2>/dev/null | sort | \
-  awk -v today="$TODAY" -v week="$WEEK_START" -v month="$MONTH_START" '{
+  awk -v today="$TODAY" -v week="$WEEK_START" -v month="$MONTH_START" -v sidmap="$_CUB_SIDMAP" '
+  BEGIN {
+    n = split(sidmap, slines, "|")
+    for (i = 1; i <= n; i++) {
+      if (split(slines[i], sp, " ") >= 2) pid2sid[sp[1]] = sp[2]
+    }
+  }
+  {
     n = split($0, p, "/"); date = p[n-1]; pid = p[n]
     sub(/\.dat$/, "", pid)
     key = pid
@@ -86,7 +104,51 @@ TOTALS=$(find "$USAGE_DIR" -name "*.dat" -type f 2>/dev/null | sort | \
       latest_date[key] = date
     }
   } END {
+    # Exact-content dedup: remove PIDs with identical values on the same day.
+    # Prefer keeping the one with a prior-day entry or known session_id.
+    for (k in latest_cost) {
+      if (k in skip) continue
+      for (o in latest_cost) {
+        if (o <= k || o in skip) continue
+        if (latest_date[k] == latest_date[o] && latest_cost[k] == latest_cost[o] && \
+            latest_la[k] == latest_la[o] && latest_lr[k] == latest_lr[o]) {
+          kp = (k in prev_cost) + (k in pid2sid)
+          op = (o in prev_cost) + (o in pid2sid)
+          if (op > kp) skip[k] = 1; else skip[o] = 1
+        }
+      }
+    }
+
+    # Session-aware merge: group PIDs by session_id, keep highest-cost as latest,
+    # carry earliest previous entry across all PIDs in the session.
+    for (k in latest_cost) {
+      if (k in skip || !(k in pid2sid)) continue
+      sid = pid2sid[k]
+      if (sid in ses_best) {
+        b = ses_best[sid]
+        if (latest_cost[k] >= latest_cost[b]) { w = k; lo = b }
+        else { w = b; lo = k }
+        # Carry earliest previous to winner from loser
+        if (lo in prev_date && (!(w in prev_date) || prev_date[lo] < prev_date[w])) {
+          prev_cost[w] = prev_cost[lo]; prev_la[w] = prev_la[lo]
+          prev_lr[w] = prev_lr[lo]; prev_date[w] = prev_date[lo]
+        }
+        # Loser latest may be an even earlier previous
+        if (latest_date[lo] < latest_date[w] && \
+            (!(w in prev_date) || latest_date[lo] < prev_date[w])) {
+          prev_cost[w] = latest_cost[lo]; prev_la[w] = latest_la[lo]
+          prev_lr[w] = latest_lr[lo]; prev_date[w] = latest_date[lo]
+        }
+        skip[lo] = 1
+        ses_best[sid] = w
+      } else {
+        ses_best[sid] = k
+      }
+    }
+
+    # Compute period totals (skipping merged duplicates)
     for (key in latest_cost) {
+      if (key in skip) continue
       date = latest_date[key]
       cost = latest_cost[key]; la = latest_la[key]; lr = latest_lr[key]
       # Month: latest cumulative value
@@ -94,7 +156,6 @@ TOTALS=$(find "$USAGE_DIR" -name "*.dat" -type f 2>/dev/null | sort | \
       # Week: latest if in week, else skip
       if (date >= week) {
         if (key in prev_cost && prev_date[key] >= week) {
-          # both in week: use incremental
           w += cost - prev_cost[key]; w_la += la - prev_la[key]; w_lr += lr - prev_lr[key]
         } else {
           w += cost; w_la += la; w_lr += lr

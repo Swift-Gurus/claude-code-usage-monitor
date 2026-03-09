@@ -201,9 +201,43 @@ No active agents
 
 ---
 
+## Open Project Button
+
+Displayed below the agent section, separated by a `Divider`.
+
+```
+[+circle.fill] Open Project
+```
+
+- Icon: `plus.circle.fill` in `.blue`
+- Text: "Open Project" in `.caption` + `.medium` weight
+- Full-width left-aligned, `.plain` button style
+- Separated by `Divider`s above and below
+
+### Action
+
+1. Opens `NSOpenPanel` configured for directories only (`canChooseDirectories: true`, `canChooseFiles: false`, `allowsMultipleSelection: false`)
+2. Panel message: "Select a project directory to open with Claude"
+3. Panel prompt button: "Open"
+4. On selection: `sessionManager.spawn(workingDir: url.path)` creates a `TTYBridge` and spawns `claude` under a hidden PTY
+5. Constructs a synthetic `AgentInfo` with:
+   - `pid`: `bridge.childPID`
+   - `model`: `"Starting..."`
+   - `sessionID`: `""` (empty, will be discovered by JSONL polling)
+   - `workingDir`: selected directory path
+   - `isIdle`: `false`, `source`: `.cli`
+6. Sets `selectedAgent = syntheticAgent`, navigating immediately to `SubagentDetailView`
+7. From there, the user navigates to `LogViewerView` where the input field is enabled via the `TTYBridge`
+
+### Dependencies
+
+Requires `SessionManager` (passed as a constructor parameter to `PopoverView`). The `SessionManager` is created in `AppDelegate` with a `FileDebugLogger(isEnabled: true)`.
+
+---
+
 ## Statusline Install Indicator
 
-Displayed below the agent section, above the Quit button.
+Displayed below the Open Project button, above the Quit button.
 
 ```
 [checkmark.circle.fill] Statusline active
@@ -240,12 +274,14 @@ or
 | Tap gear icon | `showSettings = true` | `SettingsView` |
 | Tap period row | `selectedPeriod = label` | `detailView(label:stats:)` |
 | Tap agent row | `selectedAgent = agent` | `SubagentDetailView` |
+| Tap "Open Project" | `selectedAgent = syntheticAgent` | `SubagentDetailView` (with new session) |
 | Tap Back in Settings | `showSettings = false` | Main view |
 | Tap Back in Detail | `selectedPeriod = nil` | Main view |
 | Tap Back in Agent Detail | `selectedAgent = nil` | Main view |
 | Tap log icon in Agent Detail | `logTarget = .parent` | `LogViewerView` (parent session) |
 | Tap subagent row in Agent Detail | `logTarget = .subagent(sub)` | `LogViewerView` (subagent session) |
 | Tap Back in Log Viewer | `logTarget = nil` | `SubagentDetailView` |
+| Tap Stop in Log Viewer | bridge.detach(), session removed | Parent view (via `onStop`) |
 
 The top-level navigation is managed by a single `if/else if/else if/else` chain in `PopoverView.body`. Within `SubagentDetailView`, a secondary `logTarget` state controls navigation to `LogViewerView`. There is no navigation stack — only one view is visible at a time and state is replaced, not pushed.
 

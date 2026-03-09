@@ -2,18 +2,19 @@
 
 ## Purpose
 
-ClaudeUsageBar is a macOS menu bar application that monitors Claude Code API usage in real time. It aggregates cost, token, and lines-changed data from Claude Code sessions running on the local machine and presents them in either a compact popover attached to the macOS status bar or a floating window (configurable via Display Mode setting).
+ClaudeUsageBar is a macOS menu bar application that monitors Claude Code API usage in real time. It aggregates cost, token, and lines-changed data from Claude Code sessions running on the local machine and presents them in either a compact popover attached to the macOS status bar or a floating window (configurable via Display Mode setting). The app can also spawn new Claude Code sessions via hidden PTY, providing a full GUI wrapper with bidirectional input, permission handling, and interactive prompt responses.
 
-The app addresses two scenarios:
+The app addresses three scenarios:
 
-1. **Interactive (CLI) sessions** — Claude Code invoked in a terminal, where a user-configured statusline command fires after every AI response and writes cost data to `~/.claude/usage/`.
-2. **Commander (pipe-mode) sessions** — Claude Code invoked programmatically with `-p --output-format=stream-json`, where no statusline fires. The app discovers these sessions through process scanning and parses the raw JSONL conversation files directly.
+1. **Interactive (CLI) sessions** -- Claude Code invoked in a terminal, where a user-configured statusline command fires after every AI response and writes cost data to `~/.claude/usage/`.
+2. **Commander (pipe-mode) sessions** -- Claude Code invoked programmatically with `-p --output-format=stream-json`, where no statusline fires. The app discovers these sessions through process scanning and parses the raw JSONL conversation files directly.
+3. **App-spawned sessions** -- Claude Code spawned by the app via hidden PTY (using "Open Project"). The app controls the session lifecycle, sends user prompts, handles permission/question prompts, and monitors via JSONL + TTY activity callbacks.
 
 ---
 
 ## High-Level Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        macOS Status Bar                             │
 │  [chart.bar.fill] D: $1.23    ← NSStatusItem (variableLength)      │
@@ -164,6 +165,20 @@ Aggregation (triggered by FSEvent on ~/.claude/usage/ or 5s poll):
     → writes {pid}.project files (plain text, resolved workingDir)
     → scans subagents/ dirs, writes .subagents.json and .subagent-details.json
 
+App-Spawned Sessions:
+  User taps "Open Project" in PopoverView
+    -> NSOpenPanel selects directory
+    -> SessionManager.spawn(workingDir:)
+      -> TTYBridge.spawn(workingDir:) via openpty + Process
+      -> Trust prompt auto-handled
+    -> Navigate to SubagentDetailView -> LogViewerView
+    -> LogViewerView sets bridge.onActivity callback
+      -> Triggers JSONL reload on PTY output
+    -> Input field sends prompts via TTYBridge.send()
+    -> Pending prompts detected via JSONL gap (tool_use without tool_result)
+    -> Modal overlay sends responses via TTYBridge.sendRaw()
+    -> Debug logging via FileDebugLogger -> ~/.claude/usage/debug.log
+
 Display:
   PopoverView reads from UsageData and AgentTracker via @Observable
   NSStatusItem title updated from UsageData.day/week/month
@@ -194,7 +209,48 @@ The main view lists all agents from today's `.agent.json` files, grouped by sour
 Tapping an agent row navigates to `SubagentDetailView`. A `.task` modifier polls `{pid}.subagent-details.json` every 2 seconds from the appropriate usage directory and lists each subagent with model, cost, context bar, lines changed, description, and type. The subagent list is sorted according to `AppSettings.subagentSortOrder` (Recent, Cost, Context, or Name).
 
 ### 5. View Session Logs
-From `SubagentDetailView`, tapping the log icon (top-right) opens `LogViewerView` for the parent session. Tapping a subagent row opens `LogViewerView` for that subagent. The log viewer shows a chat-bubble-style conversation with user messages, assistant text, expandable tool calls (with full content), and collapsible thinking blocks. It polls the JSONL file every 2 seconds with mtime caching and auto-scrolls to the latest message.
+From `SubagentDetailView`, tapping the log icon (top-right) opens `LogViewerView` for the parent session. Tapping a subagent row opens `LogViewerView` for that subagent. The log viewer shows a chat-bubble-style conversation with user messages, assistant text, expandable tool calls (with full content), and collapsible thinking blocks. It polls the JSONL file every 2 seconds with mtime caching and auto-scrolls to the latest message. For app-spawned sessions, TTY activity triggers immediate JSONL reloads for near-instant updates.
+
+### 6. Open Project (Spawn New Session)
+1. User taps "Open Project" button in the main view
+2. `NSOpenPanel` opens (directories only, single selection)
+3. User selects a project directory
+4. `SessionManager.spawn(workingDir:)` creates a `TTYBridge` and spawns `claude` under a hidden PTY
+5. Trust prompt is auto-handled (sends `\r` on first "trust" output)
+6. A synthetic `AgentInfo` is constructed and `selectedAgent` is set, navigating to `SubagentDetailView`
+7. From SubagentDetailView, the user navigates to `LogViewerView` where the input field is enabled
+
+### 7. Interactive Session (Send Prompts)
+1. In `LogViewerView` for an app-spawned session, the input field is visible at the bottom
+2. User types a message and taps Send (or Cmd+Return)
+3. `TTYBridge.send(text)` writes the text as bulk paste, waits 50ms, then sends carriage return
+4. Claude processes the prompt; PTY activity triggers JSONL reload
+5. Assistant response appears in the chat view
+
+### 8. Handle Permission Prompt
+1. Claude requests a tool permission (Bash, Edit, Write)
+2. JSONL shows a `tool_use` without a matching `tool_result` -- detected by `pendingPrompt`
+3. A modal overlay appears with "Allow" (green) and "Deny" (red) buttons
+4. "Allow" sends `\r` (Enter) via `TTYBridge.sendRaw()` -- "Deny" sends `\u{1b}` (Escape)
+5. Claude proceeds or skips; the JSONL `tool_result` resolves the prompt
+
+### 9. Handle AskUserQuestion Prompt
+1. Claude sends an `AskUserQuestion` tool call with options
+2. JSONL gap detected -- modal overlay shows radio buttons for options
+3. User selects an option (click updates `selectedOptionIdx`)
+4. "Submit" sends N down-arrow keys (`\u{1b}[B`, each as separate `write()`) then `\r` (Enter)
+5. The JSONL `tool_result` contains the structured answer via `toolUseResult`
+
+### 10. Handle ExitPlanMode Prompt
+1. Claude sends an `ExitPlanMode` tool call with a plan
+2. Modal overlay shows "Approve" (green) and "Reject" (red) buttons
+3. "Approve" sends `\r` -- "Reject" sends `\u{1b}`
+
+### 11. Stop Session
+1. In LogViewerView header, user taps the red stop button
+2. `TTYBridge.detach()` terminates the child process and cleans up PTY
+3. Session is removed from `SessionManager.sessions`
+4. `onStop()` callback triggers navigation back to the parent view
 
 ### Window Mode: Sticky Navigation Headers
 
@@ -204,7 +260,7 @@ In window mode, navigation headers (Back button + title) are pinned above the sc
 |-------|----------------------|
 | Settings / Detail | Back button + "Settings" or period label |
 | SubagentDetailView | Back button + agent name + log icon |
-| LogViewerView | Back button + title + open-in-editor icon |
+| LogViewerView | Back button + connection dot + title + task toggle + stop + open-in-editor |
 
 In popover mode, headers are inline (no sticky pinning needed due to compact size).
 
@@ -221,6 +277,7 @@ Tapping the gear icon navigates to `SettingsView`. Changes to status bar period,
 ├── statusline-command.sh            ← Bundled script (if fresh install)
 ├── usage/
 │   ├── .last_cleanup                ← Date string, prevents re-running cleanup each call
+│   ├── debug.log                    ← FileDebugLogger output (TTYBridge + SessionManager events)
 │   ├── YYYY-MM-DD/                  ← One folder per calendar day (CLI source)
 │   │   ├── {PPID}.dat               ← "cost la lr model\n"
 │   │   ├── {PPID}.models            ← TSV: cost\tla\tlr\tmodel per model switch
@@ -252,6 +309,7 @@ Tapping the gear icon navigates to `SettingsView`. Changes to status bar period,
 | Caller | Callee | When | What |
 |--------|--------|------|------|
 | `AppDelegate` | `StatuslineInstaller.install()` | `applicationDidFinishLaunching` | Ensures statusline is configured |
+| `AppDelegate` | `SessionManager` (create) | `applicationDidFinishLaunching` | Creates singleton with FileDebugLogger(isEnabled: true) |
 | `AppDelegate` | `CommanderSupport.refreshFiles()` | Monitor callback + popover open | Writes fresh Commander .dat/.agent.json |
 | `AppDelegate` | `UsageData.reload()` | After refreshFiles | Re-reads all .dat/.models/.subagents |
 | `AppDelegate` | `AgentTracker.reload()` | After UsageData.reload | Re-reads .agent.json, writes subagent files |
@@ -264,8 +322,18 @@ Tapping the gear icon navigates to `SettingsView`. Changes to status bar period,
 | `AgentTracker` | `JSONLParser.parseSubagentDetails()` | Per live session with sessionID | Produces per-file SubagentInfo list (with meta from parseSubagentMeta) |
 | `PopoverView` | `UsageData` (read) | On render | Reads day/week/month PeriodStats |
 | `PopoverView` | `AgentTracker.activeAgents` (read) | On render | Reads live agent list |
+| `PopoverView` | `SessionManager.spawn()` | "Open Project" button tap | Spawns new claude session via TTYBridge, navigates to agent |
+| `PopoverView` | `SessionManager` (pass) | Navigation to SubagentDetailView | Passes sessionManager for downstream use |
 | `SubagentDetailView` | filesystem (read) | `.task` (2s poll) | Reads {pid}.subagent-details.json |
-| `SubagentDetailView` | `LogViewerView` | On row tap or log button | Navigates to log viewer for parent or subagent |
-| `LogViewerView` | `LogParser.parseMessages()` | `.task` (2s poll with mtime cache) | Parses JSONL into display-ready messages |
+| `SubagentDetailView` | `LogViewerView` | On row tap or log button | Navigates to log viewer, passes sessionManager |
+| `LogViewerView` | `SessionManager.bridge(for:)` | On appear | Resolves TTYBridge for this agent's PID |
+| `LogViewerView` | `TTYBridge.onActivity` | On appear (if bridge exists) | Sets callback to trigger JSONL reload on PTY output |
+| `LogViewerView` | `LogParser.parseMessages()` | TTY activity callback + 2s poll | Parses JSONL into display-ready messages |
+| `LogViewerView` | `TTYBridge.send()` | User submits text input | Sends user prompt via PTY (bulk paste + 50ms + CR) |
+| `LogViewerView` | `TTYBridge.sendRaw()` | User responds to prompt | Sends permission/question/plan responses via PTY |
+| `LogViewerView` | `TTYBridge.detach()` | User taps stop button | Terminates session, removes from SessionManager |
+| `SessionManager` | `TTYBridge.spawn()` | spawn(workingDir:) | Creates PTY, launches claude process |
+| `SessionManager` | `TTYBridge.onExit` | Bridge setup | Registers auto-cleanup on child process exit |
+| `TTYBridge` | `DebugLogging.log()` | All lifecycle + I/O events | Logs spawn, send, read, detach, exit events |
 | `AppSettings` | `UserDefaults` | On property change | Persists settings |
 | `AppDelegate` | `AppSettings` (observe) | `withObservationTracking` | Re-renders status bar on period change |

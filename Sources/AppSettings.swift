@@ -182,7 +182,7 @@ public final class AppSettings {
         subagentSortOrder = SubagentSortOrder(rawValue: subSortRaw) ?? .cost
 
         let displayRaw = UserDefaults.standard.string(forKey: "ClaudeUsageBar.displayMode") ?? ""
-        let mode = DisplayMode(rawValue: displayRaw) ?? .popover
+        let mode = DisplayMode.window
         displayMode = mode
         launchedDisplayMode = mode
 

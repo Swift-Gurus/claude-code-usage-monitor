@@ -98,6 +98,7 @@ public final class UsageData {
         let model: String
         let source: AgentSource
         let project: String      // short project name from {pid}.project file, empty if unknown
+        let sessionID: String    // from .agent.json if available, empty otherwise
     }
 
     public func reload() {
@@ -127,8 +128,22 @@ public final class UsageData {
         // most up-to-date cumulative cost.
         // For "today" specifically, subtract the previous day's value to get incremental cost.
         // Key includes source to avoid CLI/Commander PID collisions for the same project.
-        var latestByPID: [String: DatEntry] = [:]     // "PID\tsource" → latest entry
-        var previousByPID: [String: DatEntry] = [:]   // "PID\tsource" → second-latest entry
+        //
+        // Session-aware dedup: Claude Code may restart its process (new PID) while keeping the
+        // same session (same JSONL file / session_id). Multiple PIDs then write .dat files with
+        // the same cumulative cost, inflating totals. We merge PIDs that share a session_id,
+        // and also detect exact-content duplicates as a fallback for PIDs without .agent.json.
+
+        // Step 1: Build PID → sessionID map from entries (propagate across days for same PID)
+        var pidSessionMap: [String: String] = [:]  // "PID\tsource" → sessionID
+        for entry in entries where !entry.sessionID.isEmpty {
+            let pidKey = "\(entry.pid)\t\(entry.source.rawValue)"
+            pidSessionMap[pidKey] = entry.sessionID
+        }
+
+        // Step 2: Build per-PID latest/previous as before
+        var latestByPID: [String: DatEntry] = [:]
+        var previousByPID: [String: DatEntry] = [:]
 
         for entry in entries.sorted(by: { $0.day < $1.day }) {
             let key = "\(entry.pid)\t\(entry.source.rawValue)"
@@ -136,6 +151,86 @@ public final class UsageData {
                 previousByPID[key] = existing
             }
             latestByPID[key] = entry
+        }
+
+        // Step 3: Exact-content duplicate detection.
+        // If two PIDs have identical (cost, linesAdded, linesRemoved, model) on the same day,
+        // they almost certainly represent the same session under different PIDs.
+        // Keep the one with a prior-day entry (for proper incremental calculation),
+        // or the one with a known sessionID.
+        var mergedKeys: Set<String> = []
+
+        for (pidKey, entry) in latestByPID {
+            guard !mergedKeys.contains(pidKey) else { continue }
+            for (otherKey, otherEntry) in latestByPID where otherKey > pidKey && !mergedKeys.contains(otherKey) {
+                guard entry.day == otherEntry.day,
+                      entry.source == otherEntry.source,
+                      abs(entry.cost - otherEntry.cost) < 0.001,
+                      entry.linesAdded == otherEntry.linesAdded,
+                      entry.linesRemoved == otherEntry.linesRemoved else { continue }
+                // Duplicate found — keep the one that has a previousByPID entry or sessionID
+                let thisHasPrev = previousByPID[pidKey] != nil
+                let otherHasPrev = previousByPID[otherKey] != nil
+                let thisHasSession = pidSessionMap[pidKey] != nil
+                let otherHasSession = pidSessionMap[otherKey] != nil
+                if (otherHasPrev && !thisHasPrev) || (otherHasSession && !thisHasSession) {
+                    mergedKeys.insert(pidKey)
+                } else {
+                    mergedKeys.insert(otherKey)
+                }
+            }
+        }
+
+        for key in mergedKeys {
+            latestByPID.removeValue(forKey: key)
+            previousByPID.removeValue(forKey: key)
+        }
+
+        // Step 4: Merge PIDs that share a sessionID — keep highest-cost latest, earliest previous.
+        // This handles the case where the same session restarts under a new PID with a higher
+        // cumulative cost (not byte-identical, so Step 3 doesn't catch it).
+        var sessionToCanonical: [String: String] = [:]  // "sessionID\tsource" → canonical PID key
+
+        for (pidKey, entry) in latestByPID {
+            guard let sid = pidSessionMap[pidKey], !sid.isEmpty else { continue }
+            let sessionKey = "\(sid)\t\(entry.source.rawValue)"
+
+            if let canonicalKey = sessionToCanonical[sessionKey] {
+                let canonicalLatest = latestByPID[canonicalKey]!
+                // Keep the PID with the highest cost as the canonical latest
+                let (winnerKey, loserKey) = entry.cost >= canonicalLatest.cost
+                    ? (pidKey, canonicalKey)
+                    : (canonicalKey, pidKey)
+                let loserLatest = latestByPID[loserKey]!
+
+                // The previous for the session is the earliest entry across all PIDs
+                let winnerPrev = previousByPID[winnerKey]
+                let loserPrev = previousByPID[loserKey]
+                let candidates = [winnerPrev, loserPrev, loserLatest].compactMap { $0 }
+                let earliestPrev = candidates.min(by: { $0.day < $1.day })
+                if let ep = earliestPrev, ep.day < latestByPID[winnerKey]!.day {
+                    previousByPID[winnerKey] = ep
+                }
+
+                // Merge subagent/model-history data: prefer winner's but keep loser's if winner has none
+                if modelHistories[winnerKey] == nil, let loserHist = modelHistories[loserKey] {
+                    modelHistories[winnerKey] = loserHist
+                }
+                if subagentStats[winnerKey] == nil, let loserSubs = subagentStats[loserKey] {
+                    subagentStats[winnerKey] = loserSubs
+                }
+
+                mergedKeys.insert(loserKey)
+                sessionToCanonical[sessionKey] = winnerKey
+            } else {
+                sessionToCanonical[sessionKey] = pidKey
+            }
+        }
+
+        // Remove session-merged duplicates
+        for key in mergedKeys {
+            latestByPID.removeValue(forKey: key)
+            previousByPID.removeValue(forKey: key)
         }
 
         var d = PeriodStats()
@@ -183,7 +278,8 @@ public final class UsageData {
             linesRemoved: max(0, latest.linesRemoved - previous.linesRemoved),
             model: latest.model,
             source: latest.source,
-            project: latest.project
+            project: latest.project,
+            sessionID: latest.sessionID
         )
     }
 
@@ -331,6 +427,17 @@ public final class UsageData {
                 pidToProject[pid] = (path as NSString).lastPathComponent
             }
 
+            // Build PID → sessionID map from .agent.json files
+            var pidToSession: [String: String] = [:]
+            for file in files where file.lastPathComponent.hasSuffix(".agent.json") {
+                let pid = file.lastPathComponent
+                    .replacingOccurrences(of: ".agent.json", with: "")
+                guard let data = try? Data(contentsOf: file),
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let sid = json["session_id"] as? String, !sid.isEmpty else { continue }
+                pidToSession[pid] = sid
+            }
+
             for file in files where file.pathExtension == "dat" {
                 guard let content = try? String(contentsOf: file, encoding: .utf8) else { continue }
                 let parts = content.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -346,7 +453,8 @@ public final class UsageData {
                     pid: pid, day: dirDay, cost: cost, absoluteCost: cost,
                     linesAdded: la, linesRemoved: lr,
                     model: model, source: source,
-                    project: pidToProject[pid] ?? ""
+                    project: pidToProject[pid] ?? "",
+                    sessionID: pidToSession[pid] ?? ""
                 ))
 
                 // Read .models file for per-model breakdown

@@ -2,11 +2,61 @@
 
 ## Overview
 
-`LogViewerView` displays a Claude Code JSONL conversation log as a chat-style message list. It parses the raw JSONL file on disk, renders user and assistant messages as colored bubbles, shows tool calls as expandable chips with per-tool custom renderers, and supports a task panel that reconstructs task state from tool call history. The view supports both popover mode (inline) and window mode (sticky header with sidebar task panel).
+`LogViewerView` displays a Claude Code JSONL conversation log as a chat-style message list with full bidirectional interaction. It parses the raw JSONL file on disk, renders user and assistant messages as colored bubbles, shows tool calls as expandable chips with per-tool custom renderers, supports a task panel that reconstructs task state from tool call history, and provides interactive input/prompt handling for app-spawned sessions via `TTYBridge` and `SessionManager`.
 
 The data layer is split across two files:
-- `Sources/LogMessage.swift` — data models (`LogMessage`, `LogToolCall`, `ToolData`, all tool-specific structs) and the `LogParser` (JSONL parsing, tool data extraction, URL resolution)
-- `Sources/LogViewerView.swift` — SwiftUI view (`LogViewerView`), task panel, tool rendering, `ExpandableSection`, polling
+- `Sources/LogMessage.swift` -- data models (`LogMessage`, `LogToolCall`, `ToolData`, `ToolResponse`, all tool-specific structs) and the `LogParser` (JSONL parsing, tool data extraction, URL resolution)
+- `Sources/LogViewerView.swift` -- SwiftUI view (`LogViewerView`), input field, prompt modals, task panel, tool rendering, `ExpandableSection`, polling
+
+---
+
+## View Properties and Dependencies
+
+```swift
+public struct LogViewerView: View {
+    let agent: AgentInfo
+    let target: LogTarget
+    let settings: AppSettings
+    var sessionManager: SessionManager?
+    var stickyHeader: Bool = false
+    var onStop: (() -> Void)?
+    let onDismiss: () -> Void
+}
+```
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `agent` | `AgentInfo` | The agent whose log to display |
+| `target` | `LogTarget` | `.parent` or `.subagent(SubagentInfo)` -- determines which JSONL file to read |
+| `settings` | `AppSettings` | Controls expand behavior, display mode, max visible messages |
+| `sessionManager` | `SessionManager?` | Optional -- provides access to the TTYBridge for app-spawned sessions |
+| `stickyHeader` | `Bool` | `true` in window mode (header pinned above scroll), `false` in popover mode |
+| `onStop` | `(() -> Void)?` | Called when user stops the session, triggers navigation back |
+| `onDismiss` | `() -> Void` | Called when user taps Back |
+
+### TTY Bridge Resolution
+
+```swift
+private var bridge: TTYBridge? {
+    sessionManager?.bridge(for: agent.pid)
+}
+```
+
+Looks up the `TTYBridge` for the current agent's PID via `SessionManager`. Returns nil if this session was not spawned by the app.
+
+### Input Availability
+
+```swift
+private var canSendInput: Bool {
+    guard case .parent = target else { return false }
+    return bridge?.isAttached ?? false
+}
+```
+
+Input is available only when:
+1. The log target is `.parent` (not a subagent)
+2. The session was spawned by the app (bridge exists)
+3. The bridge is currently attached (process is running)
 
 ---
 
@@ -21,6 +71,8 @@ public struct LogMessage: Identifiable {
     public let thinking: String?
     public let textContent: [String]
     public let toolCalls: [LogToolCall]
+    public let toolResultIDs: Set<String>
+    public let toolResponses: [String: ToolResponse]
 
     public enum Role {
         case user, assistant
@@ -35,8 +87,31 @@ public struct LogMessage: Identifiable {
 | `model` | `String?` | The model ID string from the JSONL `message.model` field. Only present on assistant messages. |
 | `timestamp` | `Date?` | Parsed from the JSONL `timestamp` field using `ISO8601DateFormatter` with fractional seconds. |
 | `thinking` | `String?` | Concatenation of all `"thinking"` content blocks, joined by `"\n\n"`. `nil` if no thinking blocks. |
-| `textContent` | `[String]` | Array of text strings from `"text"` content blocks. User messages may have a single string from `message.content` (when content is a plain string, not an array). |
+| `textContent` | `[String]` | Array of text strings from `"text"` content blocks. User messages may have a single string from `message.content` (when content is a plain string, not an array). Also includes synthesized text from tool responses (e.g., "Allowed", answer values, feedback). |
 | `toolCalls` | `[LogToolCall]` | Array of tool calls extracted from `"tool_use"` content blocks. |
+| `toolResultIDs` | `Set<String>` | Tool_use IDs that have been resolved via `tool_result` in this user message. Used by `pendingPrompt` to detect unanswered prompts. |
+| `toolResponses` | `[String: ToolResponse]` | Structured user responses keyed by tool_use_id. Extracted from `toolUseResult` in JSONL entries. |
+
+---
+
+## ToolResponse — Structured User Response
+
+```swift
+public enum ToolResponse {
+    case answered([String: String])   // AskUserQuestion answers
+    case approved                      // ExitPlanMode approved or permission allowed
+    case rejected(feedback: String)    // User rejected with optional feedback
+}
+```
+
+Extracted from the `toolUseResult` field at the top level of JSONL `tool_result` entries:
+
+| Source | Condition | ToolResponse | Display Text |
+|--------|-----------|-------------|-------------|
+| AskUserQuestion | `toolUseResult.answers` is `[String: String]` | `.answered(answers)` | Answer values joined by ", " |
+| ExitPlanMode | `toolUseResult.plan` key exists | `.approved` | "Plan approved" |
+| Permission (Bash/Edit/Write) | `is_error == false` and tool ID in `promptToolIDs` | `.approved` | "Allowed" |
+| Rejected | `is_error == true` | `.rejected(feedback:)` | Feedback text after "the user said:\n" |
 
 ---
 
@@ -58,7 +133,7 @@ public struct LogToolCall: Identifiable {
 
 ---
 
-## ToolData Enum — All 14 Cases
+## ToolData Enum -- All 15 Cases
 
 ```swift
 public enum ToolData {
@@ -75,6 +150,8 @@ public enum ToolData {
     case skill(SkillToolData)
     case webSearch(WebSearchToolData)
     case webFetch(WebFetchToolData)
+    case askUserQuestion(AskUserQuestionToolData)
+    case exitPlanMode(ExitPlanModeToolData)
     case other(raw: [String: String])
 }
 ```
@@ -191,11 +268,37 @@ public struct WebFetchToolData {
 }
 ```
 
-**`.other(raw:)`** — catches all unknown tool names. The `input` dictionary is flattened to `[String: String]` by extracting string values directly, converting `NSNumber` to `stringValue`, and joining arrays of dictionaries into newline-separated key-value strings.
+**AskUserQuestionToolData**
+```swift
+public struct AskUserQuestionToolData {
+    public let questions: [Question]
+
+    public struct Question {
+        public let question: String
+        public let header: String
+        public let options: [Option]
+        public let multiSelect: Bool
+    }
+
+    public struct Option {
+        public let label: String
+        public let description: String
+    }
+}
+```
+
+**ExitPlanModeToolData**
+```swift
+public struct ExitPlanModeToolData {
+    public let plan: String
+}
+```
+
+**`.other(raw:)`** -- catches all unknown tool names. The `input` dictionary is flattened to `[String: String]` by extracting string values directly, converting `NSNumber` to `stringValue`, and joining arrays of dictionaries into newline-separated key-value strings.
 
 ---
 
-## ToolData.summary — Computed Property for Chip Label
+## ToolData.summary -- Computed Property for Chip Label
 
 `ToolData.summary` returns a short display string used as the secondary label in the tool chip:
 
@@ -214,68 +317,69 @@ public struct WebFetchToolData {
 | `.skill` | `skill` name |
 | `.webSearch` | `query` |
 | `.webFetch` | `url` |
+| `.askUserQuestion` | First question's text, or "Question" |
+| `.exitPlanMode` | `"Plan ready for review"` |
 | `.other` | First sorted key's value, truncated to 80 chars |
 
 ---
 
-## ToolData.hasDetail — Expandable Tool Check
+## ToolData.hasDetail -- Expandable Tool Check
 
 `ToolData.hasDetail` returns `false` for `.read`, `.skill`, and `.taskUpdate`. All other cases return `true`, meaning they render an expandable detail section when the user clicks the disclosure triangle.
 
+---
+
+## ToolData.needsPrompt -- Interactive Prompt Check
+
+`ToolData.needsPrompt` returns `true` for tools that require user interaction:
+
 ```swift
-public var hasDetail: Bool {
+public var needsPrompt: Bool {
     switch self {
-    case .read, .skill, .taskUpdate: return false
-    default: return true
+    case .bash, .edit, .write, .askUserQuestion, .exitPlanMode: return true
+    default: return false
     }
 }
 ```
 
+Used by:
+1. `LogParser` to track `promptToolIDs` (set of tool_use IDs that need prompts)
+2. `pendingPrompt` computed property to find unresolved prompts
+
 ---
 
-## LogParser.parseMessages — JSONL Parsing
+## LogParser.parseMessages -- JSONL Parsing
 
 `LogParser.parseMessages(at:)` reads a JSONL file from disk and returns an array of `LogMessage` values.
 
 ### Parsing Strategy
 
 1. **File read:** `Data(contentsOf: url)` then `String(data:encoding: .utf8)`.
-2. **Line-by-line parsing:** Each line is parsed with `JSONSerialization.jsonObject(with:)` — **not** `Decodable`. This allows flexible handling of varying JSONL schemas.
+2. **Line-by-line parsing:** Each line is parsed with `JSONSerialization.jsonObject(with:)` -- **not** `Decodable`. This allows flexible handling of varying JSONL schemas.
 3. **Type dispatch:** The `type` field determines whether the line is `"user"` or `"assistant"`.
-4. **User messages:** Text content is extracted either from `message.content` as a plain string (simple user messages) or from the `content` array's `"text"` items.
-5. **Assistant messages:** Content array items are classified by `type`:
-   - `"text"` items are collected into `textContent`
-   - `"thinking"` items are collected and joined with `"\n\n"` into the `thinking` field
-   - `"tool_use"` items are parsed into `LogToolCall` via `parseToolData(name:input:)`
+4. **promptToolIDs tracking:** A `Set<String>` tracks tool_use IDs that have `needsPrompt == true`, enabling accurate response detection in subsequent user messages.
+
+### User Message Parsing
+
+User messages extract:
+- **Text content**: from `content` array's `"text"` items, or from `message.content` as a plain string
+- **Tool result IDs**: from `"tool_result"` items, collecting `tool_use_id` values
+- **Tool responses**: from the top-level `toolUseResult` field, mapped to `ToolResponse` based on structure
+- **Synthesized display text**: "Allowed", answer values, "Plan approved", or rejection feedback appended to `textContent`
+
+### Assistant Message Parsing
+
+Content array items are classified by `type`:
+- `"text"` items -> `textContent`
+- `"thinking"` items -> joined with `"\n\n"` into `thinking` field
+- `"tool_use"` items -> parsed into `LogToolCall` via `parseToolData(name:input:)`; if `needsPrompt`, the tool_use ID is added to `promptToolIDs`
 
 ### Streaming Deduplication (Message Merge)
 
 Claude Code streams assistant messages incrementally. Multiple JSONL entries may share the same `message.id`, each containing a subset of the tool calls. The parser merges these:
 
-```swift
-if let existing = assistantByID[msgID] {
-    let prev = existing.msg
-    // Merge tool calls: union by tool_use id
-    var mergedTools = prev.toolCalls
-    let existingIds = Set(mergedTools.map(\.id))
-    for tc in logMsg.toolCalls where !existingIds.contains(tc.id) {
-        mergedTools.append(tc)
-    }
-    let merged = LogMessage(
-        id: msgID, role: .assistant,
-        model: logMsg.model ?? prev.model,
-        timestamp: logMsg.timestamp ?? prev.timestamp,
-        thinking: logMsg.thinking ?? prev.thinking,
-        textContent: logMsg.textContent.isEmpty ? prev.textContent : logMsg.textContent,
-        toolCalls: mergedTools
-    )
-    result[existing.index] = merged
-    assistantByID[msgID] = (existing.index, merged)
-}
-```
-
 Key merge rules:
-- **Tool calls:** unioned by `tool_use` id — if a tool call id already exists in the previous entry, it is kept; new ids are appended.
+- **Tool calls:** unioned by `tool_use` id -- if a tool call id already exists in the previous entry, it is kept; new ids are appended.
 - **Text content:** the later entry's text replaces the earlier entry's text (unless the later entry has no text).
 - **Model, timestamp, thinking:** the later entry's value is used if non-nil; otherwise the earlier value is preserved.
 - **Position in result array:** the merged message replaces the original at its index, preserving conversation order.
@@ -299,36 +403,17 @@ Key merge rules:
 | `"Skill"` | `.skill` | `skill`, `args` |
 | `"WebSearch"` | `.webSearch` | `query` |
 | `"WebFetch"` | `.webFetch` | `url`, `prompt` |
+| `"AskUserQuestion"` | `.askUserQuestion` | `questions` array with `question`, `header`, `options` (label, description), `multiSelect` |
+| `"ExitPlanMode"` | `.exitPlanMode` | `plan` |
 | (unknown) | `.other` | All string/number/array values flattened to `[String: String]` |
 
 Timestamps are parsed using an `ISO8601DateFormatter` configured with `.withInternetDateTime` and `.withFractionalSeconds`.
 
 ---
 
-## LogParser.resolveURL — JSONL Path Resolution
+## LogParser.resolveURL -- JSONL Path Resolution
 
 `LogParser.resolveURL(agent:target:)` builds the JSONL file path from an `AgentInfo` and a `LogTarget`:
-
-```swift
-public static func resolveURL(agent: AgentInfo, target: LogTarget) -> URL {
-    let projectsDir = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent(".claude/projects")
-    let encoded = SessionScanner.encodeProjectPath(agent.workingDir)
-
-    switch target {
-    case .parent:
-        return projectsDir
-            .appendingPathComponent(encoded)
-            .appendingPathComponent("\(agent.sessionID).jsonl")
-    case .subagent(let sub):
-        return projectsDir
-            .appendingPathComponent(encoded)
-            .appendingPathComponent(agent.sessionID)
-            .appendingPathComponent("subagents")
-            .appendingPathComponent("\(sub.agentID).jsonl")
-    }
-}
-```
 
 Path structure:
 - **Parent:** `~/.claude/projects/{encoded_path}/{sessionID}.jsonl`
@@ -338,7 +423,203 @@ Path structure:
 
 ---
 
-## Tool Rendering — Per-Tool Custom Views
+## Pending Prompt Detection
+
+The `pendingPrompt` computed property finds the last unresolved interactive tool call:
+
+```swift
+private var pendingPrompt: LogToolCall? {
+    guard canSendInput else { return nil }
+    let resolvedIDs = Set(messages.flatMap(\.toolResultIDs))
+    for msg in messages.reversed() where msg.role == .assistant {
+        for tc in msg.toolCalls.reversed() {
+            if !resolvedIDs.contains(tc.id) && tc.data.needsPrompt {
+                return tc
+            }
+        }
+    }
+    return nil
+}
+```
+
+Logic:
+1. Returns nil if input is not available (not a parent session, or no bridge)
+2. Collects all resolved tool_use IDs from `toolResultIDs` across all messages
+3. Scans messages in reverse order (most recent first)
+4. For each assistant message, checks tool calls in reverse
+5. If a tool_use ID is not resolved AND `needsPrompt == true`, returns it as pending
+
+---
+
+## Prompt Modal UI
+
+### Prompt Type Dispatch
+
+```swift
+@ViewBuilder
+private func promptView(_ tc: LogToolCall) -> some View {
+    switch tc.data {
+    case .askUserQuestion(let d): askUserQuestionPrompt(d, toolID: tc.id)
+    case .exitPlanMode:           planApprovalPrompt()
+    case .bash, .edit, .write:    permissionPrompt(tc)
+    default:                      permissionPrompt(tc)  // generic fallback
+    }
+}
+```
+
+### Permission Prompt
+
+For Bash, Edit, Write, and any other tool that `needsPrompt`:
+
+- **Header**: Shield icon (orange) + tool name (`.caption` medium) + summary (`.caption` secondary, truncated)
+- **Buttons**: "Allow" (green tint) and "Deny" (red tint), `.borderedProminent` style, small control size
+- **Allow action**: `bridge?.sendRaw("\r")` -- Enter key
+- **Deny action**: `bridge?.sendRaw("\u{1b}")` -- Escape key
+- **Background**: orange at 0.08 opacity, rounded rectangle
+
+### AskUserQuestion Prompt
+
+- **Header**: optional header text (`.caption2` semibold secondary)
+- **Question**: question text (`.caption` medium)
+- **Options**: radio-button list with circle fill/empty icons, label and optional description
+- **Selection state**: `@State selectedOptionIdx` (default 0), `@State promptToolID` tracks which prompt the selection belongs to
+- **Stale detection**: if `promptToolID != tc.id`, the selection is treated as 0 (reset for new prompts)
+- **Submit action**:
+  ```swift
+  for _ in 0..<idx {
+      bridge?.sendRaw("\u{1b}[B")  // down arrow, separate write per key
+  }
+  bridge?.sendRaw("\r")  // Enter to confirm
+  ```
+- **Background**: blue at 0.08 opacity, rounded rectangle
+
+### ExitPlanMode Prompt
+
+- **Header**: doc.text icon (blue) + "Plan ready for review" (`.caption` medium)
+- **Buttons**: "Approve" (green tint) and "Reject" (red tint)
+- **Approve**: `bridge?.sendRaw("\r")` -- Enter
+- **Reject**: `bridge?.sendRaw("\u{1b}")` -- Escape
+- **Background**: purple at 0.08 opacity, rounded rectangle
+
+### Modal Overlay
+
+All prompts are displayed as a modal overlay on the log content:
+
+```swift
+.overlay {
+    if let pending = pendingPrompt {
+        ZStack {
+            Color.black.opacity(0.3).ignoresSafeArea()
+            promptView(pending)
+                .padding(20)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                .shadow(radius: 8)
+                .padding(16)
+        }
+    }
+}
+```
+
+The input field is hidden when a modal prompt is active.
+
+---
+
+## Input Field
+
+### Visibility
+
+Shown only when `canSendInput && pendingPrompt == nil`:
+- Must be a parent agent target (not subagent)
+- Must have an active TTY bridge
+- No pending interactive prompt
+
+### Design
+
+```swift
+private var inputField: some View {
+    HStack(alignment: .bottom, spacing: 8) {
+        ZStack(alignment: .topLeading) {
+            // Invisible text for auto-sizing
+            Text(inputText.isEmpty ? " " : inputText)
+                .font(.system(size: 12)).padding(8).opacity(0)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            TextEditor(text: $inputText)
+                .font(.system(size: 12))
+                .scrollContentBackground(.hidden).padding(4)
+
+            // Placeholder
+            if inputText.isEmpty {
+                Text("Type a message...")
+                    .font(.system(size: 12)).foregroundStyle(.tertiary)
+                    .padding(.horizontal, 8).padding(.vertical, 12)
+                    .allowsHitTesting(false)
+            }
+        }
+        .frame(minHeight: 36, maxHeight: 120)
+        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.1)))
+
+        Button { sendInput() } label: {
+            Image(systemName: "arrow.up.circle.fill")
+                .font(.system(size: 24))
+                .foregroundStyle(canSendInput && !inputText.isEmpty ? .blue : .gray)
+        }
+        .buttonStyle(.plain)
+        .disabled(!canSendInput || inputText.isEmpty)
+        .keyboardShortcut(.return, modifiers: .command)
+    }
+}
+```
+
+- Auto-expanding `TextEditor` with invisible `Text` for height measurement
+- Min height: 36pt, max height: 120pt
+- Placeholder: "Type a message..." in `.tertiary`
+- Send button: `arrow.up.circle.fill` at 24pt
+- Keyboard shortcut: Cmd+Return
+- Disabled when `canSendInput` is false or input is empty
+
+### Sending
+
+```swift
+private func sendInput() {
+    let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !text.isEmpty else { return }
+    bridge?.send(text)  // bulk paste + 50ms delay + CR
+    inputText = ""
+}
+```
+
+---
+
+## Log Header
+
+The header bar contains:
+
+```
+[< Back]    [dot] Title    [tasks] [stop] [open]
+```
+
+| Element | Condition | Description |
+|---------|-----------|-------------|
+| Back button | Always | Chevron left + "Back", blue, adaptive font |
+| Connection dot | Always | 6pt circle, green if `canSendInput`, grey otherwise |
+| Title | Always | Agent display name (parent) or subagent model (subagent), adaptive font |
+| Task toggle | `!taskList.isEmpty` | Checklist icon, toggles task panel visibility |
+| Stop button | `canSendInput` | Red stop.circle.fill, detaches bridge and removes session |
+| Open in editor | Always | arrow.up.right.square, opens JSONL file in default editor via `NSWorkspace` |
+
+### Stop Session Action
+
+```swift
+bridge?.detach()
+sessionManager?.sessions.removeValue(forKey: agent.pid)
+onStop?()
+```
+
+---
+
+## Tool Rendering -- Per-Tool Custom Views
 
 Each expandable tool has a custom renderer in `toolExpandedContent(_:)`:
 
@@ -354,6 +635,8 @@ Each expandable tool has a custom renderer in `toolExpandedContent(_:)`:
 | **TodoWrite** | `todoChecklist` | Each item shows a status icon and content. Icons: `checkmark.circle.fill` (completed, green), `circle.dotted.circle` (in_progress, orange), `circle` (pending, secondary). Completed items are strikethrough and secondary. |
 | **WebSearch** | `monoText` | Query text. |
 | **WebFetch** | `monoText` | URL, then prompt on next line if non-empty. |
+| **AskUserQuestion** | Custom VStack | Questions with headers, question text, and numbered option labels. |
+| **ExitPlanMode** | `monoText` | First 500 chars of plan text. |
 | **Other** | `monoText` | Sorted key-value pairs, one per line. |
 | **Read, Skill, TaskUpdate** | N/A | Non-expandable (`hasDetail == false`), rendered as flat chip only. |
 
@@ -401,7 +684,7 @@ The task panel header shows:
 - A `"{completed}/{total}"` counter
 - A green progress bar (`GeometryReader`-based) showing `completed/total` fill ratio
 
-Task items use the same icon/color system as `todoChecklist`:
+Task items use icons/colors:
 - `checkmark.circle.fill` (completed, green)
 - `circle.dotted.circle` (in_progress, orange)
 - `xmark.circle` (deleted, red)
@@ -413,60 +696,45 @@ Completed items are strikethrough and secondary-colored. Each item is limited to
 
 ## ExpandableSection
 
-```swift
-private struct ExpandableSection<Content: View, Label: View>: View {
-    @State private var isExpanded: Bool
-    let tintColor: Color
-    @ViewBuilder let content: () -> Content
-    @ViewBuilder let label: () -> Label
-
-    init(expanded: Bool, tintColor: Color,
-         @ViewBuilder content: @escaping () -> Content,
-         @ViewBuilder label: @escaping () -> Label) {
-        self._isExpanded = State(initialValue: expanded)
-        self.tintColor = tintColor
-        self.content = content
-        self.label = label
-    }
-
-    var body: some View {
-        DisclosureGroup(isExpanded: $isExpanded) {
-            content()
-        } label: {
-            label()
-        }
-        .tint(tintColor)
-    }
-}
-```
-
 A generic wrapper around `DisclosureGroup` that accepts an initial expanded state from settings. Used for:
 - **Thinking blocks:** initial state from `settings.expandThinking`, tint color `.purple.opacity(0.8)`
 - **Tool call chips:** initial state from `settings.expandTools`, tint color `.blue.opacity(0.7)`
 - **Long user messages** (>120 chars): initial state `false`, tint color `.green.opacity(0.7)`
 
-The `@State` initialization via `State(initialValue:)` means the expanded state is set once when the view is created and persists independently of the settings value thereafter (user can toggle each section independently).
+The `@State` initialization via `State(initialValue:)` means the expanded state is set once when the view is created and persists independently of the settings value thereafter.
 
 ---
 
-## Message Deduplication
+## Empty Bubble Filtering
 
-Streaming assistant entries are merged by `message.id`:
-- An `assistantByID: [String: (index: Int, msg: LogMessage)]` dictionary tracks seen assistant message IDs.
-- When a duplicate `message.id` is encountered, the new entry is merged into the existing one at its original array index.
-- Tool calls are unioned by their `id` field — existing tool call ids are kept, new ones are appended.
-- User messages are never deduplicated — each user JSONL entry produces a new `LogMessage` with a unique `"user-{index}"` id.
+Messages are filtered before rendering to exclude empty bubbles:
+
+```swift
+ForEach(messages.filter { !$0.textContent.isEmpty || !$0.toolCalls.isEmpty || $0.thinking != nil }) { msg in
+    messageBubble(msg)
+}
+```
+
+A message must have at least one of: text content, tool calls, or thinking content to be displayed.
 
 ---
 
-## Polling — loadMessages Every 2s with Mtime Cache
+## Polling and Data Loading
 
-`LogViewerView` polls the JSONL file for changes using a `.task` modifier:
+### Dual-Trigger Loading
 
 ```swift
 .task {
+    // Set up TTY activity trigger if we own this session
+    if let bridge {
+        bridge.onActivity = {
+            Task { await loadMessages() }
+        }
+    }
+
     await loadMessages()
     isLoading = false
+    // Fallback polling (also serves non-owned sessions and subagent logs)
     while !Task.isCancelled {
         try? await Task.sleep(for: .seconds(2))
         await loadMessages()
@@ -474,29 +742,18 @@ Streaming assistant entries are merged by `message.id`:
 }
 ```
 
+Two triggers for loading:
+1. **TTY activity callback**: For app-spawned sessions, `bridge.onActivity` is set to trigger `loadMessages()` whenever the PTY has output (Claude is responding). This provides near-instant updates.
+2. **Fallback 2-second polling**: Runs for all sessions (both owned and external). Also handles subagent logs that don't have TTY bridges.
+
+### Mtime Cache
+
 `loadMessages()` uses `Task.detached(priority: .utility)` for file I/O with an mtime-based cache:
 
-```swift
-private func loadMessages() async {
-    let url = fileURL
-    let cached = lastMtime
-    let (msgs, mtime): ([LogMessage], Date?) = await Task.detached(priority: .utility) {
-        let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
-        let mtime = attrs?[.modificationDate] as? Date
-        if let cached, let mtime, cached == mtime {
-            return ([], mtime)  // unchanged — skip parsing
-        }
-        return (LogParser.parseMessages(at: url), mtime)
-    }.value
-    if let mtime { lastMtime = mtime }
-    if !msgs.isEmpty { messages = msgs }
-}
-```
-
-- **Mtime cache:** `@State private var lastMtime: Date?` stores the last known modification date. If the file mtime matches the cached value, parsing is skipped entirely and an empty array is returned.
+- **Mtime cache:** `@State private var lastMtime: Date?` stores the last known modification date. If the file mtime matches the cached value, parsing is skipped entirely.
 - **Detached task:** File I/O runs on a `.utility` priority detached task to avoid blocking the main thread.
 - **State update:** `messages` is only replaced when `msgs` is non-empty, preventing flicker on cache-hit polls.
-- **Cancellation:** SwiftUI cancels the `.task` automatically when the view disappears. `Task.sleep` throws on cancellation (caught by `try?`), exiting the loop.
+- **Cancellation:** SwiftUI cancels the `.task` automatically when the view disappears.
 
 ---
 
@@ -504,35 +761,35 @@ private func loadMessages() async {
 
 ### Sticky Header Mode (Window)
 
-When `stickyHeader == true` (window display mode):
-- The header (`logHeader`) is rendered **outside** the scroll view, in a fixed position at the top.
-- The header has vertical padding of 8 points and a `Divider` below it.
-- The task panel (when visible) renders as a sidebar alongside the log content.
-- `scrollHeight` returns `nil` — the scroll view fills all available space.
+When `stickyHeader == true`:
+- The header is rendered **outside** the scroll view, pinned at the top
+- Vertical padding of 8pt with a `Divider` below
+- Task panel (when visible) renders as a sidebar alongside log content (200pt wide)
+- `scrollHeight` returns `nil` -- the scroll view fills all available space
 
 ### Popover Mode
 
-When `stickyHeader == false` (popover display mode):
-- The header is rendered **inside** the content area (inside `logContent`).
-- The task panel (when visible) renders inline above the messages.
-- `scrollHeight` is computed from the `maxVisibleLogMessages` setting: `CGFloat(settings.maxVisibleLogMessages) * 60`.
+When `stickyHeader == false`:
+- The header is rendered **inside** the content area
+- Task panel (when visible) renders inline above messages
+- `scrollHeight` is computed: `CGFloat(settings.maxVisibleLogMessages) * 60`
 
 ### Message Bubbles
 
 Each message renders as a `VStack` with:
-1. **Role header:** A colored circle (green for user, blue for assistant), role label, and timestamp.
-2. **Thinking block** (if present): A purple-tinted `ExpandableSection` with brain icon.
+1. **Role header:** Colored circle (green for user, blue for assistant), role label, and timestamp
+2. **Thinking block** (if present): Purple-tinted `ExpandableSection` with brain icon
 3. **Content bubble:**
-   - Long user messages (>120 chars): collapsible with first 100 chars preview, green background.
-   - Normal messages: text blocks followed by tool call chips, colored background (green for user, blue for assistant at 0.08 opacity).
+   - Long user messages (>120 chars): collapsible with first 100 chars preview, green background
+   - Normal messages: text blocks followed by tool call chips, colored background (green for user, blue for assistant at 0.08 opacity)
 
-The role label for assistant messages resolves the model ID to a display name via `ClaudeModel.from(modelID:).displayName`, falling back to `"Assistant"` if the model is empty.
+Role label for assistant messages resolves model ID via `ClaudeModel.from(modelID:).displayName`, falling back to `"Assistant"`.
 
 ### Scroll Behavior
 
-The scroll view uses `ScrollViewReader` to auto-scroll to the last message:
-- On initial appearance: scrolls to the last message without animation.
-- On `messages.count` change: scrolls to the last message with a 0.2-second ease-out animation.
+Uses `ScrollViewReader` for auto-scroll:
+- On initial appearance: scrolls to last message without animation
+- On `messages.count` change: scrolls to last message with 0.2-second ease-out animation
 
 ### Font Sizes
 
@@ -549,3 +806,6 @@ The scroll view uses `ScrollViewReader` to auto-scroll to the last message:
 | Monospace tool content | `.system(size: 10, design: .monospaced)` |
 | Edit diff file path | `.system(size: 9, design: .monospaced)` |
 | Edit diff lines | `.system(size: 10, design: .monospaced)` |
+| Input field text | `.system(size: 12)` |
+| Prompt text | `.caption` |
+| Prompt buttons | `.caption` medium |

@@ -10,7 +10,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let usageData = UsageData()
     private let agentTracker = AgentTracker()
     private let settings = AppSettings()
-    private let sessionManager = SessionManager()
+    private let sessionManager: SessionManager = {
+        let logger = FileDebugLogger()
+        logger.isEnabled = true
+        return SessionManager(logger: logger)
+    }()
     private var monitor: UsageMonitor?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -162,7 +166,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             settings.isLoading = true
             window.orderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 guard let self else { return }
                 CommanderSupport.refreshFiles()

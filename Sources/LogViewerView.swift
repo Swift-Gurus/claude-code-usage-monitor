@@ -42,6 +42,7 @@ public struct LogViewerView: View {
         return false
     }
 
+
     private var fileURL: URL {
         LogParser.resolveURL(agent: agent, target: target)
     }
@@ -213,7 +214,7 @@ public struct LogViewerView: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         VStack(alignment: .leading, spacing: rowSpacing) {
-                            ForEach(messages) { msg in
+                            ForEach(messages.filter { !$0.textContent.isEmpty || !$0.toolCalls.isEmpty || $0.thinking != nil }) { msg in
                                 messageBubble(msg)
                                     .id(msg.id)
                             }
@@ -236,13 +237,26 @@ public struct LogViewerView: View {
                 }
             }
 
-            // Input field — parent agents spawned by us only
-            if canSendInput {
+            // Input field — hidden when modal prompt is active
+            if canSendInput && pendingPrompt == nil {
                 Divider()
                 inputField
             }
         }
         .padding(16)
+        .overlay {
+            if let pending = pendingPrompt {
+                ZStack {
+                    Color.black.opacity(0.3)
+                        .ignoresSafeArea()
+                    promptView(pending)
+                        .padding(20)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                        .shadow(radius: 8)
+                        .padding(16)
+                }
+            }
+        }
         .task {
             // Set up TTY activity trigger if we own this session
             if let bridge {
@@ -485,6 +499,25 @@ public struct LogViewerView: View {
             monoText(d.query)
         case .webFetch(let d):
             monoText(d.url + (d.prompt.isEmpty ? "" : "\n\(d.prompt)"))
+        case .askUserQuestion(let d):
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(Array(d.questions.enumerated()), id: \.offset) { _, q in
+                    if !q.header.isEmpty {
+                        Text(q.header).font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+                    }
+                    Text(q.question).font(.system(size: 10))
+                    ForEach(Array(q.options.enumerated()), id: \.offset) { i, o in
+                        Text("\(i + 1). \(o.label)")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .padding(6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 4))
+        case .exitPlanMode(let d):
+            monoText(String(d.plan.prefix(500)))
         case .other(let raw):
             monoText(raw.sorted(by: { $0.key < $1.key }).map { "\($0.key): \($0.value)" }.joined(separator: "\n"))
         default:
@@ -588,6 +621,218 @@ public struct LogViewerView: View {
         case "in_progress": return .orange
         default: return .secondary
         }
+    }
+
+    // MARK: - Pending Prompt Detection
+
+    /// Find the last tool_use that hasn't received a tool_result yet.
+    private var pendingPrompt: LogToolCall? {
+        guard canSendInput else { return nil }
+        let resolvedIDs = Set(messages.flatMap(\.toolResultIDs))
+        for msg in messages.reversed() where msg.role == .assistant {
+            for tc in msg.toolCalls.reversed() {
+                if !resolvedIDs.contains(tc.id) && tc.data.needsPrompt {
+                    return tc
+                }
+            }
+        }
+        return nil
+    }
+
+    /// Selected option index for the current AskUserQuestion prompt.
+    @State private var selectedOptionIdx: Int = 0
+    /// Tracks which tool_use ID the selection is for — if different, selection is stale.
+    @State private var promptToolID: String = ""
+
+    // MARK: - Prompt UI
+
+    @ViewBuilder
+    private func promptView(_ tc: LogToolCall) -> some View {
+        switch tc.data {
+        case .askUserQuestion(let d):
+            askUserQuestionPrompt(d, toolID: tc.id)
+        case .exitPlanMode:
+            planApprovalPrompt()
+        case .bash, .edit, .write:
+            permissionPrompt(tc)
+        default:
+            // Other tools that need prompt — show generic with Allow/Deny
+            permissionPrompt(tc)
+        }
+    }
+
+    private func permissionPrompt(_ tc: LogToolCall) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "lock.shield")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                Text(tc.name)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                Text(tc.data.summary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            HStack(spacing: 8) {
+                Button {
+                    // "Yes" — first option, just Enter
+                    bridge?.sendRaw("\r")
+                } label: {
+                    Text("Allow")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.green)
+                .controlSize(.small)
+
+                Button {
+                    // "Yes for this session" — second option, 1 down arrow + Enter
+                    bridge?.sendRaw("\u{1b}[B")
+                    bridge?.sendRaw("\r")
+                } label: {
+                    Text("Always")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.blue)
+                .controlSize(.small)
+
+                Button {
+                    // "Reject" — Escape to dismiss
+                    bridge?.sendRaw("\u{1b}")
+                } label: {
+                    Text("Deny")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
+                .controlSize(.small)
+            }
+        }
+        .padding(10)
+        .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func askUserQuestionPrompt(_ data: AskUserQuestionToolData, toolID: String) -> some View {
+        let question = data.questions[0]
+        // If this is a new prompt, the stored selection is stale — treat as 0
+        let effectiveSelection = promptToolID == toolID ? selectedOptionIdx : 0
+
+        return VStack(alignment: .leading, spacing: 8) {
+            if !question.header.isEmpty {
+                Text(question.header)
+                    .font(.caption2)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.secondary)
+            }
+            Text(question.question)
+                .font(.caption)
+                .fontWeight(.medium)
+
+            ForEach(Array(question.options.enumerated()), id: \.offset) { oIdx, option in
+                Button {
+                    selectedOptionIdx = oIdx
+                    promptToolID = toolID
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: effectiveSelection == oIdx ? "circle.fill" : "circle")
+                            .font(.system(size: 10))
+                            .foregroundStyle(effectiveSelection == oIdx ? .blue : .secondary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(option.label)
+                                .font(.caption)
+                                .foregroundStyle(.primary)
+                            if !option.description.isEmpty {
+                                Text(option.description)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+
+            Button {
+                // Send each arrow key as a separate write so TUI receives them as individual key events
+                let idx = promptToolID == toolID ? selectedOptionIdx : 0
+                for _ in 0..<idx {
+                    bridge?.sendRaw("\u{1b}[B")
+                }
+                bridge?.sendRaw("\r")
+            } label: {
+                Text("Submit")
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+        }
+        .padding(10)
+        .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func planApprovalPrompt() -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "doc.text")
+                    .font(.caption)
+                    .foregroundStyle(.blue)
+                Text("Plan ready for review")
+                    .font(.caption)
+                    .fontWeight(.medium)
+            }
+
+            HStack(spacing: 12) {
+                Button {
+                    // Approve — Enter to confirm default
+                    bridge?.sendRaw("\r")
+                } label: {
+                    Text("Approve")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.green)
+                .controlSize(.small)
+
+                Button {
+                    // Reject — Escape to cancel
+                    bridge?.sendRaw("\u{1b}")
+                } label: {
+                    Text("Reject")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
+                .controlSize(.small)
+            }
+        }
+        .padding(10)
+        .background(Color.purple.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
     }
 
     // MARK: - Input Field

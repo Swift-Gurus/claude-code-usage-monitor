@@ -73,6 +73,26 @@ public struct WebFetchToolData {
     public let prompt: String
 }
 
+public struct AskUserQuestionToolData {
+    public let questions: [Question]
+
+    public struct Question {
+        public let question: String
+        public let header: String
+        public let options: [Option]
+        public let multiSelect: Bool
+    }
+
+    public struct Option {
+        public let label: String
+        public let description: String
+    }
+}
+
+public struct ExitPlanModeToolData {
+    public let plan: String
+}
+
 public enum ToolData {
     case edit(EditToolData)
     case write(WriteToolData)
@@ -87,6 +107,8 @@ public enum ToolData {
     case skill(SkillToolData)
     case webSearch(WebSearchToolData)
     case webFetch(WebFetchToolData)
+    case askUserQuestion(AskUserQuestionToolData)
+    case exitPlanMode(ExitPlanModeToolData)
     case other(raw: [String: String])
 
     /// Short display text for the chip label.
@@ -108,6 +130,8 @@ public enum ToolData {
         case .skill(let d): return d.skill
         case .webSearch(let d): return d.query
         case .webFetch(let d): return d.url
+        case .askUserQuestion(let d): return d.questions.first?.question ?? "Question"
+        case .exitPlanMode: return "Plan ready for review"
         case .other(let raw):
             return raw.sorted(by: { $0.key < $1.key }).first.map { String($0.value.prefix(80)) } ?? ""
         }
@@ -120,6 +144,26 @@ public enum ToolData {
         default: return true
         }
     }
+
+    /// Whether this tool needs an interactive prompt (permission or question).
+    public var needsPrompt: Bool {
+        switch self {
+        case .bash, .edit, .write, .askUserQuestion, .exitPlanMode: return true
+        default: return false
+        }
+    }
+}
+
+// MARK: - Tool Response (from toolUseResult)
+
+/// Represents the user's response to an interactive prompt, extracted from `toolUseResult`.
+public enum ToolResponse {
+    /// User answered questions: maps question text → selected answer
+    case answered([String: String])
+    /// User approved (e.g. ExitPlanMode)
+    case approved
+    /// User rejected/clarified with feedback
+    case rejected(feedback: String)
 }
 
 // MARK: - Data Models
@@ -132,6 +176,10 @@ public struct LogMessage: Identifiable {
     public let thinking: String?
     public let textContent: [String]
     public let toolCalls: [LogToolCall]
+    /// tool_use_ids that have been resolved via tool_result (user messages only).
+    public let toolResultIDs: Set<String>
+    /// User's structured responses to interactive prompts, keyed by tool_use_id.
+    public let toolResponses: [String: ToolResponse]
 
     public enum Role {
         case user, assistant
@@ -172,6 +220,8 @@ public enum LogParser {
 
         var result: [LogMessage] = []
         var assistantByID: [String: (index: Int, msg: LogMessage)] = [:]
+        /// Track tool_use IDs that need prompts (permissions, questions) for response display
+        var promptToolIDs: Set<String> = []
 
         for line in content.split(separator: "\n") {
             guard let lineData = line.data(using: .utf8),
@@ -189,21 +239,63 @@ public enum LogParser {
                    let text = msgDict["content"] as? String, !text.isEmpty {
                     result.append(LogMessage(
                         id: "user-\(result.count)", role: .user, model: nil,
-                        timestamp: ts, thinking: nil, textContent: [text], toolCalls: []
+                        timestamp: ts, thinking: nil, textContent: [text], toolCalls: [],
+                        toolResultIDs: [], toolResponses: [:]
                     ))
                 }
                 continue
             }
 
             if type == "user" {
-                let texts = contentArr.compactMap { item -> String? in
-                    guard item["type"] as? String == "text" else { return nil }
-                    return item["text"] as? String
-                }.filter { !$0.isEmpty }
-                guard !texts.isEmpty else { continue }
+                var texts: [String] = []
+                var resultIDs: Set<String> = []
+                var responses: [String: ToolResponse] = [:]
+
+                // Extract toolUseResult from top-level entry (structured response data)
+                let toolUseResult = raw["toolUseResult"]
+
+                for item in contentArr {
+                    let itemType = item["type"] as? String ?? ""
+                    if itemType == "text", let t = item["text"] as? String, !t.isEmpty {
+                        texts.append(t)
+                    } else if itemType == "tool_result", let tid = item["tool_use_id"] as? String {
+                        resultIDs.insert(tid)
+                        let isError = item["is_error"] as? Bool ?? false
+
+                        if isError {
+                            // Rejected — extract user feedback from toolUseResult string
+                            if let tur = toolUseResult as? String,
+                               let range = tur.range(of: "the user said:\n") {
+                                let feedback = String(tur[range.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+                                responses[tid] = .rejected(feedback: feedback)
+                                texts.append(feedback)
+                            } else {
+                                responses[tid] = .rejected(feedback: "")
+                            }
+                        } else if let tur = toolUseResult as? [String: Any],
+                                  let answers = tur["answers"] as? [String: String] {
+                            // AskUserQuestion — structured answers
+                            responses[tid] = .answered(answers)
+                            let answerText = answers.values.joined(separator: ", ")
+                            texts.append(answerText)
+                        } else if let tur = toolUseResult as? [String: Any],
+                                  tur["plan"] != nil {
+                            // ExitPlanMode approved
+                            responses[tid] = .approved
+                            texts.append("Plan approved")
+                        } else if promptToolIDs.contains(tid) {
+                            // Permission tool allowed (Bash/Edit/Write)
+                            responses[tid] = .approved
+                            texts.append("Allowed")
+                        }
+                    }
+                }
+
+                guard !texts.isEmpty || !resultIDs.isEmpty else { continue }
                 result.append(LogMessage(
                     id: "user-\(result.count)", role: .user, model: nil,
-                    timestamp: ts, thinking: nil, textContent: texts, toolCalls: []
+                    timestamp: ts, thinking: nil, textContent: texts, toolCalls: [],
+                    toolResultIDs: resultIDs, toolResponses: responses
                 ))
             } else if type == "assistant" {
                 let model = msg["model"] as? String
@@ -224,6 +316,9 @@ public enum LogParser {
                             let toolId = item["id"] as? String ?? UUID().uuidString
                             let toolData = parseToolData(name: name, input: input)
                             tools.append(LogToolCall(id: toolId, name: name, data: toolData))
+                            if toolData.needsPrompt {
+                                promptToolIDs.insert(toolId)
+                            }
                         }
                     default: break
                     }
@@ -236,7 +331,8 @@ public enum LogParser {
                 let logMsg = LogMessage(
                     id: msgID, role: .assistant, model: model,
                     timestamp: ts, thinking: thinking,
-                    textContent: texts, toolCalls: tools
+                    textContent: texts, toolCalls: tools,
+                    toolResultIDs: [], toolResponses: [:]
                 )
 
                 if let existing = assistantByID[msgID] {
@@ -253,7 +349,8 @@ public enum LogParser {
                         timestamp: logMsg.timestamp ?? prev.timestamp,
                         thinking: logMsg.thinking ?? prev.thinking,
                         textContent: logMsg.textContent.isEmpty ? prev.textContent : logMsg.textContent,
-                        toolCalls: mergedTools
+                        toolCalls: mergedTools,
+                        toolResultIDs: [], toolResponses: [:]
                     )
                     result[existing.index] = merged
                     assistantByID[msgID] = (existing.index, merged)
@@ -378,6 +475,30 @@ public enum LogParser {
             return .webSearch(WebSearchToolData(query: str("query")))
         case "WebFetch":
             return .webFetch(WebFetchToolData(url: str("url"), prompt: str("prompt")))
+        case "AskUserQuestion":
+            var questions: [AskUserQuestionToolData.Question] = []
+            if let qArr = input["questions"] as? [[String: Any]] {
+                for q in qArr {
+                    var options: [AskUserQuestionToolData.Option] = []
+                    if let opts = q["options"] as? [[String: Any]] {
+                        for o in opts {
+                            options.append(AskUserQuestionToolData.Option(
+                                label: o["label"] as? String ?? "",
+                                description: o["description"] as? String ?? ""
+                            ))
+                        }
+                    }
+                    questions.append(AskUserQuestionToolData.Question(
+                        question: q["question"] as? String ?? "",
+                        header: q["header"] as? String ?? "",
+                        options: options,
+                        multiSelect: q["multiSelect"] as? Bool ?? false
+                    ))
+                }
+            }
+            return .askUserQuestion(AskUserQuestionToolData(questions: questions))
+        case "ExitPlanMode":
+            return .exitPlanMode(ExitPlanModeToolData(plan: str("plan")))
         default:
             // Capture all string values for unknown tools
             var raw: [String: String] = [:]

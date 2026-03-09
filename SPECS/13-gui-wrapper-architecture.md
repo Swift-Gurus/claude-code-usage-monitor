@@ -2,78 +2,53 @@
 
 ## Purpose
 
-Design for a native macOS GUI wrapper around Claude Code that provides a rich visual interface for conversations, file changes, tool approvals, and agent monitoring — replacing the terminal-based workflow while retaining full Claude Code functionality including subagents.
+Native macOS GUI wrapper around Claude Code that provides a rich visual interface for conversations, file changes, tool approvals, and agent monitoring. The app can both monitor existing CLI sessions (read-only) and spawn new sessions via hidden PTY with full bidirectional control including input, permission handling, and interactive prompt responses.
 
 ---
 
 ## Architecture Overview
 
-Two-phase approach:
-1. **POC (Phase 0)**: Attach to existing Claude Code sessions via TTY device, add input field + interactive prompts to the existing LogViewerView
-2. **Full (Phase 1+)**: Spawn Claude Code via hidden PTY with full lifecycle control
+The app uses a PTY + JSONL architecture:
+- **JSONL** is the source of truth for conversation rendering (parsed by `LogParser`)
+- **PTY** (via `TTYBridge`) provides bidirectional communication for app-spawned sessions
+- **SessionManager** is a central registry of active PTY sessions, shared across all views
 
-Both phases use JSONL as the source of truth for conversation rendering, with TTY/PTY for sending user input.
-
-### POC Architecture (Attach to Existing)
-
-```
-┌──────────────────────────────────────────────────────┐
-│  ClaudeUsageBar (existing app)                        │
-│                                                       │
-│  ┌─────────────┐  ┌──────────────┐  ┌──────────────┐│
-│  │ LogViewer   │  │ Agent        │  │ Cost         ││
-│  │ + Input     │  │ Dashboard    │  │ Tracking     ││
-│  │ + Prompts   │  │ (existing)   │  │ (existing)   ││
-│  └──────┬──────┘  └──────────────┘  └──────────────┘│
-│         │                                             │
-│  ┌──────┴──────────────────────────┐                 │
-│  │ TTY Writer                     │                 │
-│  │ - Resolve TTY via proc_pidinfo │                 │
-│  │ - Write prompts to /dev/ttysXXX│                 │
-│  │ - Write "y"/"n" for permissions│                 │
-│  └─────────────────────────────────┘                 │
-│         │ reads                                       │
-│  ┌──────┴──────────────────────────┐                 │
-│  │ JSONL Poller                   │                 │
-│  │ - Detect pending tool_use      │                 │
-│  │ - Show interactive prompts     │                 │
-│  │ - Render conversation          │                 │
-│  └─────────────────────────────────┘                 │
-└──────────────────────────────────────────────────────┘
-         │ reads                    │ reads
-         ▼                          ▼
-~/.claude/projects/{encoded}/    ~/.claude/usage/
-  {sessionID}.jsonl                {PPID}.dat
-  {sessionID}/subagents/           {PPID}.agent.json
-```
-
-### Full Architecture (Spawn via PTY)
+### Current Architecture (Implemented)
 
 ```
-┌──────────────────────────────────────────────────────┐
-│  Native macOS App (SwiftUI)                           │
-│                                                       │
-│  ┌─────────────┐  ┌──────────────┐  ┌──────────────┐│
-│  │ Chat View   │  │ File Diff    │  │ Agent        ││
-│  │ (JSONL)     │  │ Viewer       │  │ Dashboard    ││
-│  │             │  │ (FSEvents)   │  │ (existing)   ││
-│  └──────┬──────┘  └──────────────┘  └──────────────┘│
-│         │                                             │
-│  ┌──────┴──────────────────────────┐                 │
-│  │ Interactive Prompt Handler      │                 │
-│  │ - Permission UI (JSONL gap)     │                 │
-│  │ - AskUserQuestion (native)      │                 │
-│  │ - Text input (prompt composer)  │                 │
-│  └──────┬──────────────────────────┘                 │
-│         │ stdin/stdout                                │
-│  ┌──────┴──────────────────────────┐                 │
-│  │ PTY (hidden)                    │                 │
-│  │ Claude Code interactive mode    │                 │
-│  │ - Full tool support             │                 │
-│  │ - Subagent spawning             │                 │
-│  │ - Statusline callbacks          │                 │
-│  └─────────────────────────────────┘                 │
-└──────────────────────────────────────────────────────┘
++--------------------------------------------------------------+
+|  ClaudeUsageBar (macOS menu bar app)                          |
+|                                                               |
+|  +---------------+  +--------------+  +--------------------+ |
+|  | PopoverView   |  | Subagent     |  | LogViewerView      | |
+|  | + Open Project |  | DetailView  |  | + Input field      | |
+|  | + Agent list   |  | + Log icon  |  | + Prompt modals    | |
+|  +-------+-------+  +------+-------+  | + Connection dot   | |
+|          |                  |          | + Stop button      | |
+|          |                  |          +--------+-----------+ |
+|          |                  |                   |             |
+|  +-------+------------------+-------------------+----------+ |
+|  |                 SessionManager (@Observable)             | |
+|  |  sessions: [Int: TTYBridge]  (keyed by child PID)       | |
+|  +-----+------------------------------------+--------------+ |
+|        |                                    |                 |
+|  +-----+------+                    +--------+--------+       |
+|  | TTYBridge   |                   | DebugLogger     |       |
+|  | openpty +   |                   | Protocol-based  |       |
+|  | Process     |                   | FileDebugLogger |       |
+|  +------+------+                   | NullLogger      |       |
+|         | stdin/stdout             +-----------------+       |
+|  +------+------+                                             |
+|  | claude CLI   |                                            |
+|  | (child proc) |                                            |
+|  +------+------+                                             |
+|         | writes                                             |
+|  +------+----------------------------+                       |
+|  | ~/.claude/projects/{encoded}/     |                       |
+|  |   {sessionID}.jsonl               |                       |
+|  |   {sessionID}/subagents/          |                       |
+|  +-----------------------------------+                       |
++--------------------------------------------------------------+
 ```
 
 ### Why PTY + JSONL (not pipe mode, not API-direct)
@@ -89,472 +64,426 @@ PTY + JSONL is the sweet spot: full CC feature support with structured data for 
 
 ---
 
-## POC: TTY Attach + Input Field
+## TTYBridge — PTY Process Management
 
-### TTY Resolution
+`Sources/TTYBridge.swift` spawns and manages a Claude Code process under a hidden PTY.
 
-Resolve the controlling terminal for a running `claude` process using `proc_pidinfo`:
+### Class Design
 
 ```swift
-import Darwin
+public final class TTYBridge {
+    private var masterFD: Int32 = -1
+    private var process: Process?
+    private var readSource: DispatchSourceRead?
+    public private(set) var isAttached = false
+    public private(set) var childPID: Int = 0
+    private let logger: DebugLogging
 
-func ttyPath(for pid: pid_t) -> String? {
-    var info = proc_bsdinfo()
-    let size = proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info,
-                            Int32(MemoryLayout.size(ofValue: info)))
-    guard size > 0 else { return nil }
-    return devname(info.e_tdev, S_IFCHR).map { "/dev/" + String(cString: $0) }
+    public var onActivity: (() -> Void)?
+    public var onExit: ((Int32) -> Void)?
 }
 ```
 
-Once resolved, open the TTY device for writing:
+### Spawning
+
+Two spawn methods:
+- `spawn(workingDir:)` -- starts a fresh `claude` session
+- `spawn(sessionID:workingDir:)` -- resumes with `claude --resume <sessionID>`
+
+Both delegate to `spawnProcess(arguments:workingDir:)`:
+
+1. **PTY creation**: `openpty(&master, &slave, nil, nil, nil)` creates a pseudo-terminal pair
+2. **Window size**: `ioctl(master, TIOCSWINSZ, &ws)` sets 200 columns x 50 rows
+3. **Process setup**: `Process()` with `executableURL = /opt/homebrew/bin/claude`
+4. **Environment stripping**: Removes `CLAUDECODE` and `CLAUDE_CODE_ENTRYPOINT` env vars to prevent nesting-detection refusal
+5. **Slave FD**: The slave end is set as stdin/stdout/stderr for the child process via `FileHandle(fileDescriptor: slave)`
+6. **Process.run()**: Launches the child; slave fd is closed in the parent after launch
+
+Key difference from the original spec: uses `Process` (Foundation) instead of `fork`+`exec`. This is safer for macOS apps (no address space duplication, no signal handler inheritance issues).
+
+### Activity Monitoring
+
+A `DispatchSourceRead` on the master fd monitors output from Claude:
+
+```
+GCD Read Source (global .utility queue)
+  -> reads up to 8192 bytes
+  -> logs first 200 chars via DebugLogging
+  -> auto-handles trust prompt (first output only)
+  -> dispatches onActivity callback to main queue
+```
+
+### Trust Prompt Auto-Handler
+
+On first output from a new session, Claude may ask "Do you trust this folder?". The bridge auto-responds:
 
 ```swift
-func openTTY(for pid: pid_t) -> FileHandle? {
-    guard let path = ttyPath(for: pid) else { return nil }
-    return FileHandle(forWritingAtPath: path)
+if !trustHandled {
+    if output.contains("trust") || output.contains("Yes,") {
+        "\r".data(using: .utf8)!.withUnsafeBytes { ptr in
+            _ = Darwin.write(self.masterFD, ptr.baseAddress!, ptr.count)
+        }
+        trustHandled = true
+        return
+    }
+    trustHandled = true  // skip after first non-trust output
 }
 ```
 
-### Input Field
+Sends a carriage return (`\r`) to accept the default trust option.
 
-Added to `LogViewerView` for **parent agent sessions only** (not subagent logs):
+### Input Methods
 
-- Text editor (not single-line TextField) at the bottom of the log view
-- Default height: 5 lines
-- Auto-expands as user types more lines
-- Send button (or Enter) writes text + newline to the TTY
-- Disabled/hidden when viewing subagent logs
+**`send(_ text: String)`** -- for user prompts:
+1. Writes the full text as a bulk paste via `Darwin.write(fd, ...)`
+2. Waits 50ms (`usleep(50_000)`) for the TUI to process the paste
+3. Sends carriage return (`0x0D`) to submit
 
-```
-┌──────────────────────────────────────────┐
-│  ← Back            Session Logs     📋   │
-├──────────────────────────────────────────┤
-│  [Log messages...]                       │
-│                                          │
-│                                          │
-├──────────────────────────────────────────┤
-│  ┌────────────────────────────────┐      │
-│  │ Type a message...              │ Send │
-│  │                                │      │
-│  │                                │      │
-│  └────────────────────────────────┘      │
-└──────────────────────────────────────────┘
-```
+This two-step approach is required because Claude's TUI uses raw terminal mode (not line-buffered). The 50ms delay ensures the text is processed before the Enter key arrives.
 
-### Sending Messages
+**`sendRaw(_ text: String)`** -- for control sequences (no newline appended):
+- Permission responses: `"\r"` (Enter to allow), `"\u{1b}"` (Escape to deny)
+- Arrow key navigation: `"\u{1b}[B"` (down arrow for AskUserQuestion option selection)
+- Logs raw bytes sent for debugging
 
-```swift
-func sendMessage(_ text: String, to pid: pid_t) {
-    guard let tty = openTTY(for: pid) else { return }
-    let data = (text + "\n").data(using: .utf8)!
-    tty.write(data)
-    tty.closeFile()
-}
-```
+### Process Lifecycle
 
-Only available for parent agent sessions. Subagent logs are read-only (subagents run autonomously — the parent controls them).
+**Termination handler**: Set on `proc.terminationHandler`, logs exit status and reason, dispatches `onExit` callback to main queue, sets `isAttached = false`.
+
+**Detach**: `detach()` cancels the read source (which closes the master fd via `setCancelHandler`), terminates the process if running, and resets all state.
+
+**Deinit**: Calls `detach()` to ensure cleanup.
 
 ---
 
-## Interactive Prompt Detection
+## SessionManager — Central Session Registry
 
-### JSONL Gap Detection (POC)
+`Sources/SessionManager.swift` manages all app-spawned Claude sessions.
 
-When Claude Code waits for user input (tool permission, AskUserQuestion), the JSONL shows a `tool_use` entry without a subsequent `tool_result`. The app detects this gap and shows a unified prompt UI.
+### Class Design
 
-#### Detection Algorithm
-
-```
-1. Parse all messages from JSONL
-2. For each assistant message with tool_use entries:
-   a. Collect all tool_use IDs from the message
-   b. Check if matching tool_result exists in subsequent user messages
-   c. If no tool_result found → tool is PENDING (waiting for user input)
-3. For pending tools:
-   - AskUserQuestion → show question UI with options
-   - ExitPlanMode → show plan approval UI
-   - Edit/Write/Bash → show permission prompt (Allow/Deny)
-   - Other → show generic approval prompt
-```
-
-#### JSONL Message Patterns
-
-**Tool permission (Bash, Edit, Write, etc.):**
-```
-assistant: { content: [{ type: "tool_use", name: "Bash", id: "toolu_xxx",
-                          input: { command: "rm -rf ...", description: "..." } }] }
-  ↓ (gap — user being prompted in terminal)
-user: { content: [{ type: "tool_result", tool_use_id: "toolu_xxx",
-                    content: "<output>", is_error: false }] }
-```
-
-**AskUserQuestion:**
-```
-assistant: { content: [{ type: "tool_use", name: "AskUserQuestion", id: "toolu_xxx",
-                          input: { questions: [{ question: "...", options: [...] }] } }] }
-  ↓ (gap — user being prompted)
-user: { content: [{ type: "tool_result", tool_use_id: "toolu_xxx",
-                    content: "User has answered: \"...\"=\"option1\"" }] }
-```
-
-**Rejected/Clarified:**
-```
-user: { content: [{ type: "tool_result", tool_use_id: "toolu_xxx",
-                    is_error: true,
-                    content: "The user doesn't want to proceed... the user said:\n<feedback>" }] }
-```
-
-#### Unified Prompt UI
-
-All pending tool_use entries show as interactive prompt bubbles in the log:
-
-```
-┌──────────────────────────────────────────┐
-│  🔵 Opus 4.6                  10:00:12   │
-│  I'll fix the bug in auth.swift.         │
-│                                          │
-│  ┌─ 🔒 Bash ────────────────────────┐   │
-│  │ swift build 2>&1 | tail -5        │   │
-│  │                                    │   │
-│  │        [Allow]         [Deny]      │   │
-│  └────────────────────────────────────┘   │
-└──────────────────────────────────────────┘
-```
-
-For AskUserQuestion:
-```
-┌──────────────────────────────────────────┐
-│  ┌─ ❓ Question ──────────────────────┐  │
-│  │ Where should the breakdown appear?  │  │
-│  │                                     │  │
-│  │  ○ In the detail drill-down        │  │
-│  │  ○ New main screen section         │  │
-│  │  ○ Both                            │  │
-│  │                                     │  │
-│  │                 [Submit]            │  │
-│  └─────────────────────────────────────┘  │
-└──────────────────────────────────────────┘
-```
-
-#### Sending Responses via TTY
-
-- **Tool permission**: Write `"y\n"` (Allow) or `"n\n"` (Deny) to TTY
-- **AskUserQuestion**: Write the selected option number + newline (need to reverse-engineer exact format)
-- **ExitPlanMode**: Write approval or rejection text to TTY
-
-### Hooks Approach (Production — Phase 2)
-
-Claude Code supports hooks with 16+ event types. Hooks can be `"type": "http"` — they POST JSON to a URL, and Claude Code **waits for the response** (synchronous by default). This eliminates JSONL polling for prompt detection entirely.
-
-#### Architecture
-
-```
-┌─────────────────┐     POST /hook      ┌──────────────────┐
-│  Claude Code     │ ──────────────────► │  ClaudeUsageBar  │
-│                  │                     │  localhost:9999   │
-│  PreToolUse hook │ ◄────────────────── │                  │
-│                  │   JSON response     │  Shows prompt UI │
-│                  │   allow/deny/ask    │  User clicks     │
-└─────────────────┘                     └──────────────────┘
-```
-
-#### Hook Configuration
-
-```json
-// .claude/settings.json (project-level or ~/.claude/settings.json for global)
-{
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash|Edit|Write",
-        "hooks": [{
-          "type": "http",
-          "url": "http://localhost:9999/pre-tool"
-        }]
-      }
-    ],
-    "Notification": [
-      {
-        "matcher": "permission_prompt",
-        "hooks": [{
-          "type": "http",
-          "url": "http://localhost:9999/permission"
-        }]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "hooks": [{
-          "type": "http",
-          "url": "http://localhost:9999/post-tool",
-          "async": true
-        }]
-      }
-    ]
-  }
+```swift
+@Observable
+public final class SessionManager {
+    public var sessions: [Int: TTYBridge] = [:]  // keyed by child PID
+    private let logger: DebugLogging
 }
 ```
 
-#### What the App Receives (POST body)
+Uses `@Observable` so SwiftUI views reactively update when sessions are added/removed.
 
-```json
-{
-  "session_id": "abc123",
-  "hook_event_name": "PreToolUse",
-  "tool_name": "Bash",
-  "tool_input": { "command": "swift build 2>&1 | tail -5" },
-  "cwd": "/Users/crowea/Developer/...",
-  "transcript_path": "/path/to/session.jsonl"
+### API
+
+| Method | Description |
+|--------|-------------|
+| `spawn(workingDir:)` | Creates a `TTYBridge`, calls `bridge.spawn(workingDir:)`, registers in `sessions` by PID, sets up `onExit` to auto-remove. Returns the bridge or nil on failure. |
+| `bridge(for: pid)` | Looks up the `TTYBridge` for a given PID. Used by `LogViewerView` to check if it owns a session. |
+| `cleanup()` | Removes dead sessions (where `!bridge.isAttached`). |
+| `detachAll()` | Detaches all sessions. Called on app termination. |
+
+### Lifecycle Integration
+
+Created in `AppDelegate` with `FileDebugLogger` (enabled=true):
+
+```swift
+private let sessionManager: SessionManager = {
+    let logger = FileDebugLogger()
+    logger.isEnabled = true
+    return SessionManager(logger: logger)
+}()
+```
+
+Passed through:
+- `AppDelegate` -> `PopoverView` (as constructor param)
+- `PopoverView` -> `SubagentDetailView` (as property)
+- `SubagentDetailView` -> `LogViewerView` (as optional property)
+
+---
+
+## DebugLogger — Protocol-Based Logging
+
+`Sources/DebugLogger.swift` provides injectable logging.
+
+### Protocol
+
+```swift
+public protocol DebugLogging {
+    func log(_ msg: String, category: String)
+}
+extension DebugLogging {
+    public func log(_ msg: String) { log(msg, category: "General") }
 }
 ```
 
-#### What the App Responds With
+### Implementations
 
-Allow:
-```json
-{
-  "hookSpecificOutput": {
-    "hookEventName": "PreToolUse",
-    "permissionDecision": "allow"
-  }
-}
+**FileDebugLogger**: Writes to `~/.claude/usage/debug.log`. Has an `isEnabled` flag (default false). Format: `[{date}] [{category}] {message}\n`. Creates the file if it doesn't exist, appends otherwise.
+
+**NullLogger**: No-op implementation. Default for components that don't need logging.
+
+Injected into `TTYBridge` and `SessionManager` via constructor parameter.
+
+---
+
+## Open Project — Spawning New Sessions
+
+`PopoverView` includes an "Open Project" button below the agent list.
+
+### UI
+
+```
+[+circle.fill] Open Project
 ```
 
-Deny (with reason fed back to Claude):
-```json
-{
-  "hookSpecificOutput": {
-    "hookEventName": "PreToolUse",
-    "permissionDecision": "deny",
-    "permissionDecisionReason": "User denied: use rg instead of grep"
-  }
-}
+- Blue plus icon + "Open Project" label
+- `.caption` font, `.medium` weight
+- Full-width left-aligned, `.plain` button style
+
+### Flow
+
+```
+1. User taps "Open Project"
+2. NSOpenPanel opens (directories only, single selection)
+3. User selects a project directory
+4. SessionManager.spawn(workingDir: url.path) creates a TTYBridge
+5. A synthetic AgentInfo is constructed:
+   - pid: bridge.childPID
+   - model: "Starting..."
+   - sessionID: "" (empty — will be discovered later)
+   - workingDir: selected path
+   - isIdle: false, source: .cli
+6. selectedAgent = syntheticAgent -> navigates to SubagentDetailView
+7. SubagentDetailView passes sessionManager to LogViewerView
+8. LogViewerView detects the bridge for this PID and enables input
 ```
 
-Defer to terminal (let CC show its own prompt):
-```json
-{
-  "hookSpecificOutput": {
-    "hookEventName": "PreToolUse",
-    "permissionDecision": "ask"
-  }
-}
-```
+### Auto-Navigation
 
-#### Key Hook Events
-
-| Event | Matcher | Use Case |
-|-------|---------|----------|
-| `PreToolUse` | `Bash\|Edit\|Write` | Permission decisions — app shows prompt, responds allow/deny |
-| `Notification` | `permission_prompt` | Fires when CC shows permission dialog — more targeted than PreToolUse |
-| `PostToolUse` | (all) | Track tool completion, update UI (async) |
-| `PostToolUseFailure` | (all) | Track failures (async) |
-| `SubagentStart` / `SubagentStop` | (all) | Real-time subagent lifecycle tracking |
-| `SessionStart` | (all) | Detect new/resumed sessions |
-| `Stop` | (all) | Know when Claude finishes responding |
-
-#### Advantages over JSONL Gap Detection
-
-- **No polling delay** — instant notification via HTTP POST
-- **No false positives** — no timing heuristics needed
-- **Synchronous control** — PreToolUse blocks until app responds, no TTY writing needed for permissions
-- **Full tool input** — receives complete `tool_input` JSON
-- **Bidirectional** — app can allow, deny, or defer each tool individually
-- **No TTY needed for permissions** — the hook response IS the permission decision
-
-#### Implementation Requirements
-
-1. App starts lightweight HTTP server on `localhost:9999` (or Unix domain socket)
-2. Configure hooks in project or user settings
-3. Server handles POST requests, routes to prompt UI
-4. Prompt UI blocks the HTTP response until user decides
-5. Response sent back → Claude Code proceeds or skips
-6. Only TTY still needed for: sending new user prompts (not permissions)
+Immediately after spawning, the app navigates to the agent detail view. The synthetic `AgentInfo` has `sessionID: ""` which means the log viewer may not find a JSONL file right away. The TTY bridge's `onActivity` callback triggers `loadMessages()` which polls for the JSONL file.
 
 ---
 
 ## Data Flow
 
-### 1. Conversation Rendering (JSONL → Chat View)
+### 1. Conversation Rendering (JSONL -> Chat View)
 
-The app polls the session JSONL file (sub-second interval) and renders messages as chat bubbles using the existing `LogParser` infrastructure.
+The app polls the session JSONL file (2-second interval + TTY activity triggers) and renders messages as chat bubbles using `LogParser`.
 
 ```
 JSONL entry (type: "assistant")
-  → LogParser.parseMessages()
-    → LogMessage { role, model, textContent, toolCalls }
-      → Chat bubble with text + tool call chips + interactive prompts
+  -> LogParser.parseMessages()
+    -> LogMessage { role, model, textContent, toolCalls, toolResultIDs, toolResponses }
+      -> Chat bubble with text + tool call chips + interactive prompts
 ```
 
 User messages, assistant responses, tool calls, and tool results all appear in the JSONL in chronological order. The existing deduplication (last entry per message.id wins, tool calls merged by tool_use id) handles streaming partials.
 
-### 2. File Change Tracking (FSEvents → Diff Viewer)
+### 2. Pending Prompt Detection (JSONL Gap)
 
-Claude Code's Edit/Write tool calls modify files on disk. The app watches the project directory via FSEvents and shows diffs when files change.
+When Claude waits for user input, the JSONL shows a `tool_use` without a subsequent `tool_result`. The `pendingPrompt` computed property detects this:
 
 ```
-Tool call in JSONL: Edit { file_path, old_string, new_string }
-  → Diff view: red (old) / green (new)  [already implemented in LogViewerView]
-
-FSEvents on project dir
-  → Detect file modification
-  → Show file in sidebar with change indicator
+1. Collect all tool_use IDs that have been resolved (via toolResultIDs across all messages)
+2. Scan messages in reverse for the last assistant message
+3. Check each tool_use: if its ID is NOT in resolvedIDs and data.needsPrompt == true -> PENDING
+4. needsPrompt is true for: .bash, .edit, .write, .askUserQuestion, .exitPlanMode
 ```
 
-The JSONL tool_use content contains `old_string`/`new_string` for Edit and `content` for Write — these render rich diffs via the existing `editDiffView` and `writeDiffView` in LogViewerView.
+Only checked when `canSendInput == true` (parent target + bridge attached).
 
-### 3. Agent & Subagent Monitoring (Existing Infrastructure)
+### 3. User Response Rendering (toolUseResult)
+
+When a user responds to a prompt, the JSONL `tool_result` entry may contain a `toolUseResult` field at the top level. The parser extracts structured responses:
+
+- **AskUserQuestion answered**: `toolUseResult` is a dict with `answers: [String: String]` -> `ToolResponse.answered`
+- **ExitPlanMode approved**: `toolUseResult` is a dict with `plan` key present -> `ToolResponse.approved`
+- **Permission allowed**: `is_error == false` and tool ID was in `promptToolIDs` -> `ToolResponse.approved`, displayed as "Allowed"
+- **Rejected**: `is_error == true`, extracts feedback after "the user said:\n" -> `ToolResponse.rejected(feedback:)`
+
+### 4. File Change Tracking (Existing)
+
+JSONL tool_use content contains `old_string`/`new_string` for Edit and `content` for Write -- rendered as rich diffs via `editDiffView` and `writeDiffView` in LogViewerView.
+
+### 5. Agent & Subagent Monitoring (Existing)
 
 The existing `AgentTracker`, `UsageData`, and subagent scanning infrastructure carries over directly:
 
-- **Cost tracking**: Statusline fires in interactive mode → `.dat` / `.agent.json` files → `UsageData`
-- **Subagent tracking**: `AgentTracker.writeSubagentFiles()` scans subagent JSONL dirs → `.subagent-details.json`
+- **Cost tracking**: Statusline fires in interactive mode -> `.dat` / `.agent.json` files -> `UsageData`
+- **Subagent tracking**: `AgentTracker.writeSubagentFiles()` scans subagent JSONL dirs -> `.subagent-details.json`
 - **Subagent naming**: `JSONLParser.parseSubagentMeta()` maps Agent tool calls to subagent descriptions
 
 ---
 
-## PTY Management (Full Mode — Phase 1+)
+## Interactive Prompt Handling
 
-### Spawning
+### Permission Prompts (Bash, Edit, Write)
+
+Displayed as a modal overlay with shield icon, tool name, and summary:
+
+```
++--------------------------------------------+
+|  [shield] Bash  swift build 2>&1 | tail -5 |
+|                                             |
+|      [Allow (green)]    [Deny (red)]        |
++--------------------------------------------+
+```
+
+- **Allow**: `bridge.sendRaw("\r")` -- Enter key to accept the default "Allow once" option
+- **Deny**: `bridge.sendRaw("\u{1b}")` -- Escape key to cancel/dismiss
+
+Background: orange tint at 0.08 opacity.
+
+### AskUserQuestion Prompts
+
+Displayed as a modal with radio button selection:
+
+```
++--------------------------------------------+
+|  Optional Header                            |
+|  Question text here?                        |
+|                                             |
+|  (*) Option 1 label                         |
+|      Option 1 description                   |
+|  ( ) Option 2 label                         |
+|      Option 2 description                   |
+|  ( ) Option 3 label                         |
+|                                             |
+|              [Submit]                        |
++--------------------------------------------+
+```
+
+- Options are clickable radio buttons with fill/empty circle icons
+- Selection tracked via `@State selectedOptionIdx` and `@State promptToolID` (resets when a new prompt appears)
+- **Submit**: Sends arrow-down keys to navigate to the selected option, then Enter:
+  ```swift
+  for _ in 0..<idx {
+      bridge?.sendRaw("\u{1b}[B")  // down arrow, each as separate write()
+  }
+  bridge?.sendRaw("\r")  // Enter to confirm
+  ```
+- Each arrow key is sent as a separate `write()` call so the TUI processes them as individual key events
+
+Background: blue tint at 0.08 opacity.
+
+### ExitPlanMode Prompts
+
+Displayed as an Approve/Reject dialog:
+
+```
++--------------------------------------------+
+|  [doc.text] Plan ready for review           |
+|                                             |
+|    [Approve (green)]    [Reject (red)]      |
++--------------------------------------------+
+```
+
+- **Approve**: `bridge.sendRaw("\r")` -- Enter to confirm
+- **Reject**: `bridge.sendRaw("\u{1b}")` -- Escape to cancel
+
+Background: purple tint at 0.08 opacity.
+
+### Modal Overlay
+
+All prompt types display as a modal overlay on top of the log content:
 
 ```swift
-import Darwin
-
-func spawnClaudeCode(workingDir: String) -> (pid: pid_t, masterFD: Int32) {
-    var masterFD: Int32 = 0
-    var slaveFD: Int32 = 0
-    openpty(&masterFD, &slaveFD, nil, nil, nil)
-
-    let pid = fork()
-    if pid == 0 {
-        // Child: set up PTY as stdin/stdout/stderr
-        close(masterFD)
-        setsid()
-        dup2(slaveFD, STDIN_FILENO)
-        dup2(slaveFD, STDOUT_FILENO)
-        dup2(slaveFD, STDERR_FILENO)
-        close(slaveFD)
-        chdir(workingDir)
-        execvp("claude", ["claude"])
+.overlay {
+    if let pending = pendingPrompt {
+        ZStack {
+            Color.black.opacity(0.3).ignoresSafeArea()
+            promptView(pending)
+                .padding(20)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                .shadow(radius: 8)
+                .padding(16)
+        }
     }
-    close(slaveFD)
-    return (pid, masterFD)
 }
 ```
 
-### Input/Output
-
-- **Read from PTY**: Raw terminal output (ANSI). Used as a fallback "raw view" tab, not primary UI.
-- **Write to PTY**: User prompts, permission responses ("y"/"n"), AskUserQuestion answers.
-- **Window sizing**: `ioctl(masterFD, TIOCSWINSZ, &winsize)` — set to reasonable defaults since output isn't displayed raw.
-
-### Process Lifecycle
-
-- **Start**: User opens/creates a session → spawn PTY with `claude` or `claude --resume <sessionID>`
-- **Send prompt**: Write user text + newline to PTY stdin
-- **Interrupt**: Send SIGINT to child process (`kill(pid, SIGINT)`) — equivalent to Ctrl+C
-- **Stop**: Send `/quit` command or SIGTERM
-- **Crash recovery**: Monitor child process, show error if it exits unexpectedly
+The input field is hidden when a modal prompt is active (`canSendInput && pendingPrompt == nil`).
 
 ---
 
-## UI Layout (Full Mode)
+## PTY Input Field
+
+### Design
+
+An auto-expanding `TextEditor` at the bottom of the log view, visible only for parent agent sessions with an active TTY bridge:
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│  [Sessions ▾]  project-name          [$12.34]  [Settings]    │
-├──────────┬───────────────────────────────────────────────────┤
-│          │                                                    │
-│ Files    │  Chat / Conversation                              │
-│          │                                                    │
-│ ▸ src/   │  🟢 User                              10:00:05   │
-│   auth.* │  ┌──────────────────────────────────┐             │
-│   login. │  │ Fix the login bug in auth.swift  │             │
-│          │  └──────────────────────────────────┘             │
-│ Modified:│                                                    │
-│  auth.sw │  🔵 Opus 4.6                          10:00:12   │
-│  login.s │  ┌──────────────────────────────────┐             │
-│          │  │ I'll look at the auth module.    │             │
-│──────────│  │                                  │             │
-│          │  │ ▶ Read auth.swift                │             │
-│ Agents   │  │ ▶ Edit auth.swift [Allow] [Deny] │             │
-│          │  │                                  │             │
-│ ● main   │  │ Fixed the null check on line 42. │             │
-│   $12.34 │  └──────────────────────────────────┘             │
-│   3 subs │                                                    │
-│          │                                                    │
-│  ◐ sub1  ├───────────────────────────────────────────────────┤
-│  ◐ sub2  │  ┌────────────────────────────────┐               │
-│  ◐ sub3  │  │ Enter prompt...                │        [Send] │
-│          │  │                                │               │
-│          │  └────────────────────────────────┘               │
-└──────────┴───────────────────────────────────────────────────┘
++---------------------------------------+
+| [TextEditor: auto-expanding]    [Send]|
++---------------------------------------+
 ```
 
-### Panels
+- Auto-sizing: invisible `Text` drives height via `ZStack` overlay pattern
+- Min height: 36pt, max height: 120pt
+- Placeholder: "Type a message..." in `.tertiary` when empty
+- Send button: `arrow.up.circle.fill` at 24pt, blue when enabled, grey when disabled
+- Keyboard shortcut: Cmd+Return
 
-| Panel | Source | Update Frequency |
-|-------|--------|------------------|
-| Chat view | JSONL polling | 200-500ms |
-| File sidebar | FSEvents on project dir | Real-time |
-| File diff | JSONL tool_use content (Edit/Write) | On tool call |
-| Agent dashboard | Existing AgentTracker | 5s poll |
-| Cost display | Existing UsageData (statusline) | On statusline fire |
-| Permission prompts | JSONL gap detection (POC) / Hooks (production) | 200-500ms |
-| Input field | Parent sessions only | User-driven |
+### Sending
+
+```swift
+private func sendInput() {
+    let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !text.isEmpty else { return }
+    bridge?.send(text)  // bulk paste + 50ms delay + CR
+    inputText = ""
+}
+```
 
 ---
 
-## Session Management
+## Session Lifecycle
 
-### New Session (Full Mode)
-
-```
-1. User selects project directory
-2. App spawns: claude --cwd <dir>
-3. Session JSONL created at ~/.claude/projects/{encoded}/{sessionID}.jsonl
-4. App starts polling JSONL for messages
-5. Statusline fires → .dat/.agent.json written → cost tracking begins
-```
-
-### Attach to Existing (POC)
+### New Session (via Open Project)
 
 ```
-1. User clicks on active agent in main view → opens LogViewerView
-2. App resolves TTY path via proc_pidinfo(agent.pid)
-3. Input field enabled (parent agents only)
-4. JSONL polling detects pending tool_use → shows interactive prompts
-5. User sends messages/responses via TTY write
+1. User taps "Open Project" in PopoverView
+2. NSOpenPanel: canChooseDirectories=true, canChooseFiles=false
+3. SessionManager.spawn(workingDir:) creates TTYBridge
+4. TTYBridge.spawn(workingDir:) calls openpty + Process.run()
+5. Trust prompt auto-handled on first output
+6. Synthetic AgentInfo constructed, navigate to SubagentDetailView
+7. TTY onActivity triggers JSONL reload in LogViewerView
+8. 2-second fallback polling also reloads JSONL
 ```
 
-### Resume Session (Full Mode)
+### Session Stop
 
+From LogViewerView header, the stop button (red `stop.circle.fill`):
+
+```swift
+bridge?.detach()
+sessionManager?.sessions.removeValue(forKey: agent.pid)
+onStop?()  // triggers navigation back to parent view
 ```
-1. App scans ~/.claude/projects/ for existing session JSONLs
-2. User selects a session
-3. App spawns: claude --resume <sessionID> --cwd <dir>
-4. Existing messages loaded from JSONL (history)
-5. New messages appear as conversation continues
-```
 
-### Multiple Sessions
+### Auto-Cleanup on Exit
 
-Multiple PTY instances can run simultaneously (like multiple terminal tabs). Each has its own:
-- PTY process (or TTY attachment in POC)
-- Session JSONL
-- Subagent directory
-- Cost tracking via statusline
+`TTYBridge.onExit` callback (set by SessionManager) removes the session from the registry when the child process exits naturally.
+
+### Connection Indicator
+
+The log viewer header shows a connection dot:
+- **Green**: `canSendInput == true` (parent target + bridge attached)
+- **Grey**: read-only (no bridge, or subagent target)
 
 ---
 
-## Reusable Components from Existing App
+## Reusable Components
 
 | Component | Current Use | GUI Wrapper Use |
 |-----------|-------------|-----------------|
 | `LogParser` | JSONL to display-ready messages | Chat view rendering |
-| `LogViewerView` | Chat-bubble log viewer (parent + subagent) | Basis for chat panel + input field |
+| `LogViewerView` | Chat-bubble log viewer + input + prompts | Full chat interface |
 | `LogMessage` / `LogToolCall` / `ToolData` | Structured message + tool data model | Chat message model + prompt rendering |
+| `ToolResponse` | Structured user response from toolUseResult | Display "Allowed", answers, feedback in chat |
+| `TTYBridge` | PTY spawn + bidirectional communication | Process management |
+| `SessionManager` | Central registry of spawned sessions | Session lifecycle |
+| `DebugLogger` / `DebugLogging` | Protocol-based logging | Debugging PTY communication |
 | `ExpandableSection` | Collapsible thinking/tool blocks | Expandable chat sections |
 | `editDiffView` / `writeDiffView` | Inline diff rendering for Edit/Write tools | File change visualization |
 | `todoChecklist` | TodoWrite checklist rendering | Task panel |
@@ -569,51 +498,59 @@ Multiple PTY instances can run simultaneously (like multiple terminal tabs). Eac
 
 ---
 
-## Implementation Phases
+## Implementation Status
 
-### Phase 0: POC — TTY Attach + Input (Current Sprint)
+### Completed
 
-- Resolve TTY for running `claude` processes via `proc_pidinfo`
-- Add auto-expanding text input field to `LogViewerView` (parent sessions only)
-- Send user messages to TTY
-- Detect pending `tool_use` via JSONL gap detection
-- Show unified prompt UI for permissions + AskUserQuestion
-- Send permission responses ("y"/"n") and question answers to TTY
+- TTYBridge: PTY spawn via `openpty` + `Process` (not fork)
+- SessionManager: central registry with auto-cleanup
+- DebugLogger: protocol injection with FileDebugLogger and NullLogger
+- Open Project: NSOpenPanel + spawn + auto-navigate
+- Trust prompt auto-handler
+- Input field: auto-expanding TextEditor, parent agents only, bulk paste + 50ms delay + CR
+- JSONL gap detection for pending prompts
+- Modal overlay for permissions (Enter=Allow, Escape=Deny)
+- Modal overlay for AskUserQuestion (radio buttons, arrow key navigation, separate write per key)
+- Modal overlay for ExitPlanMode (Approve/Reject)
+- User response display from toolUseResult structured data
+- Connection indicator (green/grey dot)
+- Stop session button
+- Empty bubble filtering in message list
 
-### Phase 1: PTY Spawn + Chat
+### Future (Not Yet Implemented)
 
-- Spawn Claude Code via hidden PTY (`openpty` + `fork` + `exec`)
-- Poll JSONL, render chat bubbles (reuse `LogParser` + `LogViewerView` patterns)
-- Text input field sends prompts to PTY master fd
-- Basic cost display from statusline
-- Process lifecycle management (start, stop, crash recovery)
+- **Hooks integration**: Migrate from JSONL gap detection to `PreToolUse`/`PostToolUse` HTTP hooks for instant, polling-free prompt detection
+- **File sidebar**: FSEvents on project directory with modification indicators
+- **Session resume**: `claude --resume <sessionID>` support
+- **Multi-session tabs**: Session picker / tab bar for concurrent sessions
+- **Session history browser**: Browse and resume past sessions
 
-### Phase 2: Interactive Prompts (Production)
+---
 
-- Migrate from JSONL gap detection to hooks (`PreToolUse` / `PostToolUse`)
-- Native permission dialog (Allow/Deny buttons)
-- Native AskUserQuestion rendering (radio buttons, checkboxes, text input)
-- Send responses to PTY stdin
+## Hooks Approach (Future — Production Enhancement)
 
-### Phase 3: File Viewer
+Claude Code supports hooks with 16+ event types. Hooks can be `"type": "http"` -- they POST JSON to a URL, and Claude Code waits for the response (synchronous by default). This would eliminate JSONL polling for prompt detection entirely.
 
-- FSEvents on project directory
-- File sidebar with modification indicators
-- Inline diff view from Edit tool_use content
-- Click to open in external editor
+### Architecture
 
-### Phase 4: Agent Dashboard
+```
++-----------------+     POST /hook      +------------------+
+|  Claude Code    | ------------------> |  ClaudeUsageBar  |
+|                 |                     |  localhost:9999   |
+|  PreToolUse     | <------------------ |                  |
+|                 |   JSON response     |  Shows prompt UI |
+|                 |   allow/deny/ask    |  User clicks     |
++-----------------+                     +------------------+
+```
 
-- Port existing AgentTracker/SubagentDetailView
-- Real-time subagent monitoring
-- Subagent log drill-down (already built)
+### Advantages over JSONL Gap Detection
 
-### Phase 5: Multi-Session
-
-- Session picker / tab bar
-- Resume existing sessions
-- Multiple concurrent PTY instances
-- Session history browser
+- **No polling delay** -- instant notification via HTTP POST
+- **No false positives** -- no timing heuristics needed
+- **Synchronous control** -- PreToolUse blocks until app responds
+- **Full tool input** -- receives complete `tool_input` JSON
+- **Bidirectional** -- app can allow, deny, or defer each tool individually
+- **No TTY needed for permissions** -- the hook response IS the permission decision
 
 ---
 
@@ -622,20 +559,26 @@ Multiple PTY instances can run simultaneously (like multiple terminal tabs). Eac
 | Risk | Impact | Mitigation |
 |------|--------|------------|
 | CC changes JSONL format | Chat view breaks | Version-tolerant parser, defensive decoding |
-| CC changes terminal prompt format | Permission detection breaks | Use hooks (PreToolUse) as primary signal, JSONL gap as fallback |
-| PTY management complexity | Process leaks, zombies | Robust lifecycle management, SIGCHLD handler |
-| Large JSONL files (long sessions) | Memory/performance | Incremental parsing, only load tail for display |
-| CC updates break PTY interaction | Input format changes | Minimal PTY interaction (just text + y/n), low surface area |
-| Subagent JSONL format changes | Subagent tracking breaks | Already handled defensively in existing parser |
-| TTY attach fails (POC) | Can't send input | Graceful fallback: disable input field, show read-only log |
-| proc_pidinfo requires permissions | TTY resolution fails | Request appropriate entitlements, fallback to lsof |
+| CC changes terminal prompt format | Permission detection breaks | JSONL gap detection is format-agnostic; future hooks approach eliminates this risk |
+| PTY process leaks | Zombie processes | SessionManager auto-cleanup on exit + `onExit` handler + `detachAll()` on app terminate |
+| Large JSONL files (long sessions) | Memory/performance | Mtime-based cache skips re-parsing unchanged files |
+| CC updates break PTY interaction | Input format changes | Minimal PTY interaction (bulk paste + CR for text, raw bytes for control), low surface area |
+| Trust prompt format changes | Auto-handler fails | Falls through after first output; user can manually respond via input field |
+| 50ms delay insufficient for slow machines | Text arrives after Enter | Delay is conservative; could be made configurable if needed |
 
 ---
 
+## Resolved Questions
+
+1. **AskUserQuestion stdin format** -- Arrow down keys (`ESC[B`) navigate between options, Enter confirms. Each arrow key must be a separate `write()` call so the TUI receives them as individual key events. The first option is pre-selected, so sending N down arrows selects option N.
+
+2. **Permission response format** -- Enter (`\r`) accepts the default "Allow once" option. Escape (`ESC`) dismisses/denies the permission prompt.
+
+3. **Window target** -- Integrated into ClaudeUsageBar as a feature (not a separate app). SessionManager is shared across all views.
+
+4. **PTY vs fork** -- Uses `Process` (Foundation) rather than `fork`+`exec`. Safer for macOS apps, avoids address space duplication issues.
+
 ## Open Questions
 
-1. **AskUserQuestion stdin format** — What exact text does CC expect when the user selects an option? Need to reverse-engineer from terminal interaction.
-2. **Hook reliability** — Are PreToolUse hooks guaranteed to fire before the terminal prompt? Need to verify timing.
-3. **TTY write atomicity** — Does writing to `/dev/ttysXXX` interleave with other terminal input? Need to test with concurrent writes.
-4. **Window target** — Should this be a separate app or a new mode within ClaudeUsageBar? Separate app is cleaner but duplicates dependencies.
-5. **Sandbox restrictions** — Does App Sandbox allow `proc_pidinfo` and writing to `/dev/ttysXXX`? May need to run outside sandbox for POC.
+1. **Hook reliability** -- Are PreToolUse hooks guaranteed to fire before the terminal prompt? Need to verify timing before implementing hooks approach.
+2. **Multi-session UI** -- How to present multiple concurrent sessions? Tab bar, sidebar, or session switcher dropdown?
