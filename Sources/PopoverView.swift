@@ -127,17 +127,6 @@ public struct PopoverView: View {
 
             periodTable
 
-            // Plan usage cards — shown for accounts with rate limits (auto-detected or configured)
-            let rateLimitAccounts = settings.accounts.filter { account in
-                account.accountType.hasRateLimits || accountHasLiveRateLimits(account)
-            }
-            if !rateLimitAccounts.isEmpty {
-                Divider()
-                ForEach(rateLimitAccounts) { account in
-                    planUsageCard(account: account)
-                }
-            }
-
             Divider()
 
             if !workingAgents.isEmpty || !idleAgents.isEmpty {
@@ -146,10 +135,13 @@ public struct PopoverView: View {
                         ForEach(Array(allAgentsFlat.enumerated()), id: \.element.id) { idx, item in
                             Group {
                                 switch item {
+                                case .divider:
+                                    Divider().padding(.vertical, 4)
                                 case .header(let group):
                                     accountHeader(group)
                                 case .agent(let agent):
                                     agentRow(agent)
+                                        .padding(.leading, 8)
                                 }
                             }
                             .background(GeometryReader { geo in
@@ -361,21 +353,24 @@ public struct PopoverView: View {
     }
 
     private enum AgentListItem: Identifiable {
+        case divider(String)
         case header(AccountGroup)
         case agent(AgentInfo)
 
         var id: String {
             switch self {
+            case .divider(let key): return "div-\(key)"
             case .header(let g): return "header-\(g.accountID.uuidString)"
             case .agent(let a): return "agent-\(a.pid)"
             }
         }
     }
 
-    /// Flat list of headers + agents for indexed measurement.
+    /// Flat list of dividers + headers + agents for indexed measurement.
     private var allAgentsFlat: [AgentListItem] {
         var items: [AgentListItem] = []
-        for group in groupedAccounts {
+        for (i, group) in groupedAccounts.enumerated() {
+            if i > 0 { items.append(.divider(group.accountID.uuidString)) }
             items.append(.header(group))
             for agent in group.active { items.append(.agent(agent)) }
             for agent in group.idle { items.append(.agent(agent)) }
@@ -388,7 +383,19 @@ public struct PopoverView: View {
         settings.accounts.first(where: { $0.id == group.accountID })?.displayName ?? group.accountName
     }
 
+    @ViewBuilder
     private func accountHeader(_ group: AccountGroup) -> some View {
+        let account = settings.accounts.first(where: { $0.id == group.accountID })
+        let showPlanCard = (account?.accountType.hasRateLimits == true) || accountHasLiveRateLimitsForGroup(group)
+
+        if showPlanCard, let account {
+            planUsageCard(account: account, agentCount: group.totalCount)
+        } else {
+            simpleAccountHeader(group)
+        }
+    }
+
+    private func simpleAccountHeader(_ group: AccountGroup) -> some View {
         HStack {
             Image(systemName: "person.circle")
                 .font(.caption)
@@ -396,18 +403,28 @@ public struct PopoverView: View {
             Text(displayName(for: group))
                 .font(.subheadline)
                 .fontWeight(.medium)
-            let badgeColor: Color = group.accountType.hasRateLimits ? .orange : .blue
             Text(group.accountType.label)
                 .font(.system(size: 9))
-                .foregroundStyle(badgeColor)
+                .foregroundStyle(.blue)
                 .padding(.horizontal, 3)
                 .padding(.vertical, 1)
-                .background(badgeColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 3))
+                .background(Color.blue.opacity(0.12), in: RoundedRectangle(cornerRadius: 3))
             Spacer()
             Text("\(group.totalCount)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+        .padding(.vertical, 4)
+        .padding(.horizontal, 8)
+        .background(Color.blue.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(Color.blue.opacity(0.1), lineWidth: 1)
+        )
+    }
+
+    private func accountHasLiveRateLimitsForGroup(_ group: AccountGroup) -> Bool {
+        agentTracker.activeAgents.contains { $0.accountID == group.accountID && $0.rateLimits?.hasData == true }
     }
 
     private func agentRow(_ agent: AgentInfo) -> some View {
@@ -589,7 +606,7 @@ public struct PopoverView: View {
             .first?.rateLimits
     }
 
-    private func planUsageCard(account: Account) -> some View {
+    private func planUsageCard(account: Account, agentCount: Int = 0) -> some View {
         let acctStats = data.byAccount[account.id]
         let rateLimitEvent = rateLimitEvents[account.id]
         let statsCache = statsCaches[account.id]
@@ -597,45 +614,39 @@ public struct PopoverView: View {
 
         return AnyView(
             VStack(alignment: .leading, spacing: 6) {
-                // Rate limit warning — show if hit within last 12 hours
-                // Show rate limit banner until the window resets.
-                // Use live resets_at if available, otherwise assume 5h window from event time.
+                // Rate limit warning
                 let rateLimitExpired: Bool = {
                     guard let event = rateLimitEvent else { return true }
-                    // Use the reset time parsed from the error message text
-                    // (this is the actual reset for the window that was hit, not the next rolling one)
                     if let resetsAt = event.resetsAt, resetsAt > 0 {
                         return Date().timeIntervalSince1970 > resetsAt
                     }
-                    // Fallback: 5h from event time
                     return Date().timeIntervalSince(event.timestamp) > 18000
                 }()
                 if let event = rateLimitEvent, !rateLimitExpired {
                     rateLimitBanner(event: event, resetsAt: event.resetsAt)
                 }
 
-                // Header
+                // Account header row (matches simpleAccountHeader style)
                 HStack {
-                    Text(account.displayName)
+                    Image(systemName: "person.circle")
                         .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(account.displayName)
+                        .font(.subheadline)
                         .fontWeight(.medium)
-                    if account.accountType.hasRateLimits {
-                        Text(account.accountType.label)
-                            .font(.system(size: 9))
-                            .foregroundStyle(.orange)
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 1)
-                            .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 3))
-                    } else {
-                        // Auto-detected from rate limit data
-                        Text("Pro/Max")
-                            .font(.system(size: 9))
-                            .foregroundStyle(.orange)
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 1)
-                            .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 3))
-                    }
+                    let planLabel = account.accountType.hasRateLimits ? account.accountType.label : "Pro/Max"
+                    Text(planLabel)
+                        .font(.system(size: 9))
+                        .foregroundStyle(.orange)
+                        .padding(.horizontal, 3)
+                        .padding(.vertical, 1)
+                        .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 3))
                     Spacer()
+                    if agentCount > 0 {
+                        Text("\(agentCount)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
                 // Live rate limit bars (from statusline)
@@ -673,7 +684,11 @@ public struct PopoverView: View {
                 }
             }
             .padding(8)
-            .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
+            .background(Color.orange.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(Color.orange.opacity(0.15), lineWidth: 1)
+            )
         )
     }
 
