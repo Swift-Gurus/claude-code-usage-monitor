@@ -22,6 +22,10 @@ public struct AgentInfo: Identifiable {
     public let cpuUsage: Double
     public let isIdle: Bool
     public let source: AgentSource
+    public let accountID: UUID
+    public let accountName: String
+    public let claudeDir: String  // account's .claude directory path
+    public let rateLimits: RateLimits?
 
     public var id: Int { pid }
 
@@ -77,7 +81,9 @@ public struct AgentInfo: Identifiable {
         pid: Int, model: String, agentName: String, contextPercent: Int, contextWindow: Int,
         cost: Double, linesAdded: Int, linesRemoved: Int, workingDir: String, sessionID: String,
         durationMs: Double, apiDurationMs: Double, updatedAt: TimeInterval, cpuUsage: Double,
-        isIdle: Bool, source: AgentSource
+        isIdle: Bool, source: AgentSource,
+        accountID: UUID = UUID(), accountName: String = "Default", claudeDir: String = "",
+        rateLimits: RateLimits? = nil
     ) {
         self.pid = pid
         self.model = model
@@ -95,6 +101,17 @@ public struct AgentInfo: Identifiable {
         self.cpuUsage = cpuUsage
         self.isIdle = isIdle
         self.source = source
+        self.accountID = accountID
+        self.accountName = accountName
+        self.claudeDir = claudeDir.isEmpty
+            ? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude").path
+            : claudeDir
+        self.rateLimits = rateLimits
+    }
+
+    /// The projects directory for this agent's account.
+    public var projectsDir: URL {
+        URL(fileURLWithPath: claudeDir).appendingPathComponent("projects")
     }
 }
 
@@ -107,7 +124,7 @@ public final class AgentTracker {
     /// Parent session tool counts keyed by PID — populated lazily when detail view opens
     public var parentToolCounts: [Int: [String: Int]] = [:]
 
-    private let usageDir: URL
+    public var accounts: [Account]
     private let decoder = JSONDecoder()
     /// Cache: sessionID → (max individual file mtime in subagents dir, per-model stats)
     /// Uses max file mtime (not dir mtime) to detect when existing subagent files grow.
@@ -117,9 +134,8 @@ public final class AgentTracker {
     /// Serial queue — ensures subagent scans never run concurrently, preventing data races
     private let subagentQueue = DispatchQueue(label: "com.swiftgurus.subagentScanner", qos: .utility)
 
-    public init() {
-        usageDir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude/usage")
+    public init(accounts: [Account] = [.default]) {
+        self.accounts = accounts
     }
 
     public func reload() {
@@ -130,39 +146,41 @@ public final class AgentTracker {
 
         var agents: [AgentInfo] = []
 
-        // Read .agent.json from CLI (statusline) and Commander folders.
-        // No dedup needed — CommanderSupport already skips CLI-tracked PIDs.
-        let dirs: [(URL, AgentSource)] = [
-            (usageDir.appendingPathComponent(todayStr), .cli),
-            (CommanderSupport.baseDir.appendingPathComponent(todayStr), .commander)
-        ]
-
         // First pass: read agent.json files, check PID liveness
         struct RawAgent {
             let json: AgentFileData
             let source: AgentSource
             let file: URL
+            let account: Account
         }
         var candidates: [RawAgent] = []
 
-        for (todayDir, source) in dirs {
-            guard let files = try? fm.contentsOfDirectory(
-                at: todayDir, includingPropertiesForKeys: nil
-            ) else { continue }
+        for account in accounts {
+            // Read .agent.json from CLI (statusline) and Commander folders per account.
+            let dirs: [(URL, AgentSource)] = [
+                (account.usageDir.appendingPathComponent(todayStr), .cli),
+                (account.commanderDir.appendingPathComponent(todayStr), .commander)
+            ]
 
-            for file in files where file.lastPathComponent.hasSuffix(".agent.json") {
-                guard let data = try? Data(contentsOf: file),
-                      let json = try? decoder.decode(AgentFileData.self, from: data)
-                else { continue }
+            for (todayDir, source) in dirs {
+                guard let files = try? fm.contentsOfDirectory(
+                    at: todayDir, includingPropertiesForKeys: nil
+                ) else { continue }
 
-                // Quick liveness check (no subprocess) — skip dead processes
-                // but do NOT delete agent.json: UsageData needs the session_id
-                // for cross-PID deduplication of cumulative costs.
-                guard kill(Int32(json.pid), 0) == 0 else {
-                    continue
+                for file in files where file.lastPathComponent.hasSuffix(".agent.json") {
+                    guard let data = try? Data(contentsOf: file),
+                          let json = try? decoder.decode(AgentFileData.self, from: data)
+                    else { continue }
+
+                    // Quick liveness check (no subprocess) — skip dead processes
+                    // but do NOT delete agent.json: UsageData needs the session_id
+                    // for cross-PID deduplication of cumulative costs.
+                    guard kill(Int32(json.pid), 0) == 0 else {
+                        continue
+                    }
+
+                    candidates.append(RawAgent(json: json, source: source, file: file, account: account))
                 }
-
-                candidates.append(RawAgent(json: json, source: source, file: file))
             }
         }
 
@@ -179,10 +197,11 @@ public final class AgentTracker {
 
         for raw in rawAgents {
             let json = raw.json
+            let account = raw.account
             // Resolve project root — statusline may report a subdirectory
             let resolvedDir = json.sessionID.isEmpty
                 ? json.workingDir
-                : SessionScanner.resolveProjectRoot(workingDir: json.workingDir, sessionID: json.sessionID)
+                : SessionScanner.resolveProjectRoot(workingDir: json.workingDir, sessionID: json.sessionID, projectsDir: account.projectsDir)
             agents.append(AgentInfo(
                 pid: json.pid,
                 model: json.model,
@@ -199,25 +218,28 @@ public final class AgentTracker {
                 updatedAt: json.updatedAt,
                 cpuUsage: 0,
                 isIdle: true, // recalculated below
-                source: raw.source
+                source: raw.source,
+                accountID: account.id,
+                accountName: account.name,
+                claudeDir: account.claudeDir,
+                rateLimits: json.rateLimits
             ))
 
             // Persist project association so UsageData can aggregate by project historically
             let todayDir = raw.source == .cli
-                ? usageDir.appendingPathComponent(todayStr)
-                : CommanderSupport.baseDir.appendingPathComponent(todayStr)
+                ? account.usageDir.appendingPathComponent(todayStr)
+                : account.commanderDir.appendingPathComponent(todayStr)
             let projectFile = todayDir.appendingPathComponent("\(json.pid).project")
             try? resolvedDir.write(to: projectFile, atomically: true, encoding: .utf8)
         }
 
         // Check JSONL activity: if parent or any subagent JSONL modified within 60s, agent is active
-        let projectsDir = fm.homeDirectoryForCurrentUser.appendingPathComponent(".claude/projects")
         var jsonlActivePIDs = Set<Int>()
         let now = Date()
         let modKey: URLResourceKey = .contentModificationDateKey
         for agent in agents where !agent.sessionID.isEmpty {
             let encoded = SessionScanner.encodeProjectPath(agent.workingDir)
-            let sessionDir = projectsDir.appendingPathComponent(encoded)
+            let sessionDir = agent.projectsDir.appendingPathComponent(encoded)
 
             // Check parent session JSONL mtime
             let parentJSONL = sessionDir.appendingPathComponent("\(agent.sessionID).jsonl")
@@ -256,7 +278,9 @@ public final class AgentTracker {
                 workingDir: agent.workingDir, sessionID: agent.sessionID,
                 durationMs: agent.durationMs, apiDurationMs: agent.apiDurationMs,
                 updatedAt: agent.updatedAt, cpuUsage: agent.cpuUsage, isIdle: idle,
-                source: agent.source
+                source: agent.source,
+                accountID: agent.accountID, accountName: agent.accountName,
+                claudeDir: agent.claudeDir, rateLimits: agent.rateLimits
             )
         }.sorted { $0.pid < $1.pid }
 
@@ -269,11 +293,10 @@ public final class AgentTracker {
 
     private func writeSubagentFiles(agents: [AgentInfo], todayStr: String) {
         let fm = FileManager.default
-        let projectsDir = fm.homeDirectoryForCurrentUser.appendingPathComponent(".claude/projects")
 
         for agent in agents where !agent.sessionID.isEmpty {
             let encoded = SessionScanner.encodeProjectPath(agent.workingDir)
-            let subagentsDir = projectsDir
+            let subagentsDir = agent.projectsDir
                 .appendingPathComponent(encoded)
                 .appendingPathComponent(agent.sessionID)
                 .appendingPathComponent("subagents")
@@ -291,12 +314,13 @@ public final class AgentTracker {
             subagentCache[agent.sessionID] = (mtime: maxMtime, stats: stats)
 
             // Write {pid}.subagents.json to usage folder so UsageData can read it
+            let accountUsageDir = URL(fileURLWithPath: agent.claudeDir).appendingPathComponent("usage")
             let todayDir: URL
             switch agent.source {
             case .cli:
-                todayDir = usageDir.appendingPathComponent(todayStr)
+                todayDir = accountUsageDir.appendingPathComponent(todayStr)
             case .commander:
-                todayDir = CommanderSupport.baseDir.appendingPathComponent(todayStr)
+                todayDir = accountUsageDir.appendingPathComponent("commander").appendingPathComponent(todayStr)
             }
 
             if let data = try? JSONEncoder().encode(stats) {
@@ -307,7 +331,7 @@ public final class AgentTracker {
             }
 
             // Write per-subagent detail for drill-down view
-            let meta = JSONLParser.parseSubagentMeta(sessionID: agent.sessionID, workingDir: agent.workingDir)
+            let meta = JSONLParser.parseSubagentMeta(sessionID: agent.sessionID, workingDir: agent.workingDir, projectsDir: agent.projectsDir)
             let details = JSONLParser.parseSubagentDetails(in: subagentsDir, meta: meta)
             if !details.isEmpty {
                 if let data = try? JSONEncoder().encode(details) {
@@ -324,14 +348,13 @@ public final class AgentTracker {
 
             // Parse parent session tool counts (CLI + Commander), cached by JSONL mtime
             guard !agent.sessionID.isEmpty else { continue }
-            let projectsDir = fm.homeDirectoryForCurrentUser.appendingPathComponent(".claude/projects")
-            let jsonlURL = projectsDir
+            let jsonlURL = agent.projectsDir
                 .appendingPathComponent(SessionScanner.encodeProjectPath(agent.workingDir))
                 .appendingPathComponent("\(agent.sessionID).jsonl")
             if let jsonlAttrs = try? fm.attributesOfItem(atPath: jsonlURL.path),
                let jsonlMtime = jsonlAttrs[.modificationDate] as? Date {
                 if parentToolCache[agent.sessionID]?.mtime != jsonlMtime {
-                    let counts = JSONLParser.parseParentTools(sessionID: agent.sessionID, workingDir: agent.workingDir)
+                    let counts = JSONLParser.parseParentTools(sessionID: agent.sessionID, workingDir: agent.workingDir, projectsDir: agent.projectsDir)
                     parentToolCache[agent.sessionID] = (mtime: jsonlMtime, counts: counts)
                     if !counts.isEmpty, let data = try? JSONEncoder().encode(counts) {
                         try? data.write(

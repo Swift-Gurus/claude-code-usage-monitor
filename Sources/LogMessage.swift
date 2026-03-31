@@ -60,8 +60,9 @@ public struct TodoWriteToolData {
 }
 
 public struct SkillToolData {
-    public let skill: String
-    public let args: String
+    public let name: String
+    public let arguments: String
+    public let status: String
 }
 
 public struct WebSearchToolData {
@@ -127,7 +128,7 @@ public enum ToolData {
         case .taskCreate(let d): return d.subject
         case .taskUpdate(let d): return "#\(d.taskId) → \(d.status)"
         case .todoWrite(let d): return "\(d.todos.count) items"
-        case .skill(let d): return d.skill
+        case .skill(let d): return d.name
         case .webSearch(let d): return d.query
         case .webFetch(let d): return d.url
         case .askUserQuestion(let d): return d.questions.first?.question ?? "Question"
@@ -140,7 +141,7 @@ public enum ToolData {
     /// Whether this tool has expandable detail content.
     public var hasDetail: Bool {
         switch self {
-        case .read, .skill, .taskUpdate: return false
+        case .read, .taskUpdate: return false
         default: return true
         }
     }
@@ -367,10 +368,8 @@ public enum LogParser {
     /// Resolve the JSONL file URL for a given agent and log target.
     /// When sessionID is empty (newly spawned), finds the most recent JSONL in the project directory.
     public static func resolveURL(agent: AgentInfo, target: LogTarget) -> URL {
-        let projectsDir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude/projects")
         let encoded = SessionScanner.encodeProjectPath(agent.workingDir)
-        let projectDir = projectsDir.appendingPathComponent(encoded)
+        let projectDir = agent.projectsDir.appendingPathComponent(encoded)
 
         switch target {
         case .parent:
@@ -470,7 +469,7 @@ public enum LogParser {
             }
             return .todoWrite(TodoWriteToolData(todos: items))
         case "Skill":
-            return .skill(SkillToolData(skill: str("skill"), args: str("args")))
+            return .skill(SkillToolData(name: str("skill"), arguments: str("args"), status: str("status")))
         case "WebSearch":
             return .webSearch(WebSearchToolData(query: str("query")))
         case "WebFetch":

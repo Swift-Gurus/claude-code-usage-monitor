@@ -18,7 +18,7 @@ public struct ActiveSession {
 /// and maps them to their JSONL conversation files.
 public enum SessionScanner {
 
-    private static let projectsDir = FileManager.default.homeDirectoryForCurrentUser
+    private static let defaultProjectsDir = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".claude/projects")
 
     // Short-lived cache so multiple callers in the same reload cycle share one scan
@@ -27,10 +27,11 @@ public enum SessionScanner {
 
     /// Find all running `claude` processes and resolve their JSONL session files.
     /// Results are cached for 2 seconds to avoid redundant ps/lsof calls.
-    public static func findActiveSessions() -> [ActiveSession] {
+    public static func findActiveSessions(projectsDir: URL? = nil) -> [ActiveSession] {
         let now = Date()
         if now.timeIntervalSince(cacheTime) < 2 { return cachedSessions }
 
+        let resolvedProjectsDir = projectsDir ?? defaultProjectsDir
         let pidToCwd = findClaudeProcesses()
         var sessions: [ActiveSession] = []
 
@@ -39,7 +40,7 @@ public enum SessionScanner {
 
         for (pid, cwd) in pidToCwd {
             let encoded = encodeProjectPath(cwd)
-            let projectDir = projectsDir.appendingPathComponent(encoded)
+            let projectDir = resolvedProjectsDir.appendingPathComponent(encoded)
 
             // Prefer the JSONL file actually open by this process
             let resolved: (URL, String)?
@@ -123,12 +124,13 @@ public enum SessionScanner {
     /// Claude Code's statusline may report a subdirectory (e.g. a skill's scripts folder)
     /// instead of the project root. This walks up from `workingDir` until it finds the
     /// directory whose encoded form contains the session's JSONL file.
-    public static func resolveProjectRoot(workingDir: String, sessionID: String) -> String {
+    public static func resolveProjectRoot(workingDir: String, sessionID: String, projectsDir: URL? = nil) -> String {
+        let resolvedProjectsDir = projectsDir ?? defaultProjectsDir
         let fm = FileManager.default
         var path = workingDir
         while path.count > 1 {
             let encoded = encodeProjectPath(path)
-            let jsonl = projectsDir.appendingPathComponent(encoded)
+            let jsonl = resolvedProjectsDir.appendingPathComponent(encoded)
                 .appendingPathComponent("\(sessionID).jsonl")
             if fm.fileExists(atPath: jsonl.path) {
                 return path

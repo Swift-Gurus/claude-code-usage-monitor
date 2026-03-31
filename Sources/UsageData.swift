@@ -57,13 +57,25 @@ public struct PeriodStats {
     }
 }
 
+/// Per-account period stats (day/week/month) plus daily cost history for burn rate.
+public struct AccountPeriodStats {
+    public var day = PeriodStats()
+    public var week = PeriodStats()
+    public var month = PeriodStats()
+    /// Daily cost within the current month, keyed by day-of-month (1-31).
+    public var dailyCosts: [Int: Double] = [:]
+}
+
 @Observable
 public final class UsageData {
     public var day = PeriodStats()
     public var week = PeriodStats()
     public var month = PeriodStats()
 
-    private let usageDir: URL
+    /// Per-account breakdown. Key is Account.id.
+    public var byAccount: [UUID: AccountPeriodStats] = [:]
+
+    public var accounts: [Account]
     private let includeCommander: Bool
 
     /// Model transition history per PID. Key: "{pid}\t{source}".
@@ -73,16 +85,19 @@ public final class UsageData {
     /// Subagent per-model stats per PID. Key: "{pid}\t{source}".
     private var subagentStats: [String: [String: SourceModelStats]] = [:]
 
-    public init() {
-        usageDir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude/usage")
+    public init(accounts: [Account] = [.default]) {
+        self.accounts = accounts
         includeCommander = true
         reload()
     }
 
+    /// Overrides for test usage — when set, reload uses these instead of account.usageDir
+    private var testUsageDirOverride: URL?
+
     /// Test-only initializer with custom usage directory.
     init(testUsageDir: URL, includeCommander: Bool = false) {
-        usageDir = testUsageDir
+        self.accounts = [.default]
+        self.testUsageDirOverride = testUsageDir
         self.includeCommander = includeCommander
         reload()
     }
@@ -99,6 +114,7 @@ public final class UsageData {
         let source: AgentSource
         let project: String      // short project name from {pid}.project file, empty if unknown
         let sessionID: String    // from .agent.json if available, empty otherwise
+        let accountID: UUID
     }
 
     public func reload() {
@@ -119,10 +135,19 @@ public final class UsageData {
         var entries: [DatEntry] = []
         var histories: [String: [(cost: Double, la: Int, lr: Int, model: String)]] = [:]
         var subagents: [String: [String: SourceModelStats]] = [:]
-        collectEntries(under: usageDir, source: .cli, since: collectSince, into: &entries, histories: &histories, subagents: &subagents)
-        if includeCommander {
-            let commanderDir = usageDir.appendingPathComponent("commander")
-            collectEntries(under: commanderDir, source: .commander, since: collectSince, into: &entries, histories: &histories, subagents: &subagents)
+        if let testDir = testUsageDirOverride {
+            // Test mode: use override directory directly
+            collectEntries(under: testDir, source: .cli, since: collectSince, into: &entries, histories: &histories, subagents: &subagents, accountID: accounts[0].id)
+            if includeCommander {
+                collectEntries(under: testDir.appendingPathComponent("commander"), source: .commander, since: collectSince, into: &entries, histories: &histories, subagents: &subagents, accountID: accounts[0].id)
+            }
+        } else {
+            for account in accounts {
+                collectEntries(under: account.usageDir, source: .cli, since: collectSince, into: &entries, histories: &histories, subagents: &subagents, accountID: account.id)
+                if includeCommander {
+                    collectEntries(under: account.commanderDir, source: .commander, since: collectSince, into: &entries, histories: &histories, subagents: &subagents, accountID: account.id)
+                }
+            }
         }
         modelHistories = histories
         subagentStats = subagents
@@ -240,18 +265,26 @@ public final class UsageData {
         var d = PeriodStats()
         var w = PeriodStats()
         var m = PeriodStats()
+        var accountStats: [UUID: (d: PeriodStats, w: PeriodStats, m: PeriodStats)] = [:]
+        var accountDailyCosts: [UUID: [Int: Double]] = [:]  // accountID -> dayOfMonth -> cost
 
         for (key, latest) in latestByPID {
             let prev = previousByPID[key]
+            let aid = latest.accountID
 
             // Month: use incremental if session spans from before monthStart
             if latest.day >= monthStart {
+                let monthEntry: DatEntry
                 if let prev, prev.day < monthStart {
-                    let incremental = incrementalEntry(latest: latest, previous: prev)
-                    accumulate(incremental, into: &m)
+                    monthEntry = incrementalEntry(latest: latest, previous: prev)
                 } else {
-                    accumulate(latest, into: &m)
+                    monthEntry = latest
                 }
+                accumulate(monthEntry, into: &m)
+                accumulate(monthEntry, into: &accountStats[aid, default: (.init(), .init(), .init())].m)
+                // Track daily cost for burn rate (attribute to the latest day)
+                let dayOfMonth = calendar.component(.day, from: latest.day)
+                accountDailyCosts[aid, default: [:]][dayOfMonth, default: 0] += monthEntry.cost
             }
 
             // Week: use incremental if session spans from before weekStart
@@ -259,11 +292,14 @@ public final class UsageData {
                 if let prev, prev.day < weekStart {
                     let incremental = incrementalEntry(latest: latest, previous: prev)
                     accumulate(incremental, into: &w)
+                    accumulate(incremental, into: &accountStats[aid, default: (.init(), .init(), .init())].w)
                 } else if let prev, prev.day >= weekStart {
                     let incremental = incrementalEntry(latest: latest, previous: prev)
                     accumulate(incremental, into: &w)
+                    accumulate(incremental, into: &accountStats[aid, default: (.init(), .init(), .init())].w)
                 } else {
                     accumulate(latest, into: &w)
+                    accumulate(latest, into: &accountStats[aid, default: (.init(), .init(), .init())].w)
                 }
             }
 
@@ -272,13 +308,23 @@ public final class UsageData {
                 if let prev, prev.day < today {
                     let incremental = incrementalEntry(latest: latest, previous: prev)
                     accumulate(incremental, into: &d)
+                    accumulate(incremental, into: &accountStats[aid, default: (.init(), .init(), .init())].d)
                 } else {
                     accumulate(latest, into: &d)
+                    accumulate(latest, into: &accountStats[aid, default: (.init(), .init(), .init())].d)
                 }
             }
         }
 
         day = d; week = w; month = m
+        byAccount = accountStats.mapValues { stats in
+            var aps = AccountPeriodStats(day: stats.d, week: stats.w, month: stats.m)
+            return aps
+        }
+        // Merge daily costs into account stats
+        for (aid, dailies) in accountDailyCosts {
+            byAccount[aid, default: AccountPeriodStats()].dailyCosts = dailies
+        }
     }
 
     private func incrementalEntry(latest: DatEntry, previous: DatEntry) -> DatEntry {
@@ -292,7 +338,8 @@ public final class UsageData {
             model: latest.model,
             source: latest.source,
             project: latest.project,
-            sessionID: latest.sessionID
+            sessionID: latest.sessionID,
+            accountID: latest.accountID
         )
     }
 
@@ -416,7 +463,8 @@ public final class UsageData {
         under root: URL, source: AgentSource, since monthStart: Date,
         into entries: inout [DatEntry],
         histories: inout [String: [(cost: Double, la: Int, lr: Int, model: String)]],
-        subagents: inout [String: [String: SourceModelStats]]
+        subagents: inout [String: [String: SourceModelStats]],
+        accountID: UUID = UUID()
     ) {
         let fm = FileManager.default
         let calendar = Calendar.current
@@ -474,7 +522,8 @@ public final class UsageData {
                     linesAdded: la, linesRemoved: lr,
                     model: model, source: source,
                     project: pidToProject[pid] ?? "",
-                    sessionID: pidToSession[pid] ?? ""
+                    sessionID: pidToSession[pid] ?? "",
+                    accountID: accountID
                 ))
 
                 // Read .models file for per-model breakdown

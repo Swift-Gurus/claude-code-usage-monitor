@@ -5,9 +5,11 @@ public final class UsageMonitor {
     private var stream: FSEventStreamRef?
     private var pollTimer: Timer?
     private let onChange: () -> Void
+    private var watchedPaths: [String]
 
-    public init(onChange: @escaping () -> Void) {
+    public init(accounts: [Account] = [.default], onChange: @escaping () -> Void) {
         self.onChange = onChange
+        self.watchedPaths = accounts.map { $0.usageDir.path }
         startFSEvents()
         startPolling()
     }
@@ -17,15 +19,26 @@ public final class UsageMonitor {
         pollTimer?.invalidate()
     }
 
-    // MARK: - FSEvents (for terminal sessions writing to ~/.claude/usage/)
+    /// Update watched paths when accounts change. Recreates the FSEvents stream.
+    public func updateAccounts(_ accounts: [Account]) {
+        let newPaths = accounts.map { $0.usageDir.path }
+        guard newPaths != watchedPaths else { return }
+        watchedPaths = newPaths
+        stopFSEvents()
+        startFSEvents()
+    }
+
+    // MARK: - FSEvents (for terminal sessions writing to usage directories)
 
     private func startFSEvents() {
-        let usageDir = NSHomeDirectory() + "/.claude/usage"
+        // Ensure directories exist so FSEvents can watch them
+        for path in watchedPaths {
+            try? FileManager.default.createDirectory(
+                atPath: path, withIntermediateDirectories: true
+            )
+        }
 
-        // Ensure directory exists so FSEvents can watch it
-        try? FileManager.default.createDirectory(
-            atPath: usageDir, withIntermediateDirectories: true
-        )
+        guard !watchedPaths.isEmpty else { return }
 
         var context = FSEventStreamContext()
         context.info = Unmanaged.passUnretained(self).toOpaque()
@@ -44,7 +57,7 @@ public final class UsageMonitor {
             nil,
             callback,
             &context,
-            [usageDir] as CFArray,
+            watchedPaths as CFArray,
             FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
             2.0, // 2s latency — batches rapid writes to reduce reload frequency
             UInt32(kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagFileEvents)

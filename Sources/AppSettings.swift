@@ -1,5 +1,55 @@
 import SwiftUI
 
+public enum AccountType: String, Codable, CaseIterable, Sendable {
+    case enterprise  // API / org account — pay per token, no rolling limits
+    case proPlan     // $20/mo subscription — shared rolling window limits
+    case maxPlan5    // Max $100/mo — higher rolling window limits
+    case maxPlan20   // Max $200/mo — highest rolling window limits
+
+    public var label: String {
+        switch self {
+        case .enterprise: return "Enterprise"
+        case .proPlan: return "Pro"
+        case .maxPlan5: return "Max 5x"
+        case .maxPlan20: return "Max 20x"
+        }
+    }
+
+    /// Whether this is a consumer plan with rolling window rate limits.
+    public var hasRateLimits: Bool { self != .enterprise }
+}
+
+public struct Account: Codable, Identifiable, Equatable, Sendable {
+    public var id: UUID
+    public var name: String
+    public var alias: String  // short display label, can include emoji e.g. "🏢 Work" or "🏠 Personal"
+    public var claudeDir: String  // e.g. "/Users/crowea/.claude"
+    public var accountType: AccountType
+
+    /// Display label: alias if set, otherwise name.
+    public var displayName: String { alias.isEmpty ? name : alias }
+
+    public var usageDir: URL { URL(fileURLWithPath: claudeDir).appendingPathComponent("usage") }
+    public var commanderDir: URL { usageDir.appendingPathComponent("commander") }
+    public var projectsDir: URL { URL(fileURLWithPath: claudeDir).appendingPathComponent("projects") }
+
+    public init(id: UUID = UUID(), name: String, alias: String = "", claudeDir: String, accountType: AccountType = .enterprise) {
+        self.id = id
+        self.name = name
+        self.alias = alias
+        self.claudeDir = claudeDir
+        self.accountType = accountType
+    }
+
+    public static var `default`: Account {
+        Account(
+            name: "Default",
+            claudeDir: FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent(".claude").path
+        )
+    }
+}
+
 public enum StatusBarPeriod: String, CaseIterable {
     case day, week, month
 
@@ -157,6 +207,25 @@ public final class AppSettings {
         didSet { UserDefaults.standard.set(appearanceMode.rawValue, forKey: "ClaudeUsageBar.appearanceMode") }
     }
 
+    public var accounts: [Account] {
+        didSet {
+            if let data = try? JSONEncoder().encode(accounts) {
+                UserDefaults.standard.set(data, forKey: "ClaudeUsageBar.accounts")
+            }
+        }
+    }
+
+    /// Which account to show in status bar. nil = combined (all accounts).
+    public var statusBarAccountID: UUID? {
+        didSet {
+            if let id = statusBarAccountID {
+                UserDefaults.standard.set(id.uuidString, forKey: "ClaudeUsageBar.statusBarAccountID")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "ClaudeUsageBar.statusBarAccountID")
+            }
+        }
+    }
+
     public var isLoading: Bool = false
 
     public init() {
@@ -191,5 +260,20 @@ public final class AppSettings {
 
         let appearanceRaw = UserDefaults.standard.string(forKey: "ClaudeUsageBar.appearanceMode") ?? ""
         appearanceMode = AppearanceMode(rawValue: appearanceRaw) ?? .system
+
+        if let accountIDStr = UserDefaults.standard.string(forKey: "ClaudeUsageBar.statusBarAccountID"),
+           let uuid = UUID(uuidString: accountIDStr) {
+            statusBarAccountID = uuid
+        } else {
+            statusBarAccountID = nil
+        }
+
+        if let accountData = UserDefaults.standard.data(forKey: "ClaudeUsageBar.accounts"),
+           let decoded = try? JSONDecoder().decode([Account].self, from: accountData),
+           !decoded.isEmpty {
+            accounts = decoded
+        } else {
+            accounts = [.default]
+        }
     }
 }

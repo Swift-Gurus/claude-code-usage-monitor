@@ -51,8 +51,7 @@ public struct SubagentDetailView: View {
     private let rowSpacing: CGFloat = 6
 
     private var usageDir: URL {
-        let base = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude/usage")
+        let base = URL(fileURLWithPath: agent.claudeDir).appendingPathComponent("usage")
         switch agent.source {
         case .cli: return base
         case .commander: return base.appendingPathComponent("commander")

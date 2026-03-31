@@ -271,11 +271,11 @@ public enum JSONLParser {
 
     /// Parse tool usage from the parent session's JSONL file.
     /// Works for both CLI and Commander sessions since they share the same JSONL format.
-    public static func parseParentTools(sessionID: String, workingDir: String) -> [String: Int] {
-        let projectsDir = FileManager.default.homeDirectoryForCurrentUser
+    public static func parseParentTools(sessionID: String, workingDir: String, projectsDir: URL? = nil) -> [String: Int] {
+        let resolvedDir = projectsDir ?? FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude/projects")
         let encoded = SessionScanner.encodeProjectPath(workingDir)
-        let jsonlURL = projectsDir
+        let jsonlURL = resolvedDir
             .appendingPathComponent(encoded)
             .appendingPathComponent("\(sessionID).jsonl")
 
@@ -297,12 +297,12 @@ public enum JSONLParser {
     }
 
     /// Parse all subagent JSONL files for a session, returning per-model cost.
-    /// Subagents are stored in ~/.claude/projects/{encoded_path}/{sessionID}/subagents/
-    public static func parseSubagents(sessionID: String, workingDir: String) -> [String: SourceModelStats] {
-        let projectsDir = FileManager.default.homeDirectoryForCurrentUser
+    /// Subagents are stored in {projectsDir}/{encoded_path}/{sessionID}/subagents/
+    public static func parseSubagents(sessionID: String, workingDir: String, projectsDir: URL? = nil) -> [String: SourceModelStats] {
+        let resolvedDir = projectsDir ?? FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude/projects")
         let encoded = SessionScanner.encodeProjectPath(workingDir)
-        let subagentsDir = projectsDir
+        let subagentsDir = resolvedDir
             .appendingPathComponent(encoded)
             .appendingPathComponent(sessionID)
             .appendingPathComponent("subagents")
@@ -403,11 +403,11 @@ public enum JSONLParser {
 
     /// Parse the parent JSONL to build a map of agentID -> SubagentMeta.
     /// Links Agent tool_use calls to their tool_result which contains the agentId.
-    public static func parseSubagentMeta(sessionID: String, workingDir: String) -> [String: SubagentMeta] {
-        let projectsDir = FileManager.default.homeDirectoryForCurrentUser
+    public static func parseSubagentMeta(sessionID: String, workingDir: String, projectsDir: URL? = nil) -> [String: SubagentMeta] {
+        let resolvedDir = projectsDir ?? FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude/projects")
         let encoded = SessionScanner.encodeProjectPath(workingDir)
-        let jsonlURL = projectsDir
+        let jsonlURL = resolvedDir
             .appendingPathComponent(encoded)
             .appendingPathComponent("\(sessionID).jsonl")
 

@@ -11,6 +11,10 @@ CTXWIN=$(echo "$input" | jq -r '.context_window.context_window_size // 0')
 DURATION_MS=$(echo "$input" | jq -r '.cost.total_duration_ms // 0')
 AGENT_NAME=$(echo "$input" | jq -r '.agent.name // ""')
 SESSION_ID=$(echo "$input" | jq -r '.session_id // ""')
+RL_5H_PCT=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // empty')
+RL_5H_RESET=$(echo "$input" | jq -r '.rate_limits.five_hour.resets_at // empty')
+RL_7D_PCT=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // empty')
+RL_7D_RESET=$(echo "$input" | jq -r '.rate_limits.seven_day.resets_at // empty')
 
 CYAN='\033[36m'; GREEN='\033[32m'; YELLOW='\033[33m'; RED='\033[31m'; RESET='\033[0m'; MAGENTA='\033[35m'
 
@@ -27,7 +31,7 @@ MINS=$((DURATION_MS / 60000)); SECS=$(((DURATION_MS % 60000) / 1000))
 BRANCH=""
 git rev-parse --git-dir > /dev/null 2>&1 && BRANCH=" | 🌿 $(git branch --show-current 2>/dev/null)"
 
-# --- ClaudeUsageBar tracking ---
+# --- ClaudeUsageBar tracking v2 ---
 # Stores one file per session per day: ~/.claude/usage/YYYY-MM-DD/{pid}.dat
 USAGE_DIR="$HOME/.claude/usage"
 TODAY=$(date +%Y-%m-%d)
@@ -39,9 +43,15 @@ MF="$USAGE_DIR/$TODAY/$PPID.models"
 PREV_MODEL=""; [ -f "$MF" ] && PREV_MODEL=$(tail -1 "$MF" | cut -f4-)
 [ "$PREV_MODEL" != "$MODEL" ] && printf '%s\t%s\t%s\t%s\n' "$COST" "$LINES_ADDED" "$LINES_REMOVED" "$MODEL" >> "$MF"
 
+# Build rate limits JSON fragment (only for Pro/Max plans)
+_RL=""
+[ -n "$RL_5H_PCT" ] && _RL="\"five_hour\":{\"used_pct\":$RL_5H_PCT,\"resets_at\":${RL_5H_RESET:-0}}"
+[ -n "$RL_7D_PCT" ] && { [ -n "$_RL" ] && _RL="$_RL,"; _RL="${_RL}\"seven_day\":{\"used_pct\":$RL_7D_PCT,\"resets_at\":${RL_7D_RESET:-0}}"; }
+[ -n "$_RL" ] && _RL=",\"rate_limits\":{$_RL}"
+
 # Write live agent metadata for menu bar app
 cat > "$USAGE_DIR/$TODAY/$PPID.agent.json.tmp" <<AGENTEOF
-{"pid":$PPID,"model":"$MODEL","agent_name":"$AGENT_NAME","context_pct":$PCT,"context_window":$CTXWIN,"cost":$COST,"lines_added":$LINES_ADDED,"lines_removed":$LINES_REMOVED,"working_dir":"$DIR","session_id":"$SESSION_ID","duration_ms":$DURATION_MS,"api_duration_ms":$(echo "$input" | jq -r '.cost.total_api_duration_ms // 0'),"updated_at":$(date +%s)}
+{"pid":$PPID,"model":"$MODEL","agent_name":"$AGENT_NAME","context_pct":$PCT,"context_window":$CTXWIN,"cost":$COST,"lines_added":$LINES_ADDED,"lines_removed":$LINES_REMOVED,"working_dir":"$DIR","session_id":"$SESSION_ID","duration_ms":$DURATION_MS,"api_duration_ms":$(echo "$input" | jq -r '.cost.total_api_duration_ms // 0'),"updated_at":$(date +%s)$_RL}
 AGENTEOF
 mv "$USAGE_DIR/$TODAY/$PPID.agent.json.tmp" "$USAGE_DIR/$TODAY/$PPID.agent.json"
 
@@ -197,5 +207,19 @@ MONTH_LR=$(echo "$TOTALS" | awk '{print $9}')
 COST_FMT=$(printf '$%.2f' "$COST")
 echo "${CYAN}[$MODEL]${RESET} 📁 ${DIR##*/}$BRANCH"
 echo "${BAR_COLOR}${BAR}${RESET} ${PCT}% | ${YELLOW}${COST_FMT}${RESET} | ⏱️ ${MINS}m ${SECS}s"
-echo "${MAGENTA}📊 ${RESET} Day: ${YELLOW}\$${DAY_TOTAL}${RESET} | Wk: ${YELLOW}\$${WEEK_TOTAL}${RESET} | Mo: ${YELLOW}\$${MONTH_TOTAL}${RESET}"
+
+# Show rate limits for Pro/Max, or cost totals for enterprise
+if [ -n "$RL_5H_PCT" ]; then
+  RL_5H_INT=$(printf '%.0f' "$RL_5H_PCT")
+  RL_7D_INT=$(printf '%.0f' "${RL_7D_PCT:-0}")
+  if [ "$RL_5H_INT" -ge 90 ]; then RL5_COLOR="$RED"
+  elif [ "$RL_5H_INT" -ge 70 ]; then RL5_COLOR="$YELLOW"
+  else RL5_COLOR="$GREEN"; fi
+  if [ "$RL_7D_INT" -ge 90 ]; then RL7_COLOR="$RED"
+  elif [ "$RL_7D_INT" -ge 70 ]; then RL7_COLOR="$YELLOW"
+  else RL7_COLOR="$GREEN"; fi
+  echo "${MAGENTA}⚡${RESET} 5h: ${RL5_COLOR}${RL_5H_INT}%${RESET} | 7d: ${RL7_COLOR}${RL_7D_INT}%${RESET} | ${YELLOW}${COST_FMT}${RESET}"
+else
+  echo "${MAGENTA}📊 ${RESET} Day: ${YELLOW}\$${DAY_TOTAL}${RESET} | Wk: ${YELLOW}\$${WEEK_TOTAL}${RESET} | Mo: ${YELLOW}\$${MONTH_TOTAL}${RESET}"
+fi
 echo "✏️  Day: ${GREEN}+${DAY_LA}${RESET}/${RED}-${DAY_LR}${RESET} | Wk: ${GREEN}+${WEEK_LA}${RESET}/${RED}-${WEEK_LR}${RESET} | Mo: ${GREEN}+${MONTH_LA}${RESET}/${RED}-${MONTH_LR}${RESET}"

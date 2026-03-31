@@ -1,6 +1,11 @@
 import SwiftUI
 import AppKit
 
+protocol MyModel: Observable {
+    var state: String { get set }
+}
+
+
 /// A task item reconstructed from TaskCreate/TaskUpdate/TodoWrite tool calls.
 struct TaskListItem: Identifiable {
     let id: String
@@ -516,6 +521,8 @@ public struct LogViewerView: View {
             .padding(6)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 4))
+        case .skill(let d):
+            SkillToolExpandedContent(data: d)
         case .exitPlanMode(let d):
             monoText(String(d.plan.prefix(500)))
         case .other(let raw):

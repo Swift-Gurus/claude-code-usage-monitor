@@ -20,6 +20,9 @@ public struct PopoverView: View {
     @State private var showSettings = false
     @State private var selectedAgent: AgentInfo?
     @State private var agentRowHeights: [Int: CGFloat] = [:]
+    @State private var rateLimitEvents: [UUID: RateLimitEvent] = [:]
+    @State private var statsCaches: [UUID: StatsCache] = [:]
+    @State private var filterAccountID: UUID?  // nil = all accounts
 
     // Colors that adapt to dark/light mode
     private var idleColor: Color { colorScheme == .dark ? Color(white: 0.7) : .gray }
@@ -35,6 +38,15 @@ public struct PopoverView: View {
     }
 
     private func statsFor(_ label: String) -> PeriodStats {
+        if let accountID = filterAccountID,
+           let acct = data.byAccount[accountID] {
+            switch label {
+            case "Today": return acct.day
+            case "Week": return acct.week
+            case "Month": return acct.month
+            default: return acct.day
+            }
+        }
         switch label {
         case "Today": return data.day
         case "Week": return data.week
@@ -108,7 +120,23 @@ public struct PopoverView: View {
 
             Divider()
 
+            // Account filter
+            if settings.accounts.count > 1 {
+                accountFilterDropdown
+            }
+
             periodTable
+
+            // Plan usage cards — shown for accounts with rate limits (auto-detected or configured)
+            let rateLimitAccounts = settings.accounts.filter { account in
+                account.accountType.hasRateLimits || accountHasLiveRateLimits(account)
+            }
+            if !rateLimitAccounts.isEmpty {
+                Divider()
+                ForEach(rateLimitAccounts) { account in
+                    planUsageCard(account: account)
+                }
+            }
 
             Divider()
 
@@ -119,7 +147,7 @@ public struct PopoverView: View {
                             Group {
                                 switch item {
                                 case .header(let group):
-                                    sourceHeader(group)
+                                    accountHeader(group)
                                 case .agent(let agent):
                                     agentRow(agent)
                                 }
@@ -171,24 +199,29 @@ public struct PopoverView: View {
 
             Divider()
 
-            HStack(spacing: 6) {
-                Image(systemName: installed
-                      ? "checkmark.circle.fill" : "xmark.circle.fill")
-                    .foregroundStyle(installed ? .green : .red)
-                Text(installed
-                     ? "Statusline active"
-                     : installError ? "Install failed — check jq is installed"
-                     : "Statusline not configured")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                if !installed {
-                    Spacer()
-                    Button("Install") {
-                        let success = StatuslineInstaller.install()
-                        installed = StatuslineInstaller.isInstalled
-                        installError = !success
+            ForEach(settings.accounts) { account in
+                let acctInstalled = StatuslineInstaller.isInstalled(claudeDir: account.claudeDir)
+                HStack(spacing: 6) {
+                    Image(systemName: acctInstalled
+                          ? "checkmark.circle.fill" : "xmark.circle.fill")
+                        .foregroundStyle(acctInstalled ? .green : .red)
+                    Text(acctInstalled
+                         ? "\(account.displayName) statusline active"
+                         : "\(account.displayName) statusline not configured")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    if !acctInstalled {
+                        Spacer()
+                        Button("Install") {
+                            let success = StatuslineInstaller.install(claudeDir: account.claudeDir)
+                            installed = settings.accounts.allSatisfy {
+                                StatuslineInstaller.isInstalled(claudeDir: $0.claudeDir)
+                            }
+                            installError = !success
+                        }
+                        .font(.caption)
                     }
-                    .font(.caption)
                 }
             }
 
@@ -199,6 +232,28 @@ public struct PopoverView: View {
             .foregroundStyle(.secondary)
             .font(.caption)
         }
+        .task {
+            await loadPlanData()
+        }
+    }
+
+    private func loadPlanData() async {
+        let accounts = settings.accounts
+        let results = await Task.detached(priority: .utility) {
+            var events: [UUID: RateLimitEvent] = [:]
+            var caches: [UUID: StatsCache] = [:]
+            for account in accounts {
+                if let event = RateLimitScanner.lastRateLimitEvent(claudeDir: account.claudeDir) {
+                    events[account.id] = event
+                }
+                if let stats = StatsCache.load(claudeDir: account.claudeDir) {
+                    caches[account.id] = stats
+                }
+            }
+            return (events, caches)
+        }.value
+        rateLimitEvents = results.0
+        statsCaches = results.1
     }
 
     private func openProject() {
@@ -264,29 +319,54 @@ public struct PopoverView: View {
         sortAgents(agentTracker.activeAgents.filter(\.isIdle))
     }
 
-    private struct SourceGroup {
-        let source: AgentSource
+    private struct AccountGroup {
+        let accountID: UUID
+        let accountName: String
+        let accountType: AccountType
         let active: [AgentInfo]
         let idle: [AgentInfo]
+
+        var totalCount: Int { active.count + idle.count }
     }
 
-    private var groupedSources: [SourceGroup] {
-        let sources: [AgentSource] = [.cli, .commander]
-        return sources.compactMap { source in
-            let active = workingAgents.filter { $0.source == source }
-            let idle = idleAgents.filter { $0.source == source }
-            guard !active.isEmpty || !idle.isEmpty else { return nil }
-            return SourceGroup(source: source, active: active, idle: idle)
+    private var groupedAccounts: [AccountGroup] {
+        // Group agents by account; use settings.accounts order for stable ordering
+        var result: [AccountGroup] = []
+        for account in settings.accounts {
+            let active = workingAgents.filter { $0.accountID == account.id }
+            let idle = idleAgents.filter { $0.accountID == account.id }
+            guard !active.isEmpty || !idle.isEmpty else { continue }
+            result.append(AccountGroup(
+                accountID: account.id,
+                accountName: account.displayName,
+                accountType: account.accountType,
+                active: active,
+                idle: idle
+            ))
         }
+        // Catch any agents whose accountID doesn't match a known account (e.g. default)
+        let knownIDs = Set(settings.accounts.map(\.id))
+        let unknownActive = workingAgents.filter { !knownIDs.contains($0.accountID) }
+        let unknownIdle = idleAgents.filter { !knownIDs.contains($0.accountID) }
+        if !unknownActive.isEmpty || !unknownIdle.isEmpty {
+            result.append(AccountGroup(
+                accountID: UUID(),
+                accountName: "Claude",
+                accountType: .enterprise,
+                active: unknownActive,
+                idle: unknownIdle
+            ))
+        }
+        return result
     }
 
     private enum AgentListItem: Identifiable {
-        case header(SourceGroup)
+        case header(AccountGroup)
         case agent(AgentInfo)
 
         var id: String {
             switch self {
-            case .header(let g): return "header-\(g.source.rawValue)"
+            case .header(let g): return "header-\(g.accountID.uuidString)"
             case .agent(let a): return "agent-\(a.pid)"
             }
         }
@@ -295,7 +375,7 @@ public struct PopoverView: View {
     /// Flat list of headers + agents for indexed measurement.
     private var allAgentsFlat: [AgentListItem] {
         var items: [AgentListItem] = []
-        for group in groupedSources {
+        for group in groupedAccounts {
             items.append(.header(group))
             for agent in group.active { items.append(.agent(agent)) }
             for agent in group.idle { items.append(.agent(agent)) }
@@ -303,16 +383,28 @@ public struct PopoverView: View {
         return items
     }
 
-    private func sourceHeader(_ group: SourceGroup) -> some View {
+    /// Resolve display name for an account group — use alias if available.
+    private func displayName(for group: AccountGroup) -> String {
+        settings.accounts.first(where: { $0.id == group.accountID })?.displayName ?? group.accountName
+    }
+
+    private func accountHeader(_ group: AccountGroup) -> some View {
         HStack {
-            Image(systemName: group.source == .cli ? "terminal" : "app.connected.to.app.below.fill")
+            Image(systemName: "person.circle")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            Text(group.source.rawValue)
+            Text(displayName(for: group))
                 .font(.subheadline)
                 .fontWeight(.medium)
+            let badgeColor: Color = group.accountType.hasRateLimits ? .orange : .blue
+            Text(group.accountType.label)
+                .font(.system(size: 9))
+                .foregroundStyle(badgeColor)
+                .padding(.horizontal, 3)
+                .padding(.vertical, 1)
+                .background(badgeColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 3))
             Spacer()
-            Text("\(group.active.count + group.idle.count)")
+            Text("\(group.totalCount)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -349,12 +441,20 @@ public struct PopoverView: View {
                     .foregroundStyle(.secondary)
             }
 
-            // Row 3: folder + lines
+            // Row 3: folder + source badge + lines
             HStack {
                 Label(agent.shortDir, systemImage: "folder")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                if agent.source == .commander {
+                    Text("Commander")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 3))
+                }
                 Spacer()
                 HStack(spacing: 6) {
                     Text("+\(agent.linesAdded.formatted(.number.notation(.compactName)))")
@@ -399,11 +499,39 @@ public struct PopoverView: View {
 
     // MARK: - Period Stats Table
 
+    private var hasMultipleAccounts: Bool {
+        settings.accounts.count > 1
+    }
+
+    private func accountStats(for accountID: UUID, period: String) -> PeriodStats {
+        guard let acct = data.byAccount[accountID] else { return PeriodStats() }
+        switch period {
+        case "Today": return acct.day
+        case "Week": return acct.week
+        case "Month": return acct.month
+        default: return acct.day
+        }
+    }
+
+    private var accountFilterDropdown: some View {
+        Picker("Account", selection: Binding(
+            get: { filterAccountID?.uuidString ?? "all" },
+            set: { filterAccountID = $0 == "all" ? nil : UUID(uuidString: $0) }
+        )) {
+            Text("All Accounts").tag("all")
+            ForEach(settings.accounts) { account in
+                Text(account.displayName).tag(account.id.uuidString)
+            }
+        }
+        .labelsHidden()
+        .font(.caption)
+    }
+
     private var periodTable: some View {
         let rows: [(String, PeriodStats)] = [
-            ("Today", data.day),
-            ("Week", data.week),
-            ("Month", data.month)
+            ("Today", statsFor("Today")),
+            ("Week", statsFor("Week")),
+            ("Month", statsFor("Month"))
         ]
 
         return Grid(alignment: .trailing, verticalSpacing: 8) {
@@ -441,8 +569,267 @@ public struct PopoverView: View {
                 }
                 .contentShape(Rectangle())
                 .onTapGesture { selectedPeriod = label }
+
             }
         }
+    }
+
+    // MARK: - Plan Usage Card
+
+    /// Check if any active agent for this account has live rate limit data.
+    private func accountHasLiveRateLimits(_ account: Account) -> Bool {
+        agentTracker.activeAgents.contains { $0.accountID == account.id && $0.rateLimits?.hasData == true }
+    }
+
+    /// Get the most recent rate limits from active agents for this account.
+    private func liveRateLimits(for account: Account) -> RateLimits? {
+        agentTracker.activeAgents
+            .filter { $0.accountID == account.id && $0.rateLimits?.hasData == true }
+            .sorted { $0.updatedAt > $1.updatedAt }
+            .first?.rateLimits
+    }
+
+    private func planUsageCard(account: Account) -> some View {
+        let acctStats = data.byAccount[account.id]
+        let rateLimitEvent = rateLimitEvents[account.id]
+        let statsCache = statsCaches[account.id]
+        let live = liveRateLimits(for: account)
+
+        return AnyView(
+            VStack(alignment: .leading, spacing: 6) {
+                // Rate limit warning — show if hit within last 12 hours
+                // Show rate limit banner until the window resets.
+                // Use live resets_at if available, otherwise assume 5h window from event time.
+                let rateLimitExpired: Bool = {
+                    guard let event = rateLimitEvent else { return true }
+                    // Use the reset time parsed from the error message text
+                    // (this is the actual reset for the window that was hit, not the next rolling one)
+                    if let resetsAt = event.resetsAt, resetsAt > 0 {
+                        return Date().timeIntervalSince1970 > resetsAt
+                    }
+                    // Fallback: 5h from event time
+                    return Date().timeIntervalSince(event.timestamp) > 18000
+                }()
+                if let event = rateLimitEvent, !rateLimitExpired {
+                    rateLimitBanner(event: event, resetsAt: event.resetsAt)
+                }
+
+                // Header
+                HStack {
+                    Text(account.displayName)
+                        .font(.caption)
+                        .fontWeight(.medium)
+                    if account.accountType.hasRateLimits {
+                        Text(account.accountType.label)
+                            .font(.system(size: 9))
+                            .foregroundStyle(.orange)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 3))
+                    } else {
+                        // Auto-detected from rate limit data
+                        Text("Pro/Max")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.orange)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 3))
+                    }
+                    Spacer()
+                }
+
+                // Live rate limit bars (from statusline)
+                if let rl = live {
+                    rateLimitBars(rl)
+                }
+
+                // Usage stats: today / week / cost
+                let dayCost = acctStats?.day.cost ?? 0
+                let weekCost = acctStats?.week.cost ?? 0
+                let monthCost = acctStats?.month.cost ?? 0
+
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Today").font(.system(size: 9)).foregroundStyle(.tertiary)
+                        Text(String(format: "$%.2f", dayCost))
+                            .font(.caption2).fontWeight(.medium).foregroundStyle(.orange)
+                    }
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("This Week").font(.system(size: 9)).foregroundStyle(.tertiary)
+                        Text(String(format: "$%.2f", weekCost))
+                            .font(.caption2).fontWeight(.medium).foregroundStyle(.orange)
+                    }
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("This Month").font(.system(size: 9)).foregroundStyle(.tertiary)
+                        Text(String(format: "$%.2f", monthCost))
+                            .font(.caption2).fontWeight(.medium).foregroundStyle(.orange)
+                    }
+                    Spacer()
+                }
+
+                // Token usage from stats-cache
+                if let stats = statsCache {
+                    planUsageTokens(stats: stats)
+                }
+            }
+            .padding(8)
+            .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
+        )
+    }
+
+    private func rateLimitBars(_ rl: RateLimits) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            if let fiveH = rl.fiveHour, let pct = fiveH.usedPercentage {
+                rateLimitRow(label: "5h window", pct: pct, resetsIn: fiveH.resetsInText)
+            }
+            if let sevenD = rl.sevenDay, let pct = sevenD.usedPercentage {
+                rateLimitRow(label: "Weekly", pct: pct, resetsIn: sevenD.resetsInText)
+            }
+        }
+    }
+
+    private func rateLimitRow(label: String, pct: Double, resetsIn: String?) -> some View {
+        let color: Color = pct >= 90 ? .red : pct >= 70 ? .yellow : .blue
+        return HStack(spacing: 6) {
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .frame(width: 60, alignment: .leading)
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 3).fill(color.opacity(0.15))
+                    RoundedRectangle(cornerRadius: 3).fill(color)
+                        .frame(width: geo.size.width * CGFloat(min(pct, 100)) / 100)
+                }
+            }
+            .frame(height: 8)
+            Text(String(format: "%.0f%%", pct))
+                .font(.caption2)
+                .fontWeight(.semibold)
+                .foregroundStyle(color)
+                .frame(width: 32, alignment: .trailing)
+            if let resets = resetsIn {
+                Text("resets \(resets)")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+    }
+
+    private static let timeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .none
+        f.timeStyle = .short  // e.g. "12:48 PM"
+        return f
+    }()
+
+    private func rateLimitBanner(event: RateLimitEvent, resetsAt: Double? = nil) -> some View {
+        let now = Date()
+        let elapsed = now.timeIntervalSince(event.timestamp)
+        let isRecent = elapsed < 3600
+        let hitTime = Self.timeFormatter.string(from: event.timestamp)
+
+        // Compute reset countdown
+        let resetText: String? = {
+            if let resetsAt, resetsAt > 0 {
+                let remaining = resetsAt - now.timeIntervalSince1970
+                if remaining > 0 { return "Resets in \(formatDuration(remaining))" }
+                return nil
+            }
+            let remaining = 18000 - elapsed
+            if remaining > 0 { return "Resets in ~\(formatDuration(remaining))" }
+            return nil
+        }()
+
+        return HStack(spacing: 6) {
+            Image(systemName: isRecent ? "exclamationmark.octagon.fill" : "clock.badge.exclamationmark")
+                .foregroundStyle(isRecent ? .red : .orange)
+                .font(.caption)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Rate limit hit at \(hitTime)")
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundStyle(isRecent ? .red : .orange)
+                if let resetText {
+                    Text(resetText)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background((isRecent ? Color.red : Color.orange).opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+    }
+
+    private static let durationFormatter: DateComponentsFormatter = {
+        let f = DateComponentsFormatter()
+        f.allowedUnits = [.day, .hour, .minute]
+        f.unitsStyle = .abbreviated
+        f.maximumUnitCount = 2
+        return f
+    }()
+
+    private func formatDuration(_ seconds: Double) -> String {
+        Self.durationFormatter.string(from: seconds) ?? "\(Int(seconds / 60))m"
+    }
+
+    private func planUsageTokens(stats: StatsCache) -> some View {
+        let avgMsgs = stats.monthlyAvgMessages()
+        let monthlyTokens = stats.monthlyDailyTokens()
+        let monthOutputTokens = monthlyTokens.values.reduce(0, +)
+
+        return VStack(alignment: .leading, spacing: 4) {
+            Divider().padding(.vertical, 2)
+            Text("Usage Stats")
+                .font(.system(size: 9))
+                .foregroundStyle(.tertiary)
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Messages").font(.system(size: 9)).foregroundStyle(.tertiary)
+                    Text(String(format: "%.0f/day", avgMsgs))
+                        .font(.caption2).fontWeight(.medium)
+                }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Output Tokens").font(.system(size: 9)).foregroundStyle(.tertiary)
+                    Text(formatTokens(monthOutputTokens))
+                        .font(.caption2).fontWeight(.medium)
+                }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Sessions").font(.system(size: 9)).foregroundStyle(.tertiary)
+                    Text("\(stats.totalSessions)")
+                        .font(.caption2).fontWeight(.medium)
+                }
+                Spacer()
+            }
+
+            // Per-model breakdown
+            if !stats.modelUsage.isEmpty {
+                let sorted = stats.modelUsage.sorted { $0.outputTokens > $1.outputTokens }
+                ForEach(sorted, id: \.modelID) { model in
+                    HStack(spacing: 4) {
+                        Text(ClaudeModel.displayName(for: model.modelID))
+                            .font(.system(size: 9))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text("in: \(formatTokens(model.inputTokens + model.cacheReadInputTokens))")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.tertiary)
+                        Text("out: \(formatTokens(model.outputTokens))")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.leading, 4)
+                }
+            }
+        }
+    }
+
+    private func formatTokens(_ count: Int) -> String {
+        if count >= 1_000_000_000 { return String(format: "%.1fB", Double(count) / 1_000_000_000) }
+        if count >= 1_000_000 { return String(format: "%.1fM", Double(count) / 1_000_000) }
+        if count >= 1_000 { return String(format: "%.1fK", Double(count) / 1_000) }
+        return "\(count)"
     }
 
     // MARK: - Detail View
@@ -470,6 +857,11 @@ public struct PopoverView: View {
             }
 
             Divider()
+
+            // Account filter
+            if settings.accounts.count > 1 {
+                accountFilterDropdown
+            }
 
             // Summary row
             HStack {
