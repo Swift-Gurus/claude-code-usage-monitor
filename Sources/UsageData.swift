@@ -1,6 +1,6 @@
 import Foundation
 
-public struct SourceModelStats: Codable {
+public struct SourceModelStats: Codable, Equatable {
     public var cost: Double = 0
     public var linesAdded: Int = 0
     public var linesRemoved: Int = 0
@@ -12,7 +12,7 @@ public struct SourceModelStats: Codable {
     }
 }
 
-public struct ProjectStats {
+public struct ProjectStats: Equatable {
     public var main = SourceModelStats()
     public var subagents = SourceModelStats()
 
@@ -22,7 +22,7 @@ public struct ProjectStats {
     }
 }
 
-public struct SourceStats {
+public struct SourceStats: Equatable {
     public var total = SourceModelStats()
     public var byModel: [String: SourceModelStats] = [:]
     public var subagentsByModel: [String: SourceModelStats] = [:]
@@ -41,7 +41,7 @@ public struct SourceStats {
     }
 }
 
-public struct PeriodStats {
+public struct PeriodStats: Equatable {
     public var cost: Double = 0
     public var linesAdded: Int = 0
     public var linesRemoved: Int = 0
@@ -85,25 +85,26 @@ public final class UsageData {
     /// Subagent per-model stats per PID. Key: "{pid}\t{source}".
     private var subagentStats: [String: [String: SourceModelStats]] = [:]
 
+    private let collector: UsageEntryCollecting
+
     public init(accounts: [Account] = [.default]) {
         self.accounts = accounts
         includeCommander = true
+        self.collector = UsageEntryCollector()
         reload()
     }
 
-    /// Overrides for test usage — when set, reload uses these instead of account.usageDir
     private var testUsageDirOverride: URL?
 
-    /// Test-only initializer with custom usage directory.
-    init(testUsageDir: URL, includeCommander: Bool = false) {
+    init(testUsageDir: URL, includeCommander: Bool = false, collector: UsageEntryCollecting? = nil) {
         self.accounts = [.default]
         self.testUsageDirOverride = testUsageDir
         self.includeCommander = includeCommander
+        self.collector = collector ?? UsageEntryCollector()
         reload()
     }
 
-    /// A single .dat entry with its metadata.
-    private struct DatEntry {
+    struct DatEntry {
         let pid: String
         let day: Date       // start of day for the folder
         let cost: Double         // period-specific cost (may be incremental after dedup)
@@ -135,17 +136,29 @@ public final class UsageData {
         var entries: [DatEntry] = []
         var histories: [String: [(cost: Double, la: Int, lr: Int, model: String)]] = [:]
         var subagents: [String: [String: SourceModelStats]] = [:]
+
         if let testDir = testUsageDirOverride {
-            // Test mode: use override directory directly
-            collectEntries(under: testDir, source: .cli, since: collectSince, into: &entries, histories: &histories, subagents: &subagents, accountID: accounts[0].id)
+            let cliResult = collector.collectEntries(under: testDir, source: .cli, since: collectSince, accountID: accounts[0].id)
+            entries.append(contentsOf: cliResult.entries)
+            histories.merge(cliResult.histories) { $1 }
+            subagents.merge(cliResult.subagents) { $1 }
             if includeCommander {
-                collectEntries(under: testDir.appendingPathComponent("commander"), source: .commander, since: collectSince, into: &entries, histories: &histories, subagents: &subagents, accountID: accounts[0].id)
+                let cmdResult = collector.collectEntries(under: testDir.appendingPathComponent("commander"), source: .commander, since: collectSince, accountID: accounts[0].id)
+                entries.append(contentsOf: cmdResult.entries)
+                histories.merge(cmdResult.histories) { $1 }
+                subagents.merge(cmdResult.subagents) { $1 }
             }
         } else {
             for account in accounts {
-                collectEntries(under: account.usageDir, source: .cli, since: collectSince, into: &entries, histories: &histories, subagents: &subagents, accountID: account.id)
+                let cliResult = collector.collectEntries(under: account.usageDir, source: .cli, since: collectSince, accountID: account.id)
+                entries.append(contentsOf: cliResult.entries)
+                histories.merge(cliResult.histories) { $1 }
+                subagents.merge(cliResult.subagents) { $1 }
                 if includeCommander {
-                    collectEntries(under: account.commanderDir, source: .commander, since: collectSince, into: &entries, histories: &histories, subagents: &subagents, accountID: account.id)
+                    let cmdResult = collector.collectEntries(under: account.commanderDir, source: .commander, since: collectSince, accountID: account.id)
+                    entries.append(contentsOf: cmdResult.entries)
+                    histories.merge(cmdResult.histories) { $1 }
+                    subagents.merge(cmdResult.subagents) { $1 }
                 }
             }
         }
@@ -171,13 +184,26 @@ public final class UsageData {
         }
 
         // Step 2: Build per-PID latest/previous as before
+        // Also track the last entry before each period boundary for correct incremental calculations.
         var latestByPID: [String: DatEntry] = [:]
         var previousByPID: [String: DatEntry] = [:]
+        var lastBeforeWeekByPID: [String: DatEntry] = [:]
+        var lastBeforeMonthByPID: [String: DatEntry] = [:]
+        var lastBeforeTodayByPID: [String: DatEntry] = [:]
 
         for entry in entries.sorted(by: { $0.day < $1.day }) {
             let key = "\(entry.pid)\t\(entry.source.rawValue)"
             if let existing = latestByPID[key] {
                 previousByPID[key] = existing
+            }
+            if entry.day < weekStart {
+                lastBeforeWeekByPID[key] = entry
+            }
+            if entry.day < monthStart {
+                lastBeforeMonthByPID[key] = entry
+            }
+            if entry.day < today {
+                lastBeforeTodayByPID[key] = entry
             }
             latestByPID[key] = entry
         }
@@ -213,6 +239,9 @@ public final class UsageData {
         for key in mergedKeys {
             latestByPID.removeValue(forKey: key)
             previousByPID.removeValue(forKey: key)
+            lastBeforeWeekByPID.removeValue(forKey: key)
+            lastBeforeMonthByPID.removeValue(forKey: key)
+            lastBeforeTodayByPID.removeValue(forKey: key)
         }
 
         // Step 4: Merge PIDs that share a sessionID — keep highest-cost latest, earliest previous.
@@ -241,6 +270,10 @@ public final class UsageData {
                     previousByPID[winnerKey] = ep
                 }
 
+                propagateEarliestBaseline(from: loserKey, to: winnerKey, in: &lastBeforeWeekByPID)
+                propagateEarliestBaseline(from: loserKey, to: winnerKey, in: &lastBeforeMonthByPID)
+                propagateEarliestBaseline(from: loserKey, to: winnerKey, in: &lastBeforeTodayByPID)
+
                 // Merge subagent/model-history data: prefer winner's but keep loser's if winner has none
                 if modelHistories[winnerKey] == nil, let loserHist = modelHistories[loserKey] {
                     modelHistories[winnerKey] = loserHist
@@ -260,6 +293,9 @@ public final class UsageData {
         for key in mergedKeys {
             latestByPID.removeValue(forKey: key)
             previousByPID.removeValue(forKey: key)
+            lastBeforeWeekByPID.removeValue(forKey: key)
+            lastBeforeMonthByPID.removeValue(forKey: key)
+            lastBeforeTodayByPID.removeValue(forKey: key)
         }
 
         var d = PeriodStats()
@@ -269,14 +305,13 @@ public final class UsageData {
         var accountDailyCosts: [UUID: [Int: Double]] = [:]  // accountID -> dayOfMonth -> cost
 
         for (key, latest) in latestByPID {
-            let prev = previousByPID[key]
             let aid = latest.accountID
 
-            // Month: use incremental if session spans from before monthStart
+            // Month: subtract pre-month baseline if session spans from before monthStart
             if latest.day >= monthStart {
                 let monthEntry: DatEntry
-                if let prev, prev.day < monthStart {
-                    monthEntry = incrementalEntry(latest: latest, previous: prev)
+                if let baseline = lastBeforeMonthByPID[key] {
+                    monthEntry = incrementalEntry(latest: latest, previous: baseline)
                 } else {
                     monthEntry = latest
                 }
@@ -287,43 +322,54 @@ public final class UsageData {
                 accountDailyCosts[aid, default: [:]][dayOfMonth, default: 0] += monthEntry.cost
             }
 
-            // Week: use incremental if session spans from before weekStart
+            // Week: subtract pre-week baseline if session spans from before weekStart
             if latest.day >= weekStart {
-                if let prev, prev.day < weekStart {
-                    let incremental = incrementalEntry(latest: latest, previous: prev)
-                    accumulate(incremental, into: &w)
-                    accumulate(incremental, into: &accountStats[aid, default: (.init(), .init(), .init())].w)
-                } else if let prev, prev.day >= weekStart {
-                    let incremental = incrementalEntry(latest: latest, previous: prev)
-                    accumulate(incremental, into: &w)
-                    accumulate(incremental, into: &accountStats[aid, default: (.init(), .init(), .init())].w)
+                let weekEntry: DatEntry
+                if let baseline = lastBeforeWeekByPID[key] {
+                    weekEntry = incrementalEntry(latest: latest, previous: baseline)
                 } else {
-                    accumulate(latest, into: &w)
-                    accumulate(latest, into: &accountStats[aid, default: (.init(), .init(), .init())].w)
+                    weekEntry = latest
                 }
+                accumulate(weekEntry, into: &w)
+                accumulate(weekEntry, into: &accountStats[aid, default: (.init(), .init(), .init())].w)
             }
 
-            // Today: incremental cost (subtract yesterday's value if session spans midnight)
+            // Today: subtract pre-today baseline if session spans midnight
             if latest.day == today {
-                if let prev, prev.day < today {
-                    let incremental = incrementalEntry(latest: latest, previous: prev)
-                    accumulate(incremental, into: &d)
-                    accumulate(incremental, into: &accountStats[aid, default: (.init(), .init(), .init())].d)
+                let dayEntry: DatEntry
+                if let baseline = lastBeforeTodayByPID[key] {
+                    dayEntry = incrementalEntry(latest: latest, previous: baseline)
                 } else {
-                    accumulate(latest, into: &d)
-                    accumulate(latest, into: &accountStats[aid, default: (.init(), .init(), .init())].d)
+                    dayEntry = latest
                 }
+                accumulate(dayEntry, into: &d)
+                accumulate(dayEntry, into: &accountStats[aid, default: (.init(), .init(), .init())].d)
             }
         }
 
         day = d; week = w; month = m
         byAccount = accountStats.mapValues { stats in
-            var aps = AccountPeriodStats(day: stats.d, week: stats.w, month: stats.m)
-            return aps
+            AccountPeriodStats(day: stats.d, week: stats.w, month: stats.m)
         }
         // Merge daily costs into account stats
         for (aid, dailies) in accountDailyCosts {
             byAccount[aid, default: AccountPeriodStats()].dailyCosts = dailies
+        }
+    }
+
+    private func propagateEarliestBaseline(
+        from loserKey: String,
+        to winnerKey: String,
+        in map: inout [String: DatEntry]
+    ) {
+        if let loserEntry = map[loserKey] {
+            if let winnerEntry = map[winnerKey] {
+                if loserEntry.day < winnerEntry.day {
+                    map[winnerKey] = loserEntry
+                }
+            } else {
+                map[winnerKey] = loserEntry
+            }
         }
     }
 
@@ -459,99 +505,5 @@ public final class UsageData {
         return result
     }
 
-    private func collectEntries(
-        under root: URL, source: AgentSource, since monthStart: Date,
-        into entries: inout [DatEntry],
-        histories: inout [String: [(cost: Double, la: Int, lr: Int, model: String)]],
-        subagents: inout [String: [String: SourceModelStats]],
-        accountID: UUID = UUID()
-    ) {
-        let fm = FileManager.default
-        let calendar = Calendar.current
-        let dateFmt = DateFormatter()
-        dateFmt.dateFormat = "yyyy-MM-dd"
-
-        guard let dateDirs = try? fm.contentsOfDirectory(
-            at: root, includingPropertiesForKeys: nil
-        ) else { return }
-
-        for dateDir in dateDirs {
-            let dirName = dateDir.lastPathComponent
-            guard let dirDate = dateFmt.date(from: dirName) else { continue }
-            let dirDay = calendar.startOfDay(for: dirDate)
-
-            guard dirDay >= monthStart else { continue }
-
-            guard let files = try? fm.contentsOfDirectory(
-                at: dateDir, includingPropertiesForKeys: nil
-            ) else { continue }
-
-            // Build PID → project name map from .project files in this date folder
-            var pidToProject: [String: String] = [:]
-            for file in files where file.pathExtension == "project" {
-                guard let raw = try? String(contentsOf: file, encoding: .utf8) else { continue }
-                let pid = file.deletingPathExtension().lastPathComponent
-                let path = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-                pidToProject[pid] = (path as NSString).lastPathComponent
-            }
-
-            // Build PID → sessionID map from .agent.json files
-            var pidToSession: [String: String] = [:]
-            for file in files where file.lastPathComponent.hasSuffix(".agent.json") {
-                let pid = file.lastPathComponent
-                    .replacingOccurrences(of: ".agent.json", with: "")
-                guard let data = try? Data(contentsOf: file),
-                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      let sid = json["session_id"] as? String, !sid.isEmpty else { continue }
-                pidToSession[pid] = sid
-            }
-
-            for file in files where file.pathExtension == "dat" {
-                guard let content = try? String(contentsOf: file, encoding: .utf8) else { continue }
-                let parts = content.trimmingCharacters(in: .whitespacesAndNewlines)
-                    .split(separator: " ")
-
-                let pid = file.deletingPathExtension().lastPathComponent
-                let cost = Double(parts.first ?? "0") ?? 0
-                let la = parts.count > 1 ? (Int(parts[1]) ?? 0) : 0
-                let lr = parts.count > 2 ? (Int(parts[2]) ?? 0) : 0
-                let model = parts.count > 3 ? parts[3...].joined(separator: " ") : ""
-
-                entries.append(DatEntry(
-                    pid: pid, day: dirDay, cost: cost, absoluteCost: cost,
-                    linesAdded: la, linesRemoved: lr,
-                    model: model, source: source,
-                    project: pidToProject[pid] ?? "",
-                    sessionID: pidToSession[pid] ?? "",
-                    accountID: accountID
-                ))
-
-                // Read .models file for per-model breakdown
-                let modelsFile = dateDir.appendingPathComponent("\(pid).models")
-                if let modelsContent = try? String(contentsOf: modelsFile, encoding: .utf8) {
-                    let transitions = modelsContent.split(separator: "\n").compactMap { line -> (cost: Double, la: Int, lr: Int, model: String)? in
-                        let cols = line.split(separator: "\t", maxSplits: 3)
-                        guard cols.count >= 4 else { return nil }
-                        return (
-                            cost: Double(cols[0]) ?? 0,
-                            la: Int(cols[1]) ?? 0,
-                            lr: Int(cols[2]) ?? 0,
-                            model: String(cols[3])
-                        )
-                    }
-                    if transitions.count > 1 {
-                        histories["\(pid)\t\(source.rawValue)"] = transitions
-                    }
-                }
-
-                // Read {pid}.subagents.json for subagent per-model cost
-                let subagentsFile = dateDir.appendingPathComponent("\(pid).subagents.json")
-                if let subData = try? Data(contentsOf: subagentsFile),
-                   let subMap = try? JSONDecoder().decode([String: SourceModelStats].self, from: subData),
-                   !subMap.isEmpty {
-                    subagents["\(pid)\t\(source.rawValue)"] = subMap
-                }
-            }
-        }
-    }
 }
+

@@ -1,12 +1,11 @@
 import SwiftUI
 import AppKit
 
-protocol MyModel: Observable {
-    var state: String { get set }
-}
-
-
-/// A task item reconstructed from TaskCreate/TaskUpdate/TodoWrite tool calls.
+/**
+ solid-name: TaskListItem
+ solid-category: model
+ solid-description: A task item reconstructed from TaskCreate/TaskUpdate/TodoWrite tool calls in JSONL logs. Used in both log viewer and subagent detail views to display task progress.
+ */
 struct TaskListItem: Identifiable {
     let id: String
     var content: String
@@ -14,62 +13,91 @@ struct TaskListItem: Identifiable {
     var activeForm: String
 }
 
-public struct LogViewerView: View {
-    let agent: AgentInfo
-    let target: LogTarget
-    let settings: AppSettings
-    var sessionManager: SessionManager?
-    var stickyHeader: Bool = false
-    var onStop: (() -> Void)?
-    let onDismiss: () -> Void
+/**
+ solid-name: LogViewerState
+ solid-category: abstraction
+ solid-description: Contract for the read-only state that LogViewerView observes. Provides messages, loading state, task list, tool result lookup, pending prompt, file URL, and role label formatting.
+ */
+protocol LogViewerState: Observable {
+    var messages: [LogMessage] { get }
+    var isLoading: Bool { get }
+    var taskList: [TaskListItem] { get }
+    var toolResultLookup: [String: String] { get }
+    var pendingPrompt: LogToolCall? { get }
+    var fileURL: URL { get }
+    func roleLabel(_ msg: LogMessage) -> String
+}
 
-    @State private var messages: [LogMessage] = []
-    @State private var isLoading = true
-    @State private var lastMtime: Date?
-    @State private var showTaskPanel = true
-    @State private var inputText = ""
+/**
+ solid-name: LogViewerActions
+ solid-category: abstraction
+ solid-description: Contract for actions that LogViewerView can trigger. Provides message loading and polling lifecycle methods.
+ */
+protocol LogViewerActions {
+    func loadMessages() async
+    func startPolling() async
+}
 
-    private let rowSpacing: CGFloat = 10
+/**
+ solid-name: LogMessageParsing
+ solid-category: abstraction
+ solid-description: Contract for parsing JSONL files into display-ready LogMessage arrays. Enables testability of log viewer without real file I/O.
+ */
+protocol LogMessageParsing {
+    func parseMessages(at url: URL) -> [LogMessage]
+}
 
-    /// The TTY bridge if this session was spawned by the app.
-    private var bridge: TTYBridge? {
-        sessionManager?.bridge(for: agent.pid)
+/**
+ solid-name: LogParserAdapter
+ solid-category: utility
+ solid-description: Adapts LogParser's static parseMessages API to the LogMessageParsing protocol for dependency injection.
+ */
+struct LogParserAdapter: LogMessageParsing {
+    func parseMessages(at url: URL) -> [LogMessage] {
+        LogParser.parseMessages(at: url)
+    }
+}
+
+/**
+ solid-name: LogViewerViewModel
+ solid-category: viewmodel
+ solid-stack: [structured-concurrency]
+ solid-description: ViewModel for LogViewerView. Owns message loading, polling, task list reconstruction, tool result lookup, pending prompt detection, and model-to-display-name resolution. All data-fetching and transformation logic lives here, keeping the view pure.
+ */
+@Observable
+final class LogViewerViewModel: LogViewerState, LogViewerActions {
+    private(set) var messages: [LogMessage] = []
+    private(set) var isLoading = true
+    private var lastMtime: Date?
+
+    private let agent: AgentInfo
+    private let target: LogTarget
+    private let parser: LogMessageParsing
+    private let modelResolver: ModelResolving
+    private let urlResolver: LogURLResolving
+    private let fileSystem: FileSystemProviding
+
+    init(
+        agent: AgentInfo,
+        target: LogTarget,
+        parser: LogMessageParsing = LogParserAdapter(),
+        modelResolver: ModelResolving = ClaudeModelAdapter(),
+        urlResolver: LogURLResolving = LogURLResolver(),
+        fileSystem: FileSystemProviding = FileManager.default
+    ) {
+        self.agent = agent
+        self.target = target
+        self.parser = parser
+        self.modelResolver = modelResolver
+        self.urlResolver = urlResolver
+        self.fileSystem = fileSystem
     }
 
-    /// Whether input is available (parent agent with PTY spawned by us).
-    private var canSendInput: Bool {
-        guard case .parent = target else { return false }
-        return bridge?.isAttached ?? false
+    var fileURL: URL {
+        urlResolver.resolveURL(agent: agent, target: target)
     }
 
-    private var isParentTarget: Bool {
-        if case .parent = target { return true }
-        return false
-    }
-
-
-    private var fileURL: URL {
-        LogParser.resolveURL(agent: agent, target: target)
-    }
-
-    private var title: String {
-        switch target {
-        case .parent: return agent.displayName
-        case .subagent(let sub): return sub.model
-        }
-    }
-
-    /// Fixed scroll height based on setting (popover only). Window mode fills available space.
-    private var scrollHeight: CGFloat? {
-        if settings.displayMode == .window { return nil }
-        return CGFloat(settings.maxVisibleLogMessages) * 60
-    }
-
-    private var navFont: Font { settings.displayMode == .window ? .body : .caption }
-    private var titleFont: Font { settings.displayMode == .window ? .title3 : .headline }
-
-    /// Reconstruct task list by replaying TaskCreate/TaskUpdate/TodoWrite calls in order.
-    private var taskList: [TaskListItem] {
+    var taskList: [TaskListItem] {
         var tasks: [TaskListItem] = []
         var nextId = 1
 
@@ -77,7 +105,6 @@ public struct LogViewerView: View {
             for tc in msg.toolCalls {
                 switch tc.data {
                 case .todoWrite(let d):
-                    // TodoWrite replaces the entire list
                     tasks = d.todos.enumerated().map { idx, item in
                         TaskListItem(id: "todo-\(idx)", content: item.content, status: item.status, activeForm: "")
                     }
@@ -99,6 +126,130 @@ public struct LogViewerView: View {
         return tasks
     }
 
+    var toolResultLookup: [String: String] {
+        var lookup: [String: String] = [:]
+        for msg in messages {
+            for (tid, content) in msg.toolResultContents {
+                lookup[tid] = content
+            }
+        }
+        return lookup
+    }
+
+    var pendingPrompt: LogToolCall? {
+        let resolvedIDs = Set(messages.flatMap(\.toolResultIDs))
+        for msg in messages.reversed() where msg.role == .assistant {
+            for tc in msg.toolCalls.reversed() {
+                if !resolvedIDs.contains(tc.id) && tc.data.needsPrompt {
+                    return tc
+                }
+            }
+        }
+        return nil
+    }
+
+    func roleLabel(_ msg: LogMessage) -> String {
+        switch msg.role {
+        case .user: return "User"
+        case .assistant:
+            if let model = msg.model, !model.isEmpty {
+                return modelResolver.resolve(modelID: model).displayName
+            }
+            return "Assistant"
+        }
+    }
+
+    func loadMessages() async {
+        let url = fileURL
+        let cached = lastMtime
+        let fs = fileSystem
+
+        let (msgs, mtime): ([LogMessage], Date?) = await Task.detached(priority: .utility) { [parser] in
+            let attrs = try? fs.attributesOfItem(atPath: url.path)
+            let mtime = attrs?[.modificationDate] as? Date
+            if let cached, let mtime, cached == mtime {
+                return ([], mtime)
+            }
+            return (parser.parseMessages(at: url), mtime)
+        }.value
+
+        if let mtime { lastMtime = mtime }
+        if !msgs.isEmpty { messages = msgs }
+        isLoading = false
+    }
+
+    func startPolling() async {
+        await poll(interval: .seconds(2)) { [weak self] in
+            await self?.loadMessages()
+        }
+    }
+}
+
+/**
+ solid-name: StatusDot
+ solid-category: view-component
+ solid-description: Reusable 6x6 circular indicator dot used in log headers and message bubbles to show status via color.
+ */
+private struct StatusDot: View {
+    let color: Color
+    var body: some View {
+        Circle()
+            .fill(color)
+            .frame(width: 6, height: 6)
+    }
+}
+
+/**
+ solid-name: LogViewerView
+ solid-category: screen
+ solid-stack: [swiftui]
+ solid-description: Full-screen log viewer for Claude Code JSONL session logs. Displays messages as chat bubbles, tool call chips with expandable detail, task panel, and interactive prompts for PTY-attached sessions. Delegates all data loading and transformation to a generic ViewModel.
+ */
+struct LogViewerView<VM: LogViewerState & LogViewerActions>: View {
+    let agent: AgentInfo
+    let target: LogTarget
+    let settings: AppSettings
+    var sessionManager: SessionManager?
+    var stickyHeader: Bool = false
+    var onStop: (() -> Void)?
+    var onOpenFile: (URL) -> Void = { NSWorkspace.shared.open($0) }
+    let vm: VM
+    let onDismiss: () -> Void
+
+    @State private var showTaskPanel = true
+    @State private var inputText = ""
+
+    private let rowSpacing: CGFloat = 10
+
+    private var bridge: TTYBridge? {
+        sessionManager?.bridge(for: agent.pid)
+    }
+
+    private var canSendInput: Bool {
+        guard case .parent = target else { return false }
+        return bridge?.isAttached ?? false
+    }
+
+    private var isParentTarget: Bool {
+        if case .parent = target { return true }
+        return false
+    }
+
+    private var title: String {
+        switch target {
+        case .parent: return agent.displayName
+        case .subagent(let sub): return sub.model
+        }
+    }
+
+    private var scrollHeight: CGFloat? {
+        if settings.displayMode == .window { return nil }
+        return CGFloat(settings.maxVisibleLogMessages) * 60
+    }
+
+    private var navFont: Font { settings.displayMode == .window ? .body : .caption }
+    private var titleFont: Font { settings.displayMode == .window ? .title3 : .headline }
+
     private var logHeader: some View {
         HStack {
             Button { onDismiss() } label: {
@@ -114,9 +265,7 @@ public struct LogViewerView: View {
             Spacer()
 
             HStack(spacing: 4) {
-                Circle()
-                    .fill(canSendInput ? .green : .gray)
-                    .frame(width: 6, height: 6)
+                StatusDot(color: canSendInput ? .green : .gray)
                 Text(title)
                     .font(titleFont)
                     .lineLimit(1)
@@ -124,7 +273,7 @@ public struct LogViewerView: View {
 
             Spacer()
 
-            if !taskList.isEmpty {
+            if !vm.taskList.isEmpty {
                 Button { showTaskPanel.toggle() } label: {
                     Image(systemName: showTaskPanel ? "checklist.checked" : "checklist")
                         .font(navFont)
@@ -149,7 +298,7 @@ public struct LogViewerView: View {
             }
 
             Button {
-                NSWorkspace.shared.open(fileURL)
+                onOpenFile(vm.fileURL)
             } label: {
                 Image(systemName: "arrow.up.right.square")
                     .font(navFont)
@@ -160,7 +309,7 @@ public struct LogViewerView: View {
         }
     }
 
-    public var body: some View {
+    var body: some View {
         if stickyHeader {
             VStack(alignment: .leading, spacing: 0) {
                 VStack(alignment: .leading, spacing: 0) {
@@ -170,12 +319,12 @@ public struct LogViewerView: View {
                 }
                 .padding(.horizontal, 16)
                 // Window mode: side-by-side log + task panel
-                if showTaskPanel && !taskList.isEmpty {
+                if showTaskPanel && !vm.taskList.isEmpty {
                     HStack(alignment: .top, spacing: 0) {
                         logContent
                         Divider()
                         taskPanelView
-                            .frame(width: 200)
+                            .frame(minWidth: 160, idealWidth: 200, maxWidth: 280)
                     }
                 } else {
                     logContent
@@ -194,12 +343,12 @@ public struct LogViewerView: View {
             }
 
             // Popover mode: inline task panel
-            if !stickyHeader && showTaskPanel && !taskList.isEmpty {
+            if !stickyHeader && showTaskPanel && !vm.taskList.isEmpty {
                 taskPanelView
                 Divider()
             }
 
-            if isLoading && messages.isEmpty {
+            if vm.isLoading && vm.messages.isEmpty {
                 HStack {
                     Spacer()
                     ProgressView()
@@ -210,7 +359,7 @@ public struct LogViewerView: View {
                     Spacer()
                 }
                 .padding(.vertical, 20)
-            } else if messages.isEmpty {
+            } else if vm.messages.isEmpty {
                 Text("No messages found")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
@@ -219,7 +368,7 @@ public struct LogViewerView: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         VStack(alignment: .leading, spacing: rowSpacing) {
-                            ForEach(messages.filter { !$0.textContent.isEmpty || !$0.toolCalls.isEmpty || $0.thinking != nil }) { msg in
+                            ForEach(vm.messages.filter { !$0.textContent.isEmpty || !$0.toolCalls.isEmpty || $0.thinking != nil }) { msg in
                                 messageBubble(msg)
                                     .id(msg.id)
                             }
@@ -227,15 +376,15 @@ public struct LogViewerView: View {
                     }
                     .scrollIndicators(.visible)
                     .frame(height: scrollHeight, alignment: .top)
-                    .onChange(of: messages.count) { _, _ in
-                        if let last = messages.last {
+                    .onChange(of: vm.messages.count) { _, _ in
+                        if let last = vm.messages.last {
                             withAnimation(.easeOut(duration: 0.2)) {
                                 proxy.scrollTo(last.id, anchor: .bottom)
                             }
                         }
                     }
                     .onAppear {
-                        if let last = messages.last {
+                        if let last = vm.messages.last {
                             proxy.scrollTo(last.id, anchor: .bottom)
                         }
                     }
@@ -243,14 +392,14 @@ public struct LogViewerView: View {
             }
 
             // Input field — hidden when modal prompt is active
-            if canSendInput && pendingPrompt == nil {
+            if canSendInput && vm.pendingPrompt == nil {
                 Divider()
                 inputField
             }
         }
         .padding(16)
         .overlay {
-            if let pending = pendingPrompt {
+            if canSendInput, let pending = vm.pendingPrompt {
                 ZStack {
                     Color.black.opacity(0.3)
                         .ignoresSafeArea()
@@ -263,38 +412,15 @@ public struct LogViewerView: View {
             }
         }
         .task {
-            // Set up TTY activity trigger if we own this session
             if let bridge {
                 bridge.onActivity = {
-                    Task { await loadMessages() }
+                    Task { await vm.loadMessages() }
                 }
             }
 
-            await loadMessages()
-            isLoading = false
-            // Fallback polling (also serves non-owned sessions and subagent logs)
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(2))
-                await loadMessages()
-            }
+            await vm.loadMessages()
+            await vm.startPolling()
         }
-    }
-
-    private func loadMessages() async {
-        let url = fileURL
-        let cached = lastMtime
-
-        let (msgs, mtime): ([LogMessage], Date?) = await Task.detached(priority: .utility) {
-            let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
-            let mtime = attrs?[.modificationDate] as? Date
-            if let cached, let mtime, cached == mtime {
-                return ([], mtime)
-            }
-            return (LogParser.parseMessages(at: url), mtime)
-        }.value
-
-        if let mtime { lastMtime = mtime }
-        if !msgs.isEmpty { messages = msgs }
     }
 
     // MARK: - Message Rendering
@@ -304,11 +430,9 @@ public struct LogViewerView: View {
         VStack(alignment: .leading, spacing: 4) {
             // Role header
             HStack(spacing: 4) {
-                Circle()
-                    .fill(msg.role == .user ? .green : .blue)
-                    .frame(width: 6, height: 6)
+                StatusDot(color: msg.role == .user ? .green : .blue)
 
-                Text(roleLabel(msg))
+                Text(vm.roleLabel(msg))
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(.secondary)
 
@@ -400,17 +524,6 @@ public struct LogViewerView: View {
         }
     }
 
-    private func roleLabel(_ msg: LogMessage) -> String {
-        switch msg.role {
-        case .user: return "User"
-        case .assistant:
-            if let model = msg.model, !model.isEmpty {
-                return ClaudeModel.from(modelID: model).displayName
-            }
-            return "Assistant"
-        }
-    }
-
     // MARK: - Tool Chip Label
 
     private func toolChipLabel(_ tc: LogToolCall) -> some View {
@@ -432,8 +545,8 @@ public struct LogViewerView: View {
 
     @ViewBuilder
     private func toolCallChip(_ tc: LogToolCall) -> some View {
-        if !tc.data.hasDetail {
-            // Non-expandable chip
+        let resultContent = vm.toolResultLookup[tc.id]
+        if !tc.data.hasDetail && resultContent == nil {
             HStack(spacing: 4) {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 8, weight: .bold))
@@ -448,7 +561,7 @@ public struct LogViewerView: View {
                 expanded: settings.expandTools,
                 tintColor: .blue.opacity(0.7)
             ) {
-                toolExpandedContent(tc.data)
+                toolExpandedContent(tc.data, resultContent: resultContent)
             } label: {
                 toolChipLabel(tc)
             }
@@ -459,18 +572,26 @@ public struct LogViewerView: View {
     }
 
     @ViewBuilder
-    private func toolExpandedContent(_ data: ToolData) -> some View {
+    private func toolExpandedContent(_ data: ToolData, resultContent: String? = nil) -> some View {
         switch data {
         case .edit(let d):
             editDiffView(d)
         case .write(let d):
             writeDiffView(d)
+        case .read(let d):
+            toolInputAndResult(d.filePath, resultContent: resultContent)
         case .bash(let d):
-            monoText(d.command)
+            toolInputAndResult(d.command, resultContent: resultContent)
         case .grep(let d):
-            monoText("pattern: \(d.pattern)" + (d.path.isEmpty ? "" : "\npath: \(d.path)"))
+            toolInputAndResult(
+                "pattern: \(d.pattern)" + (d.path.isEmpty ? "" : "\npath: \(d.path)"),
+                resultContent: resultContent
+            )
         case .glob(let d):
-            monoText("pattern: \(d.pattern)" + (d.path.isEmpty ? "" : "\npath: \(d.path)"))
+            toolInputAndResult(
+                "pattern: \(d.pattern)" + (d.path.isEmpty ? "" : "\npath: \(d.path)"),
+                resultContent: resultContent
+            )
         case .agent(let d):
             VStack(alignment: .leading, spacing: 4) {
                 if !d.subagentType.isEmpty {
@@ -630,25 +751,7 @@ public struct LogViewerView: View {
         }
     }
 
-    // MARK: - Pending Prompt Detection
-
-    /// Find the last tool_use that hasn't received a tool_result yet.
-    private var pendingPrompt: LogToolCall? {
-        guard canSendInput else { return nil }
-        let resolvedIDs = Set(messages.flatMap(\.toolResultIDs))
-        for msg in messages.reversed() where msg.role == .assistant {
-            for tc in msg.toolCalls.reversed() {
-                if !resolvedIDs.contains(tc.id) && tc.data.needsPrompt {
-                    return tc
-                }
-            }
-        }
-        return nil
-    }
-
-    /// Selected option index for the current AskUserQuestion prompt.
     @State private var selectedOptionIdx: Int = 0
-    /// Tracks which tool_use ID the selection is for — if different, selection is stale.
     @State private var promptToolID: String = ""
 
     // MARK: - Prompt UI
@@ -902,10 +1005,20 @@ public struct LogViewerView: View {
             .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 4))
     }
 
+    @ViewBuilder
+    private func toolInputAndResult(_ input: String, resultContent: String?) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            monoText(input)
+            if let result = resultContent, !result.isEmpty {
+                ToolResultView(content: result)
+            }
+        }
+    }
+
     // MARK: - Task Panel
 
     private var taskPanelView: some View {
-        let tasks = taskList
+        let tasks = vm.taskList
         let completed = tasks.filter { $0.status == "completed" }.count
 
         return VStack(alignment: .leading, spacing: 6) {
@@ -943,7 +1056,7 @@ public struct LogViewerView: View {
                             Image(systemName: taskIcon(item.status))
                                 .font(.system(size: 10))
                                 .foregroundStyle(taskColor(item.status))
-                                .frame(width: 12)
+                                .imageScale(.small)
                             Text(item.content)
                                 .font(.system(size: 10))
                                 .foregroundStyle(item.status == "completed" ? .secondary : .primary)
@@ -1001,5 +1114,49 @@ private struct ExpandableSection<Content: View, Label: View>: View {
             label()
         }
         .tint(tintColor)
+    }
+}
+
+private struct ToolResultView: View {
+    let content: String
+    private let previewLineCount = 20
+
+    private var lines: [String] { content.components(separatedBy: "\n") }
+    private var isTruncated: Bool { lines.count > previewLineCount }
+    private var preview: String { lines.prefix(previewLineCount).joined(separator: "\n") }
+
+    @State private var showFull = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            resultLabel
+            resultText
+        }
+    }
+
+    private var resultLabel: some View {
+        HStack(spacing: 4) {
+            Text("Result")
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(.tertiary)
+            if isTruncated {
+                Button { showFull.toggle() } label: {
+                    Text(showFull ? "collapse" : "\(lines.count) lines")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.blue.opacity(0.7))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private var resultText: some View {
+        Text(showFull || !isTruncated ? content : preview + "\n...")
+            .font(.system(size: 10, design: .monospaced))
+            .foregroundStyle(.tertiary)
+            .textSelection(.enabled)
+            .padding(6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: 4))
     }
 }

@@ -76,7 +76,7 @@ public struct PopoverView: View {
         } else if let agent = selectedAgent {
             // Use live data from AgentTracker if available, fall back to initial synthetic AgentInfo
             let liveAgent = agentTracker.activeAgents.first(where: { $0.pid == agent.pid }) ?? agent
-            SubagentDetailView(agent: liveAgent, agentTracker: agentTracker, settings: settings, sessionManager: sessionManager) { selectedAgent = nil }
+            SubagentDetailView(agent: liveAgent, agentTracker: agentTracker, settings: settings, sessionManager: sessionManager, vm: SubagentDetailViewModel(agent: liveAgent, settings: settings)) { selectedAgent = nil }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let label = selectedPeriod {
             if settings.displayMode == .window {

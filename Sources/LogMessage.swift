@@ -141,7 +141,7 @@ public enum ToolData {
     /// Whether this tool has expandable detail content.
     public var hasDetail: Bool {
         switch self {
-        case .read, .taskUpdate: return false
+        case .taskUpdate: return false
         default: return true
         }
     }
@@ -181,6 +181,8 @@ public struct LogMessage: Identifiable {
     public let toolResultIDs: Set<String>
     /// User's structured responses to interactive prompts, keyed by tool_use_id.
     public let toolResponses: [String: ToolResponse]
+    /// Tool result text content keyed by tool_use_id (user messages only).
+    public let toolResultContents: [String: String]
 
     public enum Role {
         case user, assistant
@@ -208,8 +210,68 @@ public enum LogTarget: Equatable {
     }
 }
 
-// MARK: - Parser
+/**
+ solid-name: ProcessInspecting
+ solid-category: abstraction
+ solid-description: Contract for inspecting OS processes to find which JSONL file a given PID has open. Isolates the system-level lsof concern from JSONL parsing.
+ */
+protocol ProcessInspecting {
+    func jsonlForPID(_ pid: Int) -> String?
+}
 
+/**
+ solid-name: LsofProcessInspector
+ solid-category: service
+ solid-description: Boundary adapter wrapping the system-level lsof command to discover which JSONL file a specific PID has open. Encapsulates Process/Pipe usage behind the ProcessInspecting protocol.
+ */
+struct LsofProcessInspector: ProcessInspecting {
+    func jsonlForPID(_ pid: Int) -> String? {
+        let pipe = Pipe()
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
+        process.arguments = ["-a", "-p", "\(pid)", "-Fn"]
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            let output = String(data: data, encoding: .utf8) ?? ""
+            for line in output.split(separator: "\n") {
+                if line.hasPrefix("n"), line.hasSuffix(".jsonl"), !line.contains("/subagents/") {
+                    return String(line.dropFirst())
+                }
+            }
+        } catch {}
+        return nil
+    }
+}
+
+/**
+ solid-name: SessionPathEncoding
+ solid-category: abstraction
+ solid-description: Contract for encoding a filesystem path into the project directory name format Claude Code uses. Replaces direct SessionScanner.encodeProjectPath calls.
+ */
+protocol SessionPathEncoding {
+    func encodeProjectPath(_ path: String) -> String
+}
+
+/**
+ solid-name: SessionPathEncoderAdapter
+ solid-category: utility
+ solid-description: Adapts SessionScanner's static encodeProjectPath API to the SessionPathEncoding protocol for dependency injection.
+ */
+struct SessionPathEncoderAdapter: SessionPathEncoding {
+    func encodeProjectPath(_ path: String) -> String {
+        SessionScanner.encodeProjectPath(path)
+    }
+}
+
+/**
+ solid-name: LogParser
+ solid-category: utility
+ solid-description: Parses Claude Code JSONL conversation files into display-ready LogMessage arrays. Handles deduplication of streamed assistant messages, tool call extraction, and user responses.
+ */
 public enum LogParser {
 
     /// Parse a JSONL file into display-ready messages.
@@ -241,7 +303,7 @@ public enum LogParser {
                     result.append(LogMessage(
                         id: "user-\(result.count)", role: .user, model: nil,
                         timestamp: ts, thinking: nil, textContent: [text], toolCalls: [],
-                        toolResultIDs: [], toolResponses: [:]
+                        toolResultIDs: [], toolResponses: [:], toolResultContents: [:]
                     ))
                 }
                 continue
@@ -251,6 +313,7 @@ public enum LogParser {
                 var texts: [String] = []
                 var resultIDs: Set<String> = []
                 var responses: [String: ToolResponse] = [:]
+                var resultContents: [String: String] = [:]
 
                 // Extract toolUseResult from top-level entry (structured response data)
                 let toolUseResult = raw["toolUseResult"]
@@ -263,8 +326,14 @@ public enum LogParser {
                         resultIDs.insert(tid)
                         let isError = item["is_error"] as? Bool ?? false
 
+                        if let contentStr = item["content"] as? String, !contentStr.isEmpty {
+                            resultContents[tid] = contentStr
+                        } else if let contentArr = item["content"] as? [[String: Any]] {
+                            let joined = contentArr.compactMap { $0["text"] as? String }.joined(separator: "\n")
+                            if !joined.isEmpty { resultContents[tid] = joined }
+                        }
+
                         if isError {
-                            // Rejected — extract user feedback from toolUseResult string
                             if let tur = toolUseResult as? String,
                                let range = tur.range(of: "the user said:\n") {
                                 let feedback = String(tur[range.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -275,17 +344,14 @@ public enum LogParser {
                             }
                         } else if let tur = toolUseResult as? [String: Any],
                                   let answers = tur["answers"] as? [String: String] {
-                            // AskUserQuestion — structured answers
                             responses[tid] = .answered(answers)
                             let answerText = answers.values.joined(separator: ", ")
                             texts.append(answerText)
                         } else if let tur = toolUseResult as? [String: Any],
                                   tur["plan"] != nil {
-                            // ExitPlanMode approved
                             responses[tid] = .approved
                             texts.append("Plan approved")
                         } else if promptToolIDs.contains(tid) {
-                            // Permission tool allowed (Bash/Edit/Write)
                             responses[tid] = .approved
                             texts.append("Allowed")
                         }
@@ -296,7 +362,8 @@ public enum LogParser {
                 result.append(LogMessage(
                     id: "user-\(result.count)", role: .user, model: nil,
                     timestamp: ts, thinking: nil, textContent: texts, toolCalls: [],
-                    toolResultIDs: resultIDs, toolResponses: responses
+                    toolResultIDs: resultIDs, toolResponses: responses,
+                    toolResultContents: resultContents
                 ))
             } else if type == "assistant" {
                 let model = msg["model"] as? String
@@ -333,7 +400,8 @@ public enum LogParser {
                     id: msgID, role: .assistant, model: model,
                     timestamp: ts, thinking: thinking,
                     textContent: texts, toolCalls: tools,
-                    toolResultIDs: [], toolResponses: [:]
+                    toolResultIDs: [], toolResponses: [:],
+                    toolResultContents: [:]
                 )
 
                 if let existing = assistantByID[msgID] {
@@ -351,7 +419,8 @@ public enum LogParser {
                         thinking: logMsg.thinking ?? prev.thinking,
                         textContent: logMsg.textContent.isEmpty ? prev.textContent : logMsg.textContent,
                         toolCalls: mergedTools,
-                        toolResultIDs: [], toolResponses: [:]
+                        toolResultIDs: [], toolResponses: [:],
+                        toolResultContents: [:]
                     )
                     result[existing.index] = merged
                     assistantByID[msgID] = (existing.index, merged)
@@ -363,63 +432,6 @@ public enum LogParser {
         }
 
         return result
-    }
-
-    /// Resolve the JSONL file URL for a given agent and log target.
-    /// When sessionID is empty (newly spawned), finds the most recent JSONL in the project directory.
-    public static func resolveURL(agent: AgentInfo, target: LogTarget) -> URL {
-        let encoded = SessionScanner.encodeProjectPath(agent.workingDir)
-        let projectDir = agent.projectsDir.appendingPathComponent(encoded)
-
-        switch target {
-        case .parent:
-            return projectDir.appendingPathComponent("\(agent.sessionID).jsonl")
-        case .subagent(let sub):
-            return projectDir
-                .appendingPathComponent(agent.sessionID)
-                .appendingPathComponent("subagents")
-                .appendingPathComponent("\(sub.agentID).jsonl")
-        }
-    }
-
-    /// Find which .jsonl file a specific PID has open via lsof.
-    private static func jsonlForPID(_ pid: Int) -> String? {
-        let pipe = Pipe()
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
-        process.arguments = ["-a", "-p", "\(pid)", "-Fn"]
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
-        do {
-            try process.run()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            process.waitUntilExit()
-            let output = String(data: data, encoding: .utf8) ?? ""
-            for line in output.split(separator: "\n") {
-                if line.hasPrefix("n"), line.hasSuffix(".jsonl"), !line.contains("/subagents/") {
-                    return String(line.dropFirst())
-                }
-            }
-        } catch {}
-        return nil
-    }
-
-    /// Find the most recently modified .jsonl file in a directory.
-    private static func mostRecentJSONL(in dir: URL) -> URL? {
-        let fm = FileManager.default
-        guard let files = try? fm.contentsOfDirectory(
-            at: dir, includingPropertiesForKeys: [.contentModificationDateKey]
-        ) else { return nil }
-
-        return files
-            .filter { $0.pathExtension == "jsonl" }
-            .compactMap { url -> (URL, Date)? in
-                let mtime = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
-                    .contentModificationDate ?? .distantPast
-                return (url, mtime)
-            }
-            .max(by: { $0.1 < $1.1 })?
-            .0
     }
 
     // MARK: - Tool Data Parsing

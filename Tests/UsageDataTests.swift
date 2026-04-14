@@ -24,6 +24,10 @@ struct UsageDataTests {
         try "\(cost) \(la) \(lr) \(model)".write(to: dir.appendingPathComponent("\(pid).dat"), atomically: true, encoding: .utf8)
     }
 
+    private func makeSUT(usageDir: URL, includeCommander: Bool = false) -> UsageData {
+        UsageData(testUsageDir: usageDir, includeCommander: includeCommander)
+    }
+
     private func writeModels(dir: URL, pid: String, transitions: [(Double, Int, Int, String)]) throws {
         let lines = transitions.map { "\($0.0)\t\($0.1)\t\($0.2)\t\($0.3)" }.joined(separator: "\n")
         try lines.write(to: dir.appendingPathComponent("\(pid).models"), atomically: true, encoding: .utf8)
@@ -39,9 +43,9 @@ struct UsageDataTests {
             try FileManager.default.createDirectory(at: dayDir, withIntermediateDirectories: true)
             try writeDat(dir: dayDir, pid: "1234", cost: 50.0, la: 100, lr: 50, model: "Opus 4.6")
 
-            let data = UsageData(testUsageDir: root)
+            let data = makeSUT(usageDir: root)
             #expect(data.day.cost == 50.0)
-            #expect(data.day.cli.byModel["Opus 4.6"]?.cost == 50.0)
+            #expect(data.day.cli.byModel["Opus 4.6"] == SourceModelStats(cost: 50.0, linesAdded: 100, linesRemoved: 50))
             #expect(data.day.cli.byModel.count == 1)
         }
     }
@@ -61,7 +65,7 @@ struct UsageDataTests {
                 (50, 180, 90, "Opus 4.6"),
             ])
 
-            let data = UsageData(testUsageDir: root)
+            let data = makeSUT(usageDir: root)
             let opus = data.day.cli.byModel["Opus 4.6"]
             let sonnet = data.day.cli.byModel["Sonnet 4.6"]
 
@@ -88,7 +92,7 @@ struct UsageDataTests {
                 (50, 0, 0, "Sonnet 4.6"),
             ])
 
-            let data = UsageData(testUsageDir: root)
+            let data = makeSUT(usageDir: root)
             let opus = data.day.cli.byModel["Opus 4.6"]
             let sonnet = data.day.cli.byModel["Sonnet 4.6"]
             #expect(abs((opus?.cost ?? 0) - 50.0) < 0.01)
@@ -108,7 +112,7 @@ struct UsageDataTests {
                 (0, 0, 0, "Haiku 4.5"),
             ])
 
-            let data = UsageData(testUsageDir: root)
+            let data = makeSUT(usageDir: root)
             #expect(data.day.cli.byModel["Haiku 4.5"]?.cost == 30.0)
             #expect(data.day.cli.byModel.count == 1)
         }
@@ -126,7 +130,7 @@ struct UsageDataTests {
             try writeDat(dir: dayDir, pid: "1111", cost: 20.0, la: 50, lr: 10, model: "Opus 4.6")
             try writeDat(dir: dayDir, pid: "2222", cost: 30.0, la: 80, lr: 20, model: "Sonnet 4.6")
 
-            let data = UsageData(testUsageDir: root)
+            let data = makeSUT(usageDir: root)
             #expect(data.day.cost == 50.0)
             #expect(data.day.linesAdded == 130)
             #expect(data.day.linesRemoved == 30)
@@ -137,32 +141,62 @@ struct UsageDataTests {
 
     // MARK: - Dedup Across Days
 
-    @Test("Multi-day session uses incremental cost for today")
-    func multiDayIncremental() throws {
+    @Test("Multi-day session within same month uses full cumulative for month")
+    func multiDayIncremental_sameMonth() throws {
+        let cal = Calendar.current
+        let dayOfMonth = cal.component(.day, from: Date())
+        try #require(dayOfMonth > 1, "Skipped: today is the 1st — yesterday is in a different month")
+
         try withTempUsageDir { root in
             let fmt = DateFormatter()
             fmt.dateFormat = "yyyy-MM-dd"
-            let today = fmt.string(from: Date())
-            let yesterday = fmt.string(from: Calendar.current.date(byAdding: .day, value: -1, to: Date())!)
+            let todayStr = fmt.string(from: Date())
+            let yesterdayStr = fmt.string(from: cal.date(byAdding: .day, value: -1, to: Date())!)
 
-            let yesterdayDir = root.appendingPathComponent(yesterday)
-            let todayDir = root.appendingPathComponent(today)
+            let yesterdayDir = root.appendingPathComponent(yesterdayStr)
+            let todayDir = root.appendingPathComponent(todayStr)
             try FileManager.default.createDirectory(at: yesterdayDir, withIntermediateDirectories: true)
             try FileManager.default.createDirectory(at: todayDir, withIntermediateDirectories: true)
 
-            // Same PID, cumulative cost grows across days
             try writeDat(dir: yesterdayDir, pid: "1234", cost: 40.0, la: 100, lr: 50, model: "Opus 4.6")
             try writeDat(dir: todayDir, pid: "1234", cost: 55.0, la: 150, lr: 70, model: "Opus 4.6")
 
-            let data = UsageData(testUsageDir: root)
+            let data = makeSUT(usageDir: root)
 
-            // Today: incremental = 55 - 40 = 15
             #expect(abs(data.day.cost - 15.0) < 0.01)
-            #expect(data.day.linesAdded == 50)  // 150 - 100
-            #expect(data.day.linesRemoved == 20) // 70 - 50
-
-            // Month: uses latest cumulative = 55
+            #expect(data.day.linesAdded == 50)
+            #expect(data.day.linesRemoved == 20)
             #expect(abs(data.month.cost - 55.0) < 0.01)
+        }
+    }
+
+    @Test("Prior-month entry excluded from current month cost")
+    func priorMonthExcluded() throws {
+        try withTempUsageDir { root in
+            let fmt = DateFormatter()
+            fmt.dateFormat = "yyyy-MM-dd"
+            let cal = Calendar.current
+            let now = Date()
+            let firstOfMonth = cal.date(from: DateComponents(
+                year: cal.component(.year, from: now),
+                month: cal.component(.month, from: now),
+                day: 1
+            ))!
+            let lastOfPriorMonth = cal.date(byAdding: .day, value: -1, to: firstOfMonth)!
+            let todayStr = todayStr()
+
+            let priorDir = root.appendingPathComponent(fmt.string(from: lastOfPriorMonth))
+            let todayDir = root.appendingPathComponent(todayStr)
+            try FileManager.default.createDirectory(at: priorDir, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: todayDir, withIntermediateDirectories: true)
+
+            try writeDat(dir: priorDir, pid: "old-session", cost: 100.0, la: 500, lr: 200, model: "Opus 4.6")
+            try writeDat(dir: todayDir, pid: "new-session", cost: 25.0, la: 50, lr: 10, model: "Opus 4.6")
+
+            let data = makeSUT(usageDir: root)
+
+            #expect(abs(data.day.cost - 25.0) < 0.01)
+            #expect(abs(data.month.cost - 25.0) < 0.01)
         }
     }
 
@@ -174,7 +208,7 @@ struct UsageDataTests {
             try FileManager.default.createDirectory(at: dayDir, withIntermediateDirectories: true)
             try writeDat(dir: dayDir, pid: "5555", cost: 25.0, la: 30, lr: 10, model: "Haiku 4.5")
 
-            let data = UsageData(testUsageDir: root)
+            let data = makeSUT(usageDir: root)
             #expect(abs(data.day.cost - 25.0) < 0.01)
             #expect(abs(data.month.cost - 25.0) < 0.01)
         }
@@ -202,7 +236,7 @@ struct UsageDataTests {
             try FileManager.default.createDirectory(at: todayDir, withIntermediateDirectories: true)
             try writeDat(dir: todayDir, pid: "new", cost: 10.0, la: 20, lr: 5, model: "Sonnet 4.6")
 
-            let data = UsageData(testUsageDir: root)
+            let data = makeSUT(usageDir: root)
 
             // Week should only include today's PID (2 weeks ago is always outside current week)
             #expect(abs(data.week.cost - 10.0) < 0.01)
@@ -234,7 +268,7 @@ struct UsageDataTests {
                 (50, 160, 70, "Sonnet 4.6"),   // switched at $50
             ])
 
-            let data = UsageData(testUsageDir: root)
+            let data = makeSUT(usageDir: root)
 
             // Today's incremental: 60 - 40 = $20
             #expect(abs(data.day.cost - 20.0) < 0.01)
@@ -269,7 +303,7 @@ struct UsageDataTests {
                 (46.12, 1605, 421, "Sonnet 4.6"),
             ])
 
-            let data = UsageData(testUsageDir: root)
+            let data = makeSUT(usageDir: root)
 
             let opus = data.day.cli.byModel["Opus 4.6"]?.cost ?? 0
             let sonnet = data.day.cli.byModel["Sonnet 4.6"]?.cost ?? 0
@@ -282,7 +316,7 @@ struct UsageDataTests {
         }
     }
 
-    @Test("Three model switches in one session")
+    @Test("Three model switches in one session -- each model segment attributed proportional cost")
     func threeModelSwitches() throws {
         try withTempUsageDir { root in
             let today = todayStr()
@@ -298,7 +332,7 @@ struct UsageDataTests {
                 (60, 0, 0, "Opus 4.6"),
             ])
 
-            let data = UsageData(testUsageDir: root)
+            let data = makeSUT(usageDir: root)
 
             // Opus: (30-0) + (100-60) = 70, Sonnet: (50-30) = 20, Haiku: (60-50) = 10
             let opus = data.day.cli.byModel["Opus 4.6"]?.cost ?? 0
@@ -317,7 +351,7 @@ struct UsageDataTests {
     @Test("Empty directory produces zero stats")
     func emptyDir() throws {
         try withTempUsageDir { root in
-            let data = UsageData(testUsageDir: root)
+            let data = makeSUT(usageDir: root)
             #expect(data.day.cost == 0)
             #expect(data.week.cost == 0)
             #expect(data.month.cost == 0)
@@ -341,7 +375,7 @@ struct UsageDataTests {
             try FileManager.default.createDirectory(at: cmdDir, withIntermediateDirectories: true)
             try writeDat(dir: cmdDir, pid: "1234", cost: 30.0, la: 80, lr: 20, model: "Sonnet 4.6")
 
-            let data = UsageData(testUsageDir: root, includeCommander: true)
+            let data = makeSUT(usageDir: root, includeCommander: true)
 
             // Both should be counted: $20 + $30 = $50
             #expect(abs(data.day.cost - 50.0) < 0.01, "Both CLI and Commander costs should be counted")
@@ -363,7 +397,7 @@ struct UsageDataTests {
                 (10, 5, 2, "Sonnet 4.6"),
             ])
 
-            let data = UsageData(testUsageDir: root)
+            let data = makeSUT(usageDir: root)
             #expect(data.day.cost == 0)
         }
     }
