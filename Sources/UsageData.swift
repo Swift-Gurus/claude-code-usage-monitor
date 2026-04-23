@@ -395,7 +395,7 @@ public final class UsageData {
         p.linesRemoved += entry.linesRemoved
 
         let kp: WritableKeyPath<PeriodStats, SourceStats> =
-            entry.source == .cli ? \.cli : \.commander
+            entry.source == .commander ? \.commander : \.cli
         p[keyPath: kp].total.cost += entry.cost
         p[keyPath: kp].total.linesAdded += entry.linesAdded
         p[keyPath: kp].total.linesRemoved += entry.linesRemoved

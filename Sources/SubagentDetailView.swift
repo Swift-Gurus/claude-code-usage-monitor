@@ -60,7 +60,7 @@ protocol SubagentDetailActions {
  */
 protocol SubagentParsing {
     func parseSubagentMeta(sessionID: String, workingDir: String, projectsDir: URL) -> [String: JSONLParser.SubagentMeta]
-    func parseSubagentDetails(in dir: URL, meta: [String: JSONLParser.SubagentMeta]) -> [SubagentInfo]
+    func parseSubagentDetails(in dir: URL, meta: [String: JSONLParser.SubagentMeta], worktreeName: String) -> [SubagentInfo]
 }
 
 /**
@@ -73,8 +73,8 @@ struct DefaultSubagentParser: SubagentParsing {
         JSONLParser.parseSubagentMeta(sessionID: sessionID, workingDir: workingDir, projectsDir: projectsDir)
     }
 
-    func parseSubagentDetails(in dir: URL, meta: [String: JSONLParser.SubagentMeta]) -> [SubagentInfo] {
-        JSONLParser.parseSubagentDetails(in: dir, meta: meta)
+    func parseSubagentDetails(in dir: URL, meta: [String: JSONLParser.SubagentMeta], worktreeName: String) -> [SubagentInfo] {
+        JSONLParser.parseSubagentDetails(in: dir, meta: meta, worktreeName: worktreeName)
     }
 }
 
@@ -127,7 +127,7 @@ final class SubagentDetailViewModel: SubagentDetailState, SubagentDetailActions 
         let base = URL(fileURLWithPath: agent.claudeDir).appendingPathComponent("usage")
         let usageDir: URL
         switch agent.source {
-        case .cli: usageDir = base
+        case .cli, .desktop: usageDir = base
         case .commander: usageDir = base.appendingPathComponent("commander")
         }
 
@@ -136,7 +136,6 @@ final class SubagentDetailViewModel: SubagentDetailState, SubagentDetailActions 
         let sessionID = agent.sessionID
         let workingDir = agent.workingDir
         let projectsDir = agent.projectsDir
-        let encoder = pathEncoder
         let parser = subagentParser
 
         let (details, tools) = await Task.detached(priority: .utility) {
@@ -146,13 +145,16 @@ final class SubagentDetailViewModel: SubagentDetailState, SubagentDetailActions 
                 .flatMap { try? JSONDecoder().decode([String: Int].self, from: $0) } ?? [:]
 
             if details.isEmpty && !sessionID.isEmpty {
-                let encoded = encoder.encodeProjectPath(workingDir)
-                let subagentsDir = projectsDir
-                    .appendingPathComponent(encoded)
-                    .appendingPathComponent(sessionID)
-                    .appendingPathComponent("subagents")
                 let meta = parser.parseSubagentMeta(sessionID: sessionID, workingDir: workingDir, projectsDir: projectsDir)
-                details = parser.parseSubagentDetails(in: subagentsDir, meta: meta)
+                // Check all subagent dirs (main + worktrees)
+                let allDirs = SessionScanner.findSubagentDirs(
+                    sessionID: sessionID,
+                    workingDir: workingDir,
+                    projectsDir: projectsDir
+                )
+                for (subDir, wtName) in allDirs {
+                    details += parser.parseSubagentDetails(in: subDir, meta: meta, worktreeName: wtName ?? "")
+                }
             }
 
             return (details, tools)
@@ -222,6 +224,14 @@ private struct SubagentRowView: View {
     private var headerRow: some View {
         HStack {
             Text(sub.model).font(.caption).fontWeight(.medium).lineLimit(1)
+            if !sub.worktreeName.isEmpty {
+                Text(sub.worktreeName)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.cyan)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 1)
+                    .background(Color.cyan.opacity(0.12), in: RoundedRectangle(cornerRadius: 3))
+            }
             Spacer(minLength: 4)
             Text("+\(sub.linesAdded)").font(.caption2).foregroundStyle(.green)
                 .frame(minWidth: 36, alignment: .trailing)
@@ -276,7 +286,7 @@ struct SubagentDetailView<VM: SubagentDetailState & SubagentDetailActions>: View
     let agentTracker: AgentTracker
     let settings: AppSettings
     var sessionManager: SessionManager?
-    let vm: VM
+    @State var vm: VM
     let onDismiss: () -> Void
 
     @State private var rowHeights: [Int: CGFloat] = [:]

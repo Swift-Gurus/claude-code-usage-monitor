@@ -3,6 +3,7 @@ import Foundation
 public enum AgentSource: String {
     case cli = "CLI"
     case commander = "Commander"
+    case desktop = "Desktop"
 }
 
 public struct AgentInfo: Identifiable {
@@ -26,6 +27,8 @@ public struct AgentInfo: Identifiable {
     public let accountName: String
     public let claudeDir: String  // account's .claude directory path
     public let rateLimits: RateLimits?
+    public let branch: String        // git branch name, e.g. "claude/friendly-bose"
+    public let worktreeName: String  // e.g. "friendly-bose" — stored, not derived from workingDir
 
     public var id: Int { pid }
 
@@ -83,7 +86,7 @@ public struct AgentInfo: Identifiable {
         durationMs: Double, apiDurationMs: Double, updatedAt: TimeInterval, cpuUsage: Double,
         isIdle: Bool, source: AgentSource,
         accountID: UUID = UUID(), accountName: String = "Default", claudeDir: String = "",
-        rateLimits: RateLimits? = nil
+        rateLimits: RateLimits? = nil, branch: String = "", worktreeName: String = ""
     ) {
         self.pid = pid
         self.model = model
@@ -107,6 +110,8 @@ public struct AgentInfo: Identifiable {
             ? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude").path
             : claudeDir
         self.rateLimits = rateLimits
+        self.branch = branch
+        self.worktreeName = worktreeName
     }
 
     /// The projects directory for this agent's account.
@@ -198,6 +203,8 @@ public final class AgentTracker {
         for raw in rawAgents {
             let json = raw.json
             let account = raw.account
+            // Extract worktree info from original path BEFORE resolution strips it
+            let wtName = Self.extractWorktreeName(from: json.workingDir)
             // Resolve project root — statusline may report a subdirectory
             let resolvedDir = json.sessionID.isEmpty
                 ? json.workingDir
@@ -222,7 +229,8 @@ public final class AgentTracker {
                 accountID: account.id,
                 accountName: account.name,
                 claudeDir: account.claudeDir,
-                rateLimits: json.rateLimits
+                rateLimits: json.rateLimits,
+                worktreeName: wtName
             ))
 
             // Persist project association so UsageData can aggregate by project historically
@@ -231,6 +239,63 @@ public final class AgentTracker {
                 : account.commanderDir.appendingPathComponent(todayStr)
             let projectFile = todayDir.appendingPathComponent("\(json.pid).project")
             try? resolvedDir.write(to: projectFile, atomically: true, encoding: .utf8)
+        }
+
+        // Desktop app sessions — discovered from ~/Library/Application Support/Claude/claude-code-sessions/
+        let existingSessionIDs = Set(agents.map(\.sessionID))
+        let desktopSessions = DesktopAppScanner.findActiveSessions()
+        for ds in desktopSessions {
+            // Skip if already tracked via statusline (matched by cliSessionId)
+            guard !existingSessionIDs.contains(ds.cliSessionID) else { continue }
+
+            // Parse JSONL to get cost/usage data
+            let usage = JSONLParser.parseSession(
+                at: Self.jsonlURL(cwd: ds.cwd, sessionID: ds.cliSessionID),
+                sessionID: ds.cliSessionID,
+                workingDir: ds.cwd
+            )
+
+            // Desktop sessions delegate edits to subagents — sum subagent lines
+            let subStats = JSONLParser.parseSubagents(
+                sessionID: ds.cliSessionID,
+                workingDir: ds.cwd
+            )
+            let subLA = subStats.values.reduce(0) { $0 + $1.linesAdded }
+            let subLR = subStats.values.reduce(0) { $0 + $1.linesRemoved }
+
+            let displayModel = ds.model.isEmpty ? "Claude" : ClaudeModel.displayName(for: ds.model)
+            // Use a stable synthetic PID from the session ID hash to avoid collision with real PIDs
+            let syntheticPID = abs(ds.cliSessionID.hashValue) % 1_000_000 + 1_000_000
+
+            // Compute duration from JSONL timestamps
+            let durationMs: Double = {
+                guard let u = usage else { return 0 }
+                return u.lastUpdatedAt.timeIntervalSince(u.startedAt) * 1000
+            }()
+
+            agents.append(AgentInfo(
+                pid: syntheticPID,
+                model: displayModel,
+                agentName: ds.title,
+                contextPercent: usage?.contextPercent ?? 0,
+                contextWindow: ClaudeModel.from(modelID: ds.model).contextWindowSize,
+                cost: usage?.costUSD ?? 0,
+                linesAdded: (usage?.linesAdded ?? 0) + subLA,
+                linesRemoved: (usage?.linesRemoved ?? 0) + subLR,
+                workingDir: ds.cwd,
+                sessionID: ds.cliSessionID,
+                durationMs: durationMs,
+                apiDurationMs: 0,
+                updatedAt: ds.lastActivityAt.timeIntervalSince1970,
+                cpuUsage: 0,
+                isIdle: false,
+                source: .desktop,
+                accountID: accounts.first?.id ?? UUID(),
+                accountName: accounts.first?.name ?? "Default",
+                claudeDir: accounts.first?.claudeDir ?? "",
+                branch: ds.branch,
+                worktreeName: ds.worktreeName
+            ))
         }
 
         // Check JSONL activity: if parent or any subagent JSONL modified within 60s, agent is active
@@ -250,15 +315,23 @@ public final class AgentTracker {
                 continue
             }
 
-            // Check subagent JSONL mtimes
-            let subagentsDir = sessionDir
-                .appendingPathComponent(agent.sessionID)
-                .appendingPathComponent("subagents")
-            guard fm.fileExists(atPath: subagentsDir.path) else { continue }
-            let files = (try? fm.contentsOfDirectory(at: subagentsDir, includingPropertiesForKeys: [modKey])) ?? []
-            let maxMtime = files.compactMap {
-                try? $0.resourceValues(forKeys: [modKey]).contentModificationDate
-            }.max()
+            // Check subagent JSONL mtimes (main dir + worktree dirs)
+            let allSubagentDirs = SessionScanner.findSubagentDirs(
+                sessionID: agent.sessionID,
+                workingDir: agent.workingDir,
+                projectsDir: agent.projectsDir
+            )
+            guard !allSubagentDirs.isEmpty else { continue }
+            var maxMtime: Date?
+            for (subDir, _) in allSubagentDirs {
+                let files = (try? fm.contentsOfDirectory(at: subDir, includingPropertiesForKeys: [modKey])) ?? []
+                let dirMax = files.compactMap {
+                    try? $0.resourceValues(forKeys: [modKey]).contentModificationDate
+                }.max()
+                if let dm = dirMax, (maxMtime == nil || dm > maxMtime!) {
+                    maxMtime = dm
+                }
+            }
             if let mtime = maxMtime, now.timeIntervalSince(mtime) < 60 {
                 jsonlActivePIDs.insert(agent.pid)
             }
@@ -280,7 +353,8 @@ public final class AgentTracker {
                 updatedAt: agent.updatedAt, cpuUsage: agent.cpuUsage, isIdle: idle,
                 source: agent.source,
                 accountID: agent.accountID, accountName: agent.accountName,
-                claudeDir: agent.claudeDir, rateLimits: agent.rateLimits
+                claudeDir: agent.claudeDir, rateLimits: agent.rateLimits,
+                branch: agent.branch, worktreeName: agent.worktreeName
             )
         }.sorted { $0.pid < $1.pid }
 
@@ -295,46 +369,62 @@ public final class AgentTracker {
         let fm = FileManager.default
 
         for agent in agents where !agent.sessionID.isEmpty {
-            let encoded = SessionScanner.encodeProjectPath(agent.workingDir)
-            let subagentsDir = agent.projectsDir
-                .appendingPathComponent(encoded)
-                .appendingPathComponent(agent.sessionID)
-                .appendingPathComponent("subagents")
+            // Find all subagent dirs: main project + worktree project dirs
+            let allSubagentDirs = SessionScanner.findSubagentDirs(
+                sessionID: agent.sessionID,
+                workingDir: agent.workingDir,
+                projectsDir: agent.projectsDir
+            )
+            guard !allSubagentDirs.isEmpty else { continue }
 
-            guard fm.fileExists(atPath: subagentsDir.path) else { continue }
-
-            // Use max individual file mtime — detects both new files AND growth in existing files
-            let files = (try? fm.contentsOfDirectory(at: subagentsDir, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
-            let maxMtime = files.compactMap {
-                try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
-            }.max() ?? Date.distantPast
+            // Use max individual file mtime across ALL subagent dirs
+            var maxMtime = Date.distantPast
+            for (subDir, _) in allSubagentDirs {
+                let files = (try? fm.contentsOfDirectory(at: subDir, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+                let dirMax = files.compactMap {
+                    try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+                }.max() ?? Date.distantPast
+                if dirMax > maxMtime { maxMtime = dirMax }
+            }
             guard subagentCache[agent.sessionID]?.mtime != maxMtime else { continue }
 
-            let stats = JSONLParser.parseSubagents(in: subagentsDir)
-            subagentCache[agent.sessionID] = (mtime: maxMtime, stats: stats)
+            // Merge stats from all subagent dirs
+            var mergedStats: [String: SourceModelStats] = [:]
+            for (subDir, _) in allSubagentDirs {
+                let dirStats = JSONLParser.parseSubagents(in: subDir)
+                for (key, val) in dirStats {
+                    mergedStats[key, default: SourceModelStats()].cost += val.cost
+                    mergedStats[key, default: SourceModelStats()].linesAdded += val.linesAdded
+                    mergedStats[key, default: SourceModelStats()].linesRemoved += val.linesRemoved
+                }
+            }
+            subagentCache[agent.sessionID] = (mtime: maxMtime, stats: mergedStats)
 
             // Write {pid}.subagents.json to usage folder so UsageData can read it
             let accountUsageDir = URL(fileURLWithPath: agent.claudeDir).appendingPathComponent("usage")
             let todayDir: URL
             switch agent.source {
-            case .cli:
+            case .cli, .desktop:
                 todayDir = accountUsageDir.appendingPathComponent(todayStr)
             case .commander:
                 todayDir = accountUsageDir.appendingPathComponent("commander").appendingPathComponent(todayStr)
             }
 
-            if let data = try? JSONEncoder().encode(stats) {
+            if let data = try? JSONEncoder().encode(mergedStats) {
                 try? data.write(
                     to: todayDir.appendingPathComponent("\(agent.pid).subagents.json"),
                     options: .atomic
                 )
             }
 
-            // Write per-subagent detail for drill-down view
+            // Write per-subagent detail for drill-down view (merge from all dirs)
             let meta = JSONLParser.parseSubagentMeta(sessionID: agent.sessionID, workingDir: agent.workingDir, projectsDir: agent.projectsDir)
-            let details = JSONLParser.parseSubagentDetails(in: subagentsDir, meta: meta)
-            if !details.isEmpty {
-                if let data = try? JSONEncoder().encode(details) {
+            var allDetails: [SubagentInfo] = []
+            for (subDir, wtName) in allSubagentDirs {
+                allDetails += JSONLParser.parseSubagentDetails(in: subDir, meta: meta, worktreeName: wtName ?? "")
+            }
+            if !allDetails.isEmpty {
+                if let data = try? JSONEncoder().encode(allDetails) {
                     try? data.write(
                         to: todayDir.appendingPathComponent("\(agent.pid).subagent-details.json"),
                         options: .atomic
@@ -342,7 +432,7 @@ public final class AgentTracker {
                 }
                 let pid = agent.pid
                 DispatchQueue.main.async { [weak self] in
-                    self?.subagentDetails[pid] = details
+                    self?.subagentDetails[pid] = allDetails
                 }
             }
 
@@ -406,5 +496,27 @@ public final class AgentTracker {
             // If ps fails, assume all PIDs are valid (fail open)
             return Set(pids)
         }
+    }
+
+    /// Extract worktree name from a path. Checks both CLI and desktop patterns.
+    private static func extractWorktreeName(from path: String) -> String {
+        for pattern in [".claude-worktrees/", ".claude/worktrees/"] {
+            if let range = path.range(of: pattern) {
+                let after = path[range.upperBound...]
+                let name = after.prefix(while: { $0 != "/" })
+                if !name.isEmpty { return String(name) }
+            }
+        }
+        return ""
+    }
+
+    /// Build the JSONL URL for a given cwd and session ID.
+    private static func jsonlURL(cwd: String, sessionID: String) -> URL {
+        let projectsDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude/projects")
+        let encoded = SessionScanner.encodeProjectPath(cwd)
+        return projectsDir
+            .appendingPathComponent(encoded)
+            .appendingPathComponent("\(sessionID).jsonl")
     }
 }

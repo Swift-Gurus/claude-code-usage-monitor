@@ -429,7 +429,7 @@ public struct PopoverView: View {
 
     private func agentRow(_ agent: AgentInfo) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            // Row 1: name + cost
+            // Row 1: name + model (if name != model) + cost
             HStack {
                 Image(systemName: agent.isIdle ? "moon.zzz.fill" : "circle.fill")
                     .font(.system(size: 8))
@@ -438,6 +438,12 @@ public struct PopoverView: View {
                     .font(.caption)
                     .fontWeight(.medium)
                     .lineLimit(1)
+                if !agent.agentName.isEmpty {
+                    Text(agent.model)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
                 Spacer()
                 if agent.isIdle {
                     Text(agent.idleText)
@@ -458,20 +464,30 @@ public struct PopoverView: View {
                     .foregroundStyle(.secondary)
             }
 
-            // Row 3: folder + source badge + lines
+            // Row 3: folder + worktree/source badges + lines
             HStack {
                 Label(agent.shortDir, systemImage: "folder")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-                if agent.source == .commander {
-                    Text("Commander")
+                // Show branch if available, otherwise worktree name (avoids duplication)
+                if !agent.branch.isEmpty {
+                    Text(agent.branch)
                         .font(.system(size: 9))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.cyan)
                         .padding(.horizontal, 4)
                         .padding(.vertical, 1)
-                        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 3))
+                        .background(Color.cyan.opacity(0.12), in: RoundedRectangle(cornerRadius: 3))
+                        .lineLimit(1)
+                } else if !agent.worktreeName.isEmpty {
+                    Text(agent.worktreeName)
+                        .font(.system(size: 9))
+                        .foregroundStyle(.cyan)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(Color.cyan.opacity(0.12), in: RoundedRectangle(cornerRadius: 3))
                 }
+                sourceBadge(agent.source)
                 Spacer()
                 HStack(spacing: 6) {
                     Text("+\(agent.linesAdded.formatted(.number.notation(.compactName)))")
@@ -489,6 +505,21 @@ public struct PopoverView: View {
         .opacity(agent.isIdle ? idleOpacity : 1.0)
         .contentShape(Rectangle())
         .onTapGesture { selectedAgent = agent }
+    }
+
+    @ViewBuilder
+    private func sourceBadge(_ source: AgentSource) -> some View {
+        let (label, color): (String, Color) = switch source {
+        case .cli: ("CLI", .blue)
+        case .commander: ("Commander", .secondary)
+        case .desktop: ("Desktop", .purple)
+        }
+        Text(label)
+            .font(.system(size: 9))
+            .foregroundStyle(color)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 1)
+            .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 3))
     }
 
     private func contextBar(_ pct: Int, contextWindow: Int = 0) -> some View {

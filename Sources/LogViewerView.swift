@@ -156,6 +156,7 @@ final class LogViewerViewModel: LogViewerState, LogViewerActions {
                 return modelResolver.resolve(modelID: model).displayName
             }
             return "Assistant"
+        case .system: return "Hook"
         }
     }
 
@@ -213,7 +214,7 @@ struct LogViewerView<VM: LogViewerState & LogViewerActions>: View {
     var stickyHeader: Bool = false
     var onStop: (() -> Void)?
     var onOpenFile: (URL) -> Void = { NSWorkspace.shared.open($0) }
-    let vm: VM
+    @State var vm: VM
     let onDismiss: () -> Void
 
     @State private var showTaskPanel = true
@@ -430,7 +431,7 @@ struct LogViewerView<VM: LogViewerState & LogViewerActions>: View {
         VStack(alignment: .leading, spacing: 4) {
             // Role header
             HStack(spacing: 4) {
-                StatusDot(color: msg.role == .user ? .green : .blue)
+                StatusDot(color: dotColor(for: msg.role))
 
                 Text(vm.roleLabel(msg))
                     .font(.system(size: 10, weight: .medium))
@@ -514,13 +515,24 @@ struct LogViewerView<VM: LogViewerState & LogViewerActions>: View {
                 }
                 .padding(8)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    msg.role == .user
-                        ? Color.green.opacity(0.08)
-                        : Color.blue.opacity(0.08),
-                    in: RoundedRectangle(cornerRadius: 8)
-                )
+                .background(bubbleColor(for: msg.role), in: RoundedRectangle(cornerRadius: 8))
             }
+        }
+    }
+
+    private func dotColor(for role: LogMessage.Role) -> Color {
+        switch role {
+        case .user: return .green
+        case .assistant: return .blue
+        case .system: return .orange
+        }
+    }
+
+    private func bubbleColor(for role: LogMessage.Role) -> Color {
+        switch role {
+        case .user: return .green.opacity(0.08)
+        case .assistant: return .blue.opacity(0.08)
+        case .system: return .orange.opacity(0.08)
         }
     }
 
@@ -579,9 +591,11 @@ struct LogViewerView<VM: LogViewerState & LogViewerActions>: View {
         case .write(let d):
             writeDiffView(d)
         case .read(let d):
-            toolInputAndResult(d.filePath, resultContent: resultContent)
+            let input = d.filePath + (d.lineRange.map { " (\($0))" } ?? "")
+            toolInputAndResult(input, resultContent: resultContent)
         case .bash(let d):
-            toolInputAndResult(d.command, resultContent: resultContent)
+            let timeoutSuffix = d.timeout.map { " (timeout: \($0 / 1000)s)" } ?? ""
+            toolInputAndResult(d.command + timeoutSuffix, resultContent: resultContent)
         case .grep(let d):
             toolInputAndResult(
                 "pattern: \(d.pattern)" + (d.path.isEmpty ? "" : "\npath: \(d.path)"),
@@ -646,6 +660,8 @@ struct LogViewerView<VM: LogViewerState & LogViewerActions>: View {
             SkillToolExpandedContent(data: d)
         case .exitPlanMode(let d):
             monoText(String(d.plan.prefix(500)))
+        case .hook(let d):
+            hookDetailView(d)
         case .other(let raw):
             monoText(raw.sorted(by: { $0.key < $1.key }).map { "\($0.key): \($0.value)" }.joined(separator: "\n"))
         default:
@@ -690,6 +706,80 @@ struct LogViewerView<VM: LogViewerState & LogViewerActions>: View {
         .padding(4)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 4))
+    }
+
+    private func hookDetailView(_ d: HookToolData) -> some View {
+        let badgeColor: Color = {
+            switch d.status {
+            case .blockingError: return .red
+            case .cancelled: return .gray
+            case .progress: return .secondary
+            default: return .orange
+            }
+        }()
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Text(d.hookName)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.orange)
+                if let status = d.status {
+                    let label: String? = {
+                        switch status {
+                        case .blockingError: return "BLOCKED"
+                        case .cancelled: return "CANCELLED"
+                        case .success: return "DONE"
+                        case .systemMessage: return "SYSTEM"
+                        case .progress: return "STARTED"
+                        }
+                    }()
+                    if let label {
+                        Text(label)
+                            .font(.system(size: 8, weight: .bold, design: .monospaced))
+                            .foregroundStyle(badgeColor)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(badgeColor.opacity(0.15), in: RoundedRectangle(cornerRadius: 2))
+                    }
+                }
+                if let code = d.exitCode {
+                    Text("exit \(code)")
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundStyle(code == 0 ? Color.secondary : Color.red)
+                }
+                if let ms = d.durationMs {
+                    Text("\(ms) ms")
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            if !d.command.isEmpty {
+                Text(d.command)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+            if let err = d.errorMessage, !err.isEmpty {
+                Text(err)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.red)
+                    .textSelection(.enabled)
+            }
+            if let out = d.stdout, !out.isEmpty {
+                ToolResultView(content: out)
+            }
+            if let errOut = d.stderr, !errOut.isEmpty {
+                Text(errOut)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.red.opacity(0.85))
+                    .textSelection(.enabled)
+            }
+            if let ctx = d.context, !ctx.isEmpty {
+                ToolResultView(content: ctx)
+            }
+        }
+        .padding(6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.orange.opacity(0.06), in: RoundedRectangle(cornerRadius: 4))
     }
 
     private func writeDiffView(_ d: WriteToolData) -> some View {

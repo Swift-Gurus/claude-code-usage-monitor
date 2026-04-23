@@ -35,10 +35,29 @@ struct LogURLResolver: LogURLResolving {
         case .parent:
             return projectDir.appendingPathComponent("\(agent.sessionID).jsonl")
         case .subagent(let sub):
-            return projectDir
+            // Try main project dir first
+            let mainURL = projectDir
                 .appendingPathComponent(agent.sessionID)
                 .appendingPathComponent("subagents")
                 .appendingPathComponent("\(sub.agentID).jsonl")
+            if fileSystem.fileExists(atPath: mainURL.path) {
+                return mainURL
+            }
+
+            // Check worktree project dirs for this session's subagents
+            let worktreeDirs = SessionScanner.findSubagentDirs(
+                sessionID: agent.sessionID,
+                workingDir: agent.workingDir,
+                projectsDir: agent.projectsDir
+            )
+            for (subagentsDir, _) in worktreeDirs {
+                let wtURL = subagentsDir.appendingPathComponent("\(sub.agentID).jsonl")
+                if fileSystem.fileExists(atPath: wtURL.path) {
+                    return wtURL
+                }
+            }
+
+            return mainURL // fallback to main path
         }
     }
 

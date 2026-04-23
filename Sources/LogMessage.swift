@@ -16,11 +16,20 @@ public struct WriteToolData {
 
 public struct ReadToolData {
     public let filePath: String
+    public let offset: Int?
+    public let limit: Int?
+
+    public var lineRange: String? {
+        guard let limit else { return nil }
+        let start = offset ?? 0
+        return "lines \(start)–\(start + limit)"
+    }
 }
 
 public struct BashToolData {
     public let command: String
     public let description: String
+    public let timeout: Int?
 }
 
 public struct GrepToolData {
@@ -94,6 +103,24 @@ public struct ExitPlanModeToolData {
     public let plan: String
 }
 
+public struct HookToolData {
+    public enum Status {
+        case progress, success, blockingError, systemMessage, cancelled
+    }
+
+    public let hookEvent: String       // "PreToolUse", "PostToolUse", "Stop", "SubagentStart", ...
+    public let hookName: String        // "PostToolUse:Grep", "Stop", "SubagentStart", ...
+    public let command: String         // shell command (hook_progress / stop_hook_summary)
+    public let toolUseID: String
+    public let durationMs: Int?
+    public let errorMessage: String?
+    public let context: String?        // injected content for hook_additional_context / hook_system_message
+    public let stdout: String?
+    public let stderr: String?
+    public let exitCode: Int?
+    public let status: Status?
+}
+
 public enum ToolData {
     case edit(EditToolData)
     case write(WriteToolData)
@@ -110,6 +137,7 @@ public enum ToolData {
     case webFetch(WebFetchToolData)
     case askUserQuestion(AskUserQuestionToolData)
     case exitPlanMode(ExitPlanModeToolData)
+    case hook(HookToolData)
     case other(raw: [String: String])
 
     /// Short display text for the chip label.
@@ -117,7 +145,8 @@ public enum ToolData {
         switch self {
         case .edit(let d): return d.filePath
         case .write(let d): return d.filePath
-        case .read(let d): return d.filePath
+        case .read(let d):
+            return d.filePath + (d.lineRange.map { " (\($0))" } ?? "")
         case .bash(let d):
             return d.description.isEmpty
                 ? String(d.command.trimmingCharacters(in: .whitespacesAndNewlines).prefix(80))
@@ -133,6 +162,23 @@ public enum ToolData {
         case .webFetch(let d): return d.url
         case .askUserQuestion(let d): return d.questions.first?.question ?? "Question"
         case .exitPlanMode: return "Plan ready for review"
+        case .hook(let d):
+            let statusTag: String
+            switch d.status {
+            case .progress: statusTag = " · started"
+            case .success: statusTag = " · done"
+            case .blockingError: statusTag = " · blocked"
+            case .cancelled: statusTag = " · cancelled"
+            case .systemMessage, .none: statusTag = ""
+            }
+            let cmd = d.command.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !cmd.isEmpty {
+                return "\(d.hookName)\(statusTag) · \(String(cmd.prefix(60)))"
+            }
+            if let ctx = d.context, !ctx.isEmpty {
+                return "\(d.hookName)\(statusTag) · +\(ctx.count) chars"
+            }
+            return d.hookName + statusTag
         case .other(let raw):
             return raw.sorted(by: { $0.key < $1.key }).first.map { String($0.value.prefix(80)) } ?? ""
         }
@@ -185,7 +231,7 @@ public struct LogMessage: Identifiable {
     public let toolResultContents: [String: String]
 
     public enum Role {
-        case user, assistant
+        case user, assistant, system
     }
 }
 
@@ -285,6 +331,10 @@ public enum LogParser {
         var assistantByID: [String: (index: Int, msg: LogMessage)] = [:]
         /// Track tool_use IDs that need prompts (permissions, questions) for response display
         var promptToolIDs: Set<String> = []
+        /// Map tool_use id → result index of the assistant message that owns it (for hook attachment)
+        var assistantIdxByToolUseID: [String: Int] = [:]
+        /// Map toolUseID → (messageIdx, toolCallIdx) of an already-attached hook, for stop_hook_summary enrichment
+        var hookRefByToolUseID: [String: (messageIdx: Int, toolCallIdx: Int)] = [:]
 
         for line in content.split(separator: "\n") {
             guard let lineData = line.data(using: .utf8),
@@ -293,6 +343,258 @@ public enum LogParser {
 
             let type = raw["type"] as? String ?? ""
             let ts = (raw["timestamp"] as? String).flatMap { timestampFormatter.date(from: $0) }
+
+            // Hook progress: attach as a hook tool call to the matching assistant message,
+            // or emit a standalone system LogMessage for session-level hooks.
+            if type == "progress",
+               let data = raw["data"] as? [String: Any],
+               (data["type"] as? String) == "hook_progress" {
+                let hookData = HookToolData(
+                    hookEvent: data["hookEvent"] as? String ?? "",
+                    hookName: data["hookName"] as? String ?? "",
+                    command: data["command"] as? String ?? "",
+                    toolUseID: raw["toolUseID"] as? String ?? "",
+                    durationMs: nil,
+                    errorMessage: nil,
+                    context: nil,
+                    stdout: nil, stderr: nil, exitCode: nil,
+                    status: .progress
+                )
+                let hookId = raw["uuid"] as? String ?? UUID().uuidString
+                let hookCall = LogToolCall(id: "hook-\(hookId)", name: "Hook", data: .hook(hookData))
+
+                if let assistantIdx = assistantIdxByToolUseID[hookData.toolUseID] {
+                    let existing = result[assistantIdx]
+                    var tools = existing.toolCalls
+                    tools.append(hookCall)
+                    result[assistantIdx] = LogMessage(
+                        id: existing.id, role: existing.role, model: existing.model,
+                        timestamp: existing.timestamp, thinking: existing.thinking,
+                        textContent: existing.textContent, toolCalls: tools,
+                        toolResultIDs: existing.toolResultIDs,
+                        toolResponses: existing.toolResponses,
+                        toolResultContents: existing.toolResultContents
+                    )
+                    hookRefByToolUseID[hookData.toolUseID] = (assistantIdx, tools.count - 1)
+                } else {
+                    let sysMsg = LogMessage(
+                        id: "system-\(result.count)", role: .system, model: nil,
+                        timestamp: ts, thinking: nil, textContent: [], toolCalls: [hookCall],
+                        toolResultIDs: [], toolResponses: [:], toolResultContents: [:]
+                    )
+                    result.append(sysMsg)
+                    hookRefByToolUseID[hookData.toolUseID] = (result.count - 1, 0)
+                }
+                continue
+            }
+
+            // stop_hook_summary: append a completion chip next to a prior hook_progress start chip,
+            // or (on recent Claude Code versions where hook_progress is no longer emitted) emit a
+            // standalone system message with one chip per hookInfo entry.
+            if type == "system", (raw["subtype"] as? String) == "stop_hook_summary" {
+                let toolUseID = raw["toolUseID"] as? String ?? ""
+                let hookInfos = raw["hookInfos"] as? [[String: Any]] ?? []
+                let hookErrors = raw["hookErrors"] as? [String] ?? []
+
+                if let ref = hookRefByToolUseID[toolUseID],
+                   ref.toolCallIdx < result[ref.messageIdx].toolCalls.count,
+                   case .hook(let hd) = result[ref.messageIdx].toolCalls[ref.toolCallIdx].data {
+                    let existing = result[ref.messageIdx]
+                    let duration = hookInfos.first?["durationMs"] as? Int
+                    let completion = HookToolData(
+                        hookEvent: hd.hookEvent, hookName: hd.hookName,
+                        command: hd.command, toolUseID: hd.toolUseID,
+                        durationMs: duration, errorMessage: hookErrors.first,
+                        context: hd.context,
+                        stdout: hd.stdout, stderr: hd.stderr, exitCode: hd.exitCode,
+                        status: hookErrors.first != nil ? .blockingError : .success
+                    )
+                    let completionID = "hook-\(raw["uuid"] as? String ?? UUID().uuidString)-complete"
+                    var tools = existing.toolCalls
+                    tools.append(LogToolCall(id: completionID, name: "Hook", data: .hook(completion)))
+                    result[ref.messageIdx] = LogMessage(
+                        id: existing.id, role: existing.role, model: existing.model,
+                        timestamp: existing.timestamp, thinking: existing.thinking,
+                        textContent: existing.textContent, toolCalls: tools,
+                        toolResultIDs: existing.toolResultIDs,
+                        toolResponses: existing.toolResponses,
+                        toolResultContents: existing.toolResultContents
+                    )
+                    continue
+                }
+
+                guard !hookInfos.isEmpty else { continue }
+                let baseUUID = raw["uuid"] as? String ?? UUID().uuidString
+                var calls: [LogToolCall] = []
+                for (i, info) in hookInfos.enumerated() {
+                    let cmd = info["command"] as? String ?? ""
+                    let duration = info["durationMs"] as? Int
+                    let err = i < hookErrors.count ? hookErrors[i] : nil
+                    let hookData = HookToolData(
+                        hookEvent: "Stop", hookName: "Stop",
+                        command: cmd, toolUseID: toolUseID,
+                        durationMs: duration, errorMessage: err,
+                        context: nil,
+                        stdout: nil, stderr: nil, exitCode: nil,
+                        status: err != nil ? .blockingError : .success
+                    )
+                    calls.append(LogToolCall(
+                        id: "hook-\(baseUUID)-\(i)", name: "Hook", data: .hook(hookData)
+                    ))
+                }
+                result.append(LogMessage(
+                    id: "system-\(result.count)", role: .system, model: nil,
+                    timestamp: ts, thinking: nil, textContent: [], toolCalls: calls,
+                    toolResultIDs: [], toolResponses: [:], toolResultContents: [:]
+                ))
+                continue
+            }
+
+            // hook_additional_context: hooks that inject context (e.g. SubagentStart).
+            if type == "attachment",
+               let att = raw["attachment"] as? [String: Any],
+               (att["type"] as? String) == "hook_additional_context" {
+                let hookEvent = att["hookEvent"] as? String ?? ""
+                let hookName = att["hookName"] as? String ?? hookEvent
+                let toolUseID = att["toolUseID"] as? String ?? ""
+                let joinedContext: String
+                if let arr = att["content"] as? [String] {
+                    joinedContext = arr.joined(separator: "\n")
+                } else if let s = att["content"] as? String {
+                    joinedContext = s
+                } else {
+                    joinedContext = ""
+                }
+                let hookData = HookToolData(
+                    hookEvent: hookEvent, hookName: hookName,
+                    command: "", toolUseID: toolUseID,
+                    durationMs: nil, errorMessage: nil,
+                    context: joinedContext.isEmpty ? nil : joinedContext,
+                    stdout: nil, stderr: nil, exitCode: nil,
+                    status: .systemMessage
+                )
+                let hookId = raw["uuid"] as? String ?? UUID().uuidString
+                let hookCall = LogToolCall(id: "hook-\(hookId)", name: "Hook", data: .hook(hookData))
+
+                if let assistantIdx = assistantIdxByToolUseID[toolUseID] {
+                    let existing = result[assistantIdx]
+                    var tools = existing.toolCalls
+                    tools.append(hookCall)
+                    result[assistantIdx] = LogMessage(
+                        id: existing.id, role: existing.role, model: existing.model,
+                        timestamp: existing.timestamp, thinking: existing.thinking,
+                        textContent: existing.textContent, toolCalls: tools,
+                        toolResultIDs: existing.toolResultIDs,
+                        toolResponses: existing.toolResponses,
+                        toolResultContents: existing.toolResultContents
+                    )
+                } else {
+                    result.append(LogMessage(
+                        id: "system-\(result.count)", role: .system, model: nil,
+                        timestamp: ts, thinking: nil, textContent: [], toolCalls: [hookCall],
+                        toolResultIDs: [], toolResponses: [:], toolResultContents: [:]
+                    ))
+                }
+                continue
+            }
+
+            // hook_success / hook_blocking_error / hook_system_message / hook_cancelled
+            // (v2.1.111+ attachment formats replacing hook_progress for PostToolUse hooks).
+            if type == "attachment",
+               let att = raw["attachment"] as? [String: Any],
+               let attType = att["type"] as? String,
+               ["hook_success", "hook_blocking_error", "hook_system_message", "hook_cancelled"].contains(attType) {
+                let hookEvent = att["hookEvent"] as? String ?? ""
+                let hookName = att["hookName"] as? String ?? hookEvent
+                let toolUseID = att["toolUseID"] as? String ?? ""
+
+                let status: HookToolData.Status
+                let command: String
+                let errorMessage: String?
+                let context: String?
+                let stdout: String?
+                let stderr: String?
+                let exitCode: Int?
+                let durationMs: Int?
+
+                switch attType {
+                case "hook_success":
+                    status = .success
+                    command = att["command"] as? String ?? ""
+                    let out = att["stdout"] as? String
+                    let errOut = att["stderr"] as? String
+                    stdout = (out?.isEmpty ?? true) ? nil : out
+                    stderr = (errOut?.isEmpty ?? true) ? nil : errOut
+                    exitCode = att["exitCode"] as? Int
+                    durationMs = att["durationMs"] as? Int
+                    errorMessage = nil
+                    let content = att["content"] as? String
+                    context = (content?.isEmpty ?? true) ? nil : content
+                case "hook_blocking_error":
+                    status = .blockingError
+                    let be = att["blockingError"] as? [String: Any] ?? [:]
+                    command = be["command"] as? String ?? att["command"] as? String ?? ""
+                    errorMessage = be["blockingError"] as? String
+                    stdout = nil
+                    stderr = nil
+                    exitCode = be["exitCode"] as? Int
+                    durationMs = att["durationMs"] as? Int
+                    context = nil
+                case "hook_system_message":
+                    status = .systemMessage
+                    command = att["command"] as? String ?? ""
+                    let content = att["content"] as? String
+                    context = (content?.isEmpty ?? true) ? nil : content
+                    stdout = nil
+                    stderr = nil
+                    exitCode = nil
+                    durationMs = nil
+                    errorMessage = nil
+                case "hook_cancelled":
+                    status = .cancelled
+                    command = att["command"] as? String ?? ""
+                    errorMessage = "Cancelled"
+                    context = nil
+                    stdout = nil
+                    stderr = nil
+                    exitCode = nil
+                    durationMs = att["durationMs"] as? Int
+                default:
+                    continue
+                }
+
+                let hookData = HookToolData(
+                    hookEvent: hookEvent, hookName: hookName,
+                    command: command, toolUseID: toolUseID,
+                    durationMs: durationMs, errorMessage: errorMessage,
+                    context: context,
+                    stdout: stdout, stderr: stderr, exitCode: exitCode,
+                    status: status
+                )
+                let hookId = raw["uuid"] as? String ?? UUID().uuidString
+                let hookCall = LogToolCall(id: "hook-\(hookId)", name: "Hook", data: .hook(hookData))
+
+                if let assistantIdx = assistantIdxByToolUseID[toolUseID] {
+                    let existing = result[assistantIdx]
+                    var tools = existing.toolCalls
+                    tools.append(hookCall)
+                    result[assistantIdx] = LogMessage(
+                        id: existing.id, role: existing.role, model: existing.model,
+                        timestamp: existing.timestamp, thinking: existing.thinking,
+                        textContent: existing.textContent, toolCalls: tools,
+                        toolResultIDs: existing.toolResultIDs,
+                        toolResponses: existing.toolResponses,
+                        toolResultContents: existing.toolResultContents
+                    )
+                } else {
+                    result.append(LogMessage(
+                        id: "system-\(result.count)", role: .system, model: nil,
+                        timestamp: ts, thinking: nil, textContent: [], toolCalls: [hookCall],
+                        toolResultIDs: [], toolResponses: [:], toolResultContents: [:]
+                    ))
+                }
+                continue
+            }
 
             guard let msg = raw["message"] as? [String: Any],
                   let contentArr = msg["content"] as? [[String: Any]]
@@ -424,9 +726,16 @@ public enum LogParser {
                     )
                     result[existing.index] = merged
                     assistantByID[msgID] = (existing.index, merged)
+                    for tc in logMsg.toolCalls where !existingIds.contains(tc.id) {
+                        assistantIdxByToolUseID[tc.id] = existing.index
+                    }
                 } else {
-                    assistantByID[msgID] = (result.count, logMsg)
+                    let idx = result.count
+                    assistantByID[msgID] = (idx, logMsg)
                     result.append(logMsg)
+                    for tc in logMsg.toolCalls {
+                        assistantIdxByToolUseID[tc.id] = idx
+                    }
                 }
             }
         }
@@ -450,9 +759,17 @@ public enum LogParser {
         case "Write":
             return .write(WriteToolData(filePath: str("file_path"), content: str("content")))
         case "Read":
-            return .read(ReadToolData(filePath: str("file_path")))
+            return .read(ReadToolData(
+                filePath: str("file_path"),
+                offset: input["offset"] as? Int,
+                limit: input["limit"] as? Int
+            ))
         case "Bash":
-            return .bash(BashToolData(command: str("command"), description: str("description")))
+            return .bash(BashToolData(
+                command: str("command"),
+                description: str("description"),
+                timeout: input["timeout"] as? Int
+            ))
         case "Grep":
             return .grep(GrepToolData(pattern: str("pattern"), path: str("path")))
         case "Glob":

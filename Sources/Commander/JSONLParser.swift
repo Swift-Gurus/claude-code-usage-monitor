@@ -12,6 +12,7 @@ public struct SubagentInfo: Codable, Identifiable {
     public let description: String   // e.g. "Explore UI navigation and views"
     public let subagentType: String  // e.g. "Explore", "solid-coder:validate-findings-agent"
     public let lastModified: Double  // file mtime as timeIntervalSince1970
+    public let worktreeName: String  // e.g. "friendly-bose" — empty if not a worktree subagent
 
     public var id: String { agentID }
 
@@ -26,7 +27,7 @@ public struct SubagentInfo: Codable, Identifiable {
                 linesAdded: Int = 0, linesRemoved: Int = 0,
                 toolCounts: [String: Int] = [:],
                 description: String = "", subagentType: String = "",
-                lastModified: Double = 0) {
+                lastModified: Double = 0, worktreeName: String = "") {
         self.agentID = agentID
         self.model = model
         self.cost = cost
@@ -37,6 +38,7 @@ public struct SubagentInfo: Codable, Identifiable {
         self.description = description
         self.subagentType = subagentType
         self.lastModified = lastModified
+        self.worktreeName = worktreeName
     }
 }
 
@@ -78,6 +80,7 @@ public struct SessionUsage {
 /// Single source of truth for model metadata: display name, pricing, context window.
 /// To add a new model: add a case and fill in all properties.
 public enum ClaudeModel: CaseIterable {
+    case opus4_7
     case opus4_6
     case opus4_5
     case sonnet4_6
@@ -85,20 +88,23 @@ public enum ClaudeModel: CaseIterable {
     case sonnet4
     case haiku4_5
 
-    /// Substring(s) to match in raw model ID (e.g. "claude-opus-4-6")
+    /// Substring(s) to match in raw model ID (e.g. "claude-opus-4-7")
+    /// or display name (e.g. "Opus 4.7 (1M context)").
     public var idPatterns: [String] {
         switch self {
-        case .opus4_6:   return ["opus-4-6", "opus-4.6"]
-        case .opus4_5:   return ["opus-4-5", "opus-4.5"]
-        case .sonnet4_6: return ["sonnet-4-6", "sonnet-4.6"]
-        case .sonnet4_5: return ["sonnet-4-5", "sonnet-4.5"]
-        case .sonnet4:   return ["sonnet-4-", "sonnet-4["]
-        case .haiku4_5:  return ["haiku-4-5", "haiku-4.5"]
+        case .opus4_7:   return ["opus-4-7", "Opus 4.7"]
+        case .opus4_6:   return ["opus-4-6", "Opus 4.6"]
+        case .opus4_5:   return ["opus-4-5", "Opus 4.5"]
+        case .sonnet4_6: return ["sonnet-4-6", "Sonnet 4.6"]
+        case .sonnet4_5: return ["sonnet-4-5", "Sonnet 4.5"]
+        case .sonnet4:   return ["sonnet-4-", "sonnet-4[", "Sonnet 4 "]
+        case .haiku4_5:  return ["haiku-4-5", "Haiku 4.5"]
         }
     }
 
     public var displayName: String {
         switch self {
+        case .opus4_7:   return "Opus 4.7"
         case .opus4_6:   return "Opus 4.6"
         case .opus4_5:   return "Opus 4.5"
         case .sonnet4_6: return "Sonnet 4.6"
@@ -115,8 +121,8 @@ public enum ClaudeModel: CaseIterable {
     /// produce estimates closer to Claude Code's actual reported costs.
     public var pricing: ModelPricing {
         switch self {
-        case .opus4_6, .opus4_5:
-            // Opus 4.6/4.5: $5/$25 per MTok (source: platform.claude.com/docs/en/about-claude/pricing)
+        case .opus4_7, .opus4_6, .opus4_5:
+            // Opus: $5/$25 per MTok (source: platform.claude.com/docs/en/about-claude/pricing)
             return ModelPricing(inputPerMTok: 5.0, outputPerMTok: 25.0, cacheWritePerMTok: 6.25, cacheReadPerMTok: 0.50)
         case .sonnet4_6, .sonnet4_5, .sonnet4:
             // Sonnet 4.x: $3/$15 per MTok
@@ -129,7 +135,7 @@ public enum ClaudeModel: CaseIterable {
 
     public var contextWindowSize: Int {
         switch self {
-        case .opus4_6, .opus4_5: return 1_000_000
+        case .opus4_7, .opus4_6, .opus4_5: return 1_000_000
         case .sonnet4_6, .sonnet4_5, .sonnet4, .haiku4_5: return 200_000
         }
     }
@@ -297,17 +303,27 @@ public enum JSONLParser {
     }
 
     /// Parse all subagent JSONL files for a session, returning per-model cost.
-    /// Subagents are stored in {projectsDir}/{encoded_path}/{sessionID}/subagents/
+    /// Checks main project dir and worktree project dirs.
     public static func parseSubagents(sessionID: String, workingDir: String, projectsDir: URL? = nil) -> [String: SourceModelStats] {
         let resolvedDir = projectsDir ?? FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude/projects")
-        let encoded = SessionScanner.encodeProjectPath(workingDir)
-        let subagentsDir = resolvedDir
-            .appendingPathComponent(encoded)
-            .appendingPathComponent(sessionID)
-            .appendingPathComponent("subagents")
 
-        return parseSubagents(in: subagentsDir)
+        let allDirs = SessionScanner.findSubagentDirs(
+            sessionID: sessionID,
+            workingDir: workingDir,
+            projectsDir: resolvedDir
+        )
+
+        var merged: [String: SourceModelStats] = [:]
+        for (subDir, _) in allDirs {
+            let dirStats = parseSubagents(in: subDir)
+            for (key, val) in dirStats {
+                merged[key, default: SourceModelStats()].cost += val.cost
+                merged[key, default: SourceModelStats()].linesAdded += val.linesAdded
+                merged[key, default: SourceModelStats()].linesRemoved += val.linesRemoved
+            }
+        }
+        return merged
     }
 
     /// Parse all JSONL files in a subagents directory, returning per-model cost.
@@ -513,7 +529,7 @@ public enum JSONLParser {
     }
 
     /// Parse all subagent JSONL files in a directory, returning one SubagentInfo per file.
-    public static func parseSubagentDetails(in dir: URL, meta: [String: SubagentMeta] = [:]) -> [SubagentInfo] {
+    public static func parseSubagentDetails(in dir: URL, meta: [String: SubagentMeta] = [:], worktreeName: String = "") -> [SubagentInfo] {
         let fm = FileManager.default
         guard let files = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else {
             return []
@@ -606,7 +622,8 @@ public enum JSONLParser {
                 toolCounts: toolCounts,
                 description: agentMeta?.description ?? "",
                 subagentType: agentMeta?.subagentType ?? "",
-                lastModified: mtime
+                lastModified: mtime,
+                worktreeName: worktreeName
             ))
         }
 

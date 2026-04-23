@@ -149,6 +149,58 @@ public enum SessionScanner {
             .replacingOccurrences(of: "_", with: "-")
     }
 
+    /// Find worktree project directories for a given base working directory.
+    /// Claude Code stores worktree subagent data under separate project dirs matching
+    /// `{encodedBasePath}--claude-worktrees-{worktreeName}`.
+    /// Returns (worktreeProjectDir, worktreeName) pairs.
+    public static func findWorktreeProjectDirs(workingDir: String, projectsDir: URL? = nil) -> [(dir: URL, name: String)] {
+        let resolvedDir = projectsDir ?? defaultProjectsDir
+        let encoded = encodeProjectPath(workingDir)
+        let prefix = encoded + "--claude-worktrees-"
+
+        guard let entries = try? FileManager.default.contentsOfDirectory(
+            at: resolvedDir, includingPropertiesForKeys: nil
+        ) else { return [] }
+
+        return entries.compactMap { entry in
+            let dirName = entry.lastPathComponent
+            guard dirName.hasPrefix(prefix) else { return nil }
+            let worktreeName = String(dirName.dropFirst(prefix.count))
+            return (entry, worktreeName)
+        }
+    }
+
+    /// Find all subagent directories for a session, including those in worktree project dirs.
+    /// Returns (subagentsDir, worktreeName?) pairs. The main project dir has worktreeName nil.
+    public static func findSubagentDirs(sessionID: String, workingDir: String, projectsDir: URL? = nil) -> [(dir: URL, worktreeName: String?)] {
+        let resolvedDir = projectsDir ?? defaultProjectsDir
+        let encoded = encodeProjectPath(workingDir)
+        let fm = FileManager.default
+
+        var results: [(dir: URL, worktreeName: String?)] = []
+
+        // Check main project dir
+        let mainSubagents = resolvedDir
+            .appendingPathComponent(encoded)
+            .appendingPathComponent(sessionID)
+            .appendingPathComponent("subagents")
+        if fm.fileExists(atPath: mainSubagents.path) {
+            results.append((mainSubagents, nil))
+        }
+
+        // Check worktree project dirs
+        for (wtDir, wtName) in findWorktreeProjectDirs(workingDir: workingDir, projectsDir: resolvedDir) {
+            let wtSubagents = wtDir
+                .appendingPathComponent(sessionID)
+                .appendingPathComponent("subagents")
+            if fm.fileExists(atPath: wtSubagents.path) {
+                results.append((wtSubagents, wtName))
+            }
+        }
+
+        return results
+    }
+
     /// Find which .jsonl files are open by the given PIDs using lsof.
     /// Returns PID → full path to the .jsonl file.
     private static func findOpenJSONLFiles(pids: [Int]) -> [Int: String] {
