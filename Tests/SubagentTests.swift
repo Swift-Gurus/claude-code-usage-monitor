@@ -191,6 +191,190 @@ struct SubagentTests {
     // AppSettings persistence tests for subagentContextBudget are in AppSettingsTests.swift
     // (requires .serialized suite to avoid UserDefaults race conditions)
 
+    // MARK: - JSONLParser.parseBareChildren
+
+    private func bareUserLine(parentID: String, extra: String = "Some prompt") -> String {
+        // JSON-encode the content to handle newlines correctly
+        let content = "# spawned-by: \(parentID)\n\n\(extra)"
+        let escaped = content
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "\\n")
+        return #"{"type":"user","entrypoint":"sdk-cli","message":{"role":"user","content":"\#(escaped)"}}"#
+    }
+
+    private func cliUserLine() -> String {
+        #"{"type":"user","entrypoint":"cli","message":{"role":"user","content":"Hello"}}"#
+    }
+
+    @Test("parseBareChildren — bare session with matching parent ID is captured")
+    func parseBareChildrenMatchingParent() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let parentID = "ba4ea8bf-0000-0000-0000-000000000000"
+        let bareID = "2687fd16-0000-0000-0000-000000000000"
+
+        try writeJSONL([
+            bareUserLine(parentID: parentID),
+            assistantLine(msgID: "m1", model: "claude-sonnet-4-6", input: 100_000, output: 10_000)
+        ], to: dir, name: "\(bareID).jsonl")
+
+        let results = JSONLParser.parseBareChildren(parentSessionID: parentID, in: dir)
+        #expect(results.count == 1)
+        #expect(results[0].agentID == bareID)
+        #expect(results[0].sourceLabel == "Hook")
+        #expect(results[0].model == "Sonnet 4.6")
+    }
+
+    @Test("parseBareChildren — session with different parent ID is excluded")
+    func parseBareChildrenWrongParent() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let parentID = "ba4ea8bf-0000-0000-0000-000000000000"
+        let otherParent = "deadbeef-0000-0000-0000-000000000000"
+
+        try writeJSONL([
+            bareUserLine(parentID: otherParent),
+            assistantLine(msgID: "m1", model: "claude-sonnet-4-6", input: 100_000, output: 10_000)
+        ], to: dir, name: "child-01.jsonl")
+
+        let results = JSONLParser.parseBareChildren(parentSessionID: parentID, in: dir)
+        #expect(results.isEmpty)
+    }
+
+    @Test("parseBareChildren — CLI session (not sdk-cli) is excluded")
+    func parseBareChildrenCLISessionExcluded() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let parentID = "ba4ea8bf-0000-0000-0000-000000000000"
+
+        try writeJSONL([
+            cliUserLine(),
+            assistantLine(msgID: "m1", model: "claude-sonnet-4-6", input: 100_000, output: 10_000)
+        ], to: dir, name: "main-session.jsonl")
+
+        let results = JSONLParser.parseBareChildren(parentSessionID: parentID, in: dir)
+        #expect(results.isEmpty)
+    }
+
+    @Test("parseBareChildren — parent session file is skipped")
+    func parseBareChildrenSkipsParentFile() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let parentID = "ba4ea8bf-0000-0000-0000-000000000000"
+
+        // Write a file with the parent's own ID — should be skipped
+        try writeJSONL([
+            bareUserLine(parentID: parentID),
+            assistantLine(msgID: "m1", model: "claude-sonnet-4-6", input: 100_000, output: 10_000)
+        ], to: dir, name: "\(parentID).jsonl")
+
+        let results = JSONLParser.parseBareChildren(parentSessionID: parentID, in: dir)
+        #expect(results.isEmpty)
+    }
+
+    @Test("parseBareChildren — bare session with no assistant messages is skipped")
+    func parseBareChildrenEmptySessionSkipped() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let parentID = "ba4ea8bf-0000-0000-0000-000000000000"
+
+        try writeJSONL([
+            bareUserLine(parentID: parentID)
+            // no assistant lines — no usage
+        ], to: dir, name: "empty-child.jsonl")
+
+        let results = JSONLParser.parseBareChildren(parentSessionID: parentID, in: dir)
+        #expect(results.isEmpty)
+    }
+
+    @Test("parseBareChildren — multiple bare children for same parent all captured")
+    func parseBareChildrenMultipleChildren() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let parentID = "ba4ea8bf-0000-0000-0000-000000000000"
+
+        try writeJSONL([
+            bareUserLine(parentID: parentID),
+            assistantLine(msgID: "m1", model: "claude-opus-4-6", input: 1_000_000, output: 1_000_000)
+        ], to: dir, name: "child-a.jsonl")
+
+        try writeJSONL([
+            bareUserLine(parentID: parentID),
+            assistantLine(msgID: "m2", model: "claude-haiku-4-5-20251001", input: 500_000, output: 100_000)
+        ], to: dir, name: "child-b.jsonl")
+
+        let results = JSONLParser.parseBareChildren(parentSessionID: parentID, in: dir)
+        #expect(results.count == 2)
+        let ids = Set(results.map(\.agentID))
+        #expect(ids.contains("child-a"))
+        #expect(ids.contains("child-b"))
+        #expect(results.allSatisfy { $0.sourceLabel == "Hook" })
+    }
+
+    @Test("parseBareChildren — queue-operation prefix lines before first user event are ignored")
+    func parseBareChildrenWithQueueOperationPrefix() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let parentID = "ba4ea8bf-0000-0000-0000-000000000000"
+        let queueEnqueue = #"{"type":"queue-operation","operation":"enqueue","timestamp":"2026-05-12T13:52:06.384Z","sessionId":"child-q","content":"..."}"#
+        let queueDequeue = #"{"type":"queue-operation","operation":"dequeue","timestamp":"2026-05-12T13:52:06.386Z","sessionId":"child-q"}"#
+
+        try writeJSONL([
+            queueEnqueue,
+            queueDequeue,
+            bareUserLine(parentID: parentID),
+            assistantLine(msgID: "m1", model: "claude-sonnet-4-6", input: 50_000, output: 5_000)
+        ], to: dir, name: "child-q.jsonl")
+
+        let results = JSONLParser.parseBareChildren(parentSessionID: parentID, in: dir)
+        #expect(results.count == 1)
+        #expect(results[0].agentID == "child-q")
+    }
+
+    @Test("parseBareChildren — ai-title is captured as description")
+    func parseBareChildrenAITitle() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let parentID = "ba4ea8bf-0000-0000-0000-000000000000"
+        let titleLine = #"{"type":"ai-title","aiTitle":"Swift Frontmatter Correction","sessionId":"titled-child"}"#
+
+        try writeJSONL([
+            bareUserLine(parentID: parentID),
+            titleLine,
+            assistantLine(msgID: "m1", model: "claude-sonnet-4-6", input: 10_000, output: 1_000)
+        ], to: dir, name: "titled-child.jsonl")
+
+        let results = JSONLParser.parseBareChildren(parentSessionID: parentID, in: dir)
+        #expect(results.count == 1)
+        #expect(results[0].description == "Swift Frontmatter Correction")
+    }
+
+    @Test("parseBareChildren — real solid-coder session finds bare children (integration)")
+    func parseBareChildrenRealData() throws {
+        let projDir = URL(fileURLWithPath:
+            "/Users/crowea/.claude/projects/-Users-crowea-Developer-Swift-Gurus-solid-coder")
+        let parentID = "ba4ea8bf-57ad-4e40-bad0-f09aaaedc240"
+        guard FileManager.default.fileExists(atPath: projDir.path),
+              FileManager.default.fileExists(atPath: projDir.appendingPathComponent("\(parentID).jsonl").path)
+        else { return }
+
+        let results = JSONLParser.parseBareChildren(parentSessionID: parentID, in: projDir)
+        #expect(results.count >= 2, "expected at least 2 bare children (ce89e1e4, 2687fd16)")
+        #expect(results.allSatisfy { $0.sourceLabel == "Hook" })
+        let ids = Set(results.map(\.agentID))
+        #expect(ids.contains("2687fd16-33ff-4433-9197-249a79f550d1"))
+        #expect(ids.contains("ce89e1e4-b5ca-4ac5-a7b2-c3db6807770c"))
+    }
+
     // MARK: - UsageData.subagentsByModel
 
     @Test("UsageData reads .subagents.json and populates subagentsByModel")

@@ -28,6 +28,22 @@ struct LogURLResolver: LogURLResolving {
     }
 
     func resolveURL(agent: AgentInfo, target: LogTarget) -> URL {
+        if agent.source == .codex {
+            let threadID: String
+            switch target {
+            case .parent:
+                threadID = agent.sessionID
+            case .codexSession(let session):
+                threadID = session.threadID
+            case .subagent:
+                threadID = agent.sessionID
+            }
+
+            let codexPaths = CodexPaths(homeDirectory: URL(fileURLWithPath: agent.claudeDir))
+            return CodexRolloutStore(paths: codexPaths).rolloutURL(threadID: threadID)
+                ?? codexPaths.sessionsDirectory
+        }
+
         let encoded = pathEncoder.encodeProjectPath(agent.workingDir)
         let projectDir = agent.projectsDir.appendingPathComponent(encoded)
 
@@ -57,7 +73,15 @@ struct LogURLResolver: LogURLResolving {
                 }
             }
 
-            return mainURL // fallback to main path
+            // Bare (hook) sessions live at the project root, not in a subagents/ subdirectory
+            let bareURL = projectDir.appendingPathComponent("\(sub.agentID).jsonl")
+            if fileSystem.fileExists(atPath: bareURL.path) {
+                return bareURL
+            }
+
+            return mainURL // last-resort fallback
+        case .codexSession:
+            return projectDir.appendingPathComponent("\(agent.sessionID).jsonl")
         }
     }
 

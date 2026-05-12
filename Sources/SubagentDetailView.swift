@@ -41,6 +41,7 @@ protocol SubagentDetailState: Observable {
     var subagents: [SubagentInfo] { get }
     var parentTools: [String: Int] { get }
     func sortedSubagents(by order: SubagentSortOrder) -> [SubagentInfo]
+    func logTarget(for subagent: SubagentInfo) -> LogTarget
 }
 
 /**
@@ -56,17 +57,18 @@ protocol SubagentDetailActions {
 /**
  solid-name: SubagentParsing
  solid-category: abstraction
- solid-description: Contract for parsing subagent metadata and details from JSONL files. Enables testability of subagent detail loading without real file I/O.
+ solid-description: Contract for parsing subagent metadata and session details from log data. Covers both standard and bare session types, enabling testable and decoupled retrieval of subagent information.
  */
 protocol SubagentParsing {
     func parseSubagentMeta(sessionID: String, workingDir: String, projectsDir: URL) -> [String: JSONLParser.SubagentMeta]
     func parseSubagentDetails(in dir: URL, meta: [String: JSONLParser.SubagentMeta], worktreeName: String) -> [SubagentInfo]
+    func parseBareChildren(parentSessionID: String, in projectDir: URL) -> [SubagentInfo]
 }
 
 /**
  solid-name: DefaultSubagentParser
  solid-category: utility
- solid-description: Production default for SubagentParsing. Delegates to JSONLParser's static subagent parsing APIs for dependency injection.
+ solid-description: Default production implementation of the subagent parsing abstraction. Fulfills the full contract for loading and extracting subagent metadata and session details in live application contexts.
  */
 struct DefaultSubagentParser: SubagentParsing {
     func parseSubagentMeta(sessionID: String, workingDir: String, projectsDir: URL) -> [String: JSONLParser.SubagentMeta] {
@@ -75,6 +77,10 @@ struct DefaultSubagentParser: SubagentParsing {
 
     func parseSubagentDetails(in dir: URL, meta: [String: JSONLParser.SubagentMeta], worktreeName: String) -> [SubagentInfo] {
         JSONLParser.parseSubagentDetails(in: dir, meta: meta, worktreeName: worktreeName)
+    }
+
+    func parseBareChildren(parentSessionID: String, in projectDir: URL) -> [SubagentInfo] {
+        JSONLParser.parseBareChildren(parentSessionID: parentSessionID, in: projectDir)
     }
 }
 
@@ -93,17 +99,21 @@ final class SubagentDetailViewModel: SubagentDetailState, SubagentDetailActions 
     private let settings: AppSettings
     private let pathEncoder: SessionPathEncoding
     private let subagentParser: SubagentParsing
+    private let codexSessions: CodexSessionInspecting
+    private var codexChildSessionsByID: [String: CodexSession] = [:]
 
     init(
         agent: AgentInfo,
         settings: AppSettings,
         pathEncoder: SessionPathEncoding = SessionPathEncoderAdapter(),
-        subagentParser: SubagentParsing = DefaultSubagentParser()
+        subagentParser: SubagentParsing = DefaultSubagentParser(),
+        codexSessions: CodexSessionInspecting = CodexSessionRepository()
     ) {
         self.agent = agent
         self.settings = settings
         self.pathEncoder = pathEncoder
         self.subagentParser = subagentParser
+        self.codexSessions = codexSessions
     }
 
     func sortedSubagents(by order: SubagentSortOrder) -> [SubagentInfo] {
@@ -119,7 +129,19 @@ final class SubagentDetailViewModel: SubagentDetailState, SubagentDetailActions 
         }
     }
 
+    func logTarget(for subagent: SubagentInfo) -> LogTarget {
+        if agent.source == .codex, let session = codexChildSessionsByID[subagent.agentID] {
+            return .codexSession(session)
+        }
+        return .subagent(subagent)
+    }
+
     func load() async {
+        if agent.source == .codex {
+            await loadCodexDetails()
+            return
+        }
+
         let fmt = DateFormatter()
         fmt.dateFormat = "yyyy-MM-dd"
         let today = fmt.string(from: Date())
@@ -127,7 +149,7 @@ final class SubagentDetailViewModel: SubagentDetailState, SubagentDetailActions 
         let base = URL(fileURLWithPath: agent.claudeDir).appendingPathComponent("usage")
         let usageDir: URL
         switch agent.source {
-        case .cli, .desktop: usageDir = base
+        case .cli, .desktop, .codex: usageDir = base
         case .commander: usageDir = base.appendingPathComponent("commander")
         }
 
@@ -155,6 +177,10 @@ final class SubagentDetailViewModel: SubagentDetailState, SubagentDetailActions 
                 for (subDir, wtName) in allDirs {
                     details += parser.parseSubagentDetails(in: subDir, meta: meta, worktreeName: wtName ?? "")
                 }
+                // Include bare (hook/sdk-cli) sessions linked to this parent
+                let encoded = SessionScanner.encodeProjectPath(workingDir)
+                let projectDir = projectsDir.appendingPathComponent(encoded)
+                details += parser.parseBareChildren(parentSessionID: sessionID, in: projectDir)
             }
 
             return (details, tools)
@@ -168,6 +194,38 @@ final class SubagentDetailViewModel: SubagentDetailState, SubagentDetailActions 
         await poll(interval: .seconds(2)) { [weak self] in
             await self?.load()
         }
+    }
+
+    private func loadCodexDetails() async {
+        let sessions = codexSessions
+        let threadID = agent.sessionID
+        // SQLite queries and JSONL file I/O must not run on the main actor.
+        let childSessions = await Task.detached(priority: .utility) {
+            sessions.childSessions(parentThreadID: threadID, now: Date())
+        }.value
+
+        codexChildSessionsByID = Dictionary(uniqueKeysWithValues: childSessions.map { ($0.threadID, $0) })
+        subagents = childSessions.map(makeCodexSubagent)
+        parentTools = [:]
+    }
+
+    private func makeCodexSubagent(from session: CodexSession) -> SubagentInfo {
+        let locationLabel = (session.cwd as NSString).lastPathComponent
+        return SubagentInfo(
+            agentID: session.threadID,
+            model: session.model.isEmpty ? "Codex" : session.model,
+            cost: 0,
+            lastInputTokens: session.currentContextTokens,
+            linesAdded: 0,
+            linesRemoved: 0,
+            toolCounts: [:],
+            description: session.title,
+            subagentType: locationLabel,
+            contextWindow: session.contextWindow,
+            lastModified: session.updatedAt.timeIntervalSince1970,
+            worktreeName: "",
+            sourceLabel: "Codex Task"
+        )
     }
 }
 
@@ -201,12 +259,24 @@ private struct SubagentRowView: View {
     let sub: SubagentInfo
     let contextBudget: SubagentContextBudget
 
-    private var contextPct: Int {
-        min(100, Int(Double(sub.lastInputTokens) / Double(contextBudget.tokens) * 100))
+    private var progressContextWindow: Int {
+        sub.contextWindow > 0 ? sub.contextWindow : contextBudget.tokens
     }
 
-    private var ctxColor: Color {
-        contextPct >= 90 ? .red : contextPct >= 70 ? .yellow : .green
+    private var contextPct: Int {
+        guard progressContextWindow > 0 else { return 0 }
+        return min(100, Int(Double(sub.lastInputTokens) / Double(progressContextWindow) * 100))
+    }
+
+    private var progressLabel: String {
+        if sub.contextWindow > 0 {
+            let millions = Double(sub.contextWindow) / 1_000_000.0
+            let label = millions == Double(Int(millions))
+                ? "\(Int(millions))M"
+                : String(format: "%.1fM", millions)
+            return "· \(label)"
+        }
+        return "of \(contextBudget.label)"
     }
 
     var body: some View {
@@ -224,6 +294,14 @@ private struct SubagentRowView: View {
     private var headerRow: some View {
         HStack {
             Text(sub.model).font(.caption).fontWeight(.medium).lineLimit(1)
+            if !sub.sourceLabel.isEmpty {
+                Text(sub.sourceLabel)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.teal)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 1)
+                    .background(Color.teal.opacity(0.12), in: RoundedRectangle(cornerRadius: 3))
+            }
             if !sub.worktreeName.isEmpty {
                 Text(sub.worktreeName)
                     .font(.system(size: 9))
@@ -258,7 +336,7 @@ private struct SubagentRowView: View {
     private var progressRow: some View {
         ContextProgressBar(
             contextPercent: contextPct,
-            label: "of \(contextBudget.label)"
+            label: progressLabel
         )
     }
 
@@ -302,125 +380,163 @@ struct SubagentDetailView<VM: SubagentDetailState & SubagentDetailActions>: View
         return h + rowSpacing * CGFloat(max(0, n - 1))
     }
 
+    private var logParser: LogMessageParsing {
+        if agent.source == .codex {
+            return CodexLogParser()
+        }
+        return LogParserAdapter()
+    }
+
     var body: some View {
         if let target = logTarget, settings.displayMode == .window {
-            LogViewerView(agent: agent, target: target, settings: settings, sessionManager: sessionManager, stickyHeader: true, onStop: onDismiss, vm: LogViewerViewModel(agent: agent, target: target)) { logTarget = nil }
+            LogViewerView(
+                agent: agent,
+                target: target,
+                settings: settings,
+                sessionManager: sessionManager,
+                stickyHeader: true,
+                onStop: onDismiss,
+                vm: LogViewerViewModel(agent: agent, target: target, parser: logParser)
+            ) { logTarget = nil }
         } else if let target = logTarget {
-            LogViewerView(agent: agent, target: target, settings: settings, sessionManager: sessionManager, onStop: onDismiss, vm: LogViewerViewModel(agent: agent, target: target)) { logTarget = nil }
-        } else if settings.displayMode == .window {
-            VStack(alignment: .leading, spacing: 0) {
-                VStack(alignment: .leading, spacing: 0) {
-                    detailHeader
-                        .padding(.vertical, 8)
-                    Divider()
-                }
-                .padding(.horizontal, 16)
-                ScrollView {
-                    detailContent
-                }
-                .scrollIndicators(.visible)
-            }
+            LogViewerView(
+                agent: agent,
+                target: target,
+                settings: settings,
+                sessionManager: sessionManager,
+                onStop: onDismiss,
+                vm: LogViewerViewModel(agent: agent, target: target, parser: logParser)
+            ) { logTarget = nil }
         } else {
-            detailContent
+            SessionDetailView(
+                title: agent.displayName,
+                settings: settings,
+                openFileHelp: "View session logs",
+                onDismiss: onDismiss,
+                onOpenFile: agent.sessionID.isEmpty ? nil : { logTarget = .parent },
+                summarySection: { summarySection },
+                childSection: {
+                    Group {
+                        Divider()
+                        childSection
+                    }
+                },
+                logSection: { EmptyView() }
+            )
         }
     }
 
-    private var navFont: Font { settings.displayMode == .window ? .body : .caption }
-    private var titleFont: Font { settings.displayMode == .window ? .title3 : .headline }
-
-    private var detailHeader: some View {
-        HStack {
-            Button { onDismiss() } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "chevron.left")
-                    Text("Back")
-                }
-                .font(navFont)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.blue)
-            Spacer()
-            Text(agent.displayName).font(titleFont)
-            if !agent.sessionID.isEmpty {
-                Button { logTarget = .parent } label: {
-                    Image(systemName: "doc.text.magnifyingglass")
-                        .font(navFont)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.blue)
-                .help("View session logs")
-            }
+    @ViewBuilder
+    private var summarySection: some View {
+        if agent.source == .codex {
+            codexSummarySection
+        } else {
+            claudeSummarySection
         }
     }
 
-    private var detailContent: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if settings.displayMode == .popover {
-                detailHeader
-                Divider()
+    private var claudeSummarySection: some View {
+        let subTotal = vm.subagents.reduce(0.0) { $0 + $1.cost }
+
+        return Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 4) {
+            GridRow {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(agent.shortDir).font(.caption).foregroundStyle(.secondary)
+                    Text(agent.durationText).font(.caption2).foregroundStyle(.tertiary)
+                    HStack(spacing: 6) {
+                        Text("+\(agent.linesAdded.formatted(.number.notation(.compactName)))")
+                            .font(.caption2).foregroundStyle(.green)
+                        Text("-\(agent.linesRemoved.formatted(.number.notation(.compactName)))")
+                            .font(.caption2).foregroundStyle(.red)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                HStack(alignment: .top, spacing: 4) {
+                    VStack(alignment: .trailing, spacing: 4) {
+                        Text("Total").font(.caption2).foregroundStyle(.tertiary)
+                        if subTotal > 0 {
+                            Text("Subagents").font(.caption2).foregroundStyle(.tertiary)
+                        }
+                    }
+                    VStack(alignment: .trailing, spacing: 4) {
+                        Text(String(format: "$%.2f", agent.cost))
+                            .font(.caption).fontWeight(.semibold).foregroundStyle(.orange)
+                        if subTotal > 0 {
+                            Text(String(format: "$%.2f", subTotal))
+                                .font(.caption2).foregroundStyle(.tertiary)
+                        }
+                    }
+                }
+                .gridColumnAlignment(.trailing)
             }
 
-            let subTotal = vm.subagents.reduce(0.0) { $0 + $1.cost }
-
-            Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 4) {
+            if agent.contextPercent > 0 {
                 GridRow {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(agent.shortDir).font(.caption).foregroundStyle(.secondary)
-                        Text(agent.durationText).font(.caption2).foregroundStyle(.tertiary)
-                        HStack(spacing: 6) {
-                            Text("+\(agent.linesAdded.formatted(.number.notation(.compactName)))")
-                                .font(.caption2).foregroundStyle(.green)
-                            Text("-\(agent.linesRemoved.formatted(.number.notation(.compactName)))")
-                                .font(.caption2).foregroundStyle(.red)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                    HStack(alignment: .top, spacing: 4) {
-                        VStack(alignment: .trailing, spacing: 4) {
-                            Text("Total").font(.caption2).foregroundStyle(.tertiary)
-                            if subTotal > 0 {
-                                Text("Subagents").font(.caption2).foregroundStyle(.tertiary)
-                            }
-                        }
-                        VStack(alignment: .trailing, spacing: 4) {
-                            Text(String(format: "$%.2f", agent.cost))
-                                .font(.caption).fontWeight(.semibold).foregroundStyle(.orange)
-                            if subTotal > 0 {
-                                Text(String(format: "$%.2f", subTotal))
-                                    .font(.caption2).foregroundStyle(.tertiary)
-                            }
-                        }
-                    }
-                    .gridColumnAlignment(.trailing)
-                }
-
-                if agent.contextPercent > 0 {
-                    GridRow {
-                        ContextProgressBar(
-                            contextPercent: agent.contextPercent,
-                            label: agent.contextWindowText.isEmpty ? "" : "· \(agent.contextWindowText)"
-                        )
-                        .gridCellColumns(2)
-                    }
+                    ContextProgressBar(
+                        contextPercent: agent.contextPercent,
+                        label: agent.contextWindowText.isEmpty ? "" : "· \(agent.contextWindowText)"
+                    )
+                    .gridCellColumns(2)
                 }
             }
 
             if !vm.parentTools.isEmpty {
-                Divider()
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Tools Used").font(.subheadline).fontWeight(.medium)
-                    let sorted = vm.parentTools.sorted { $0.value > $1.value }
-                    FlowLayout(spacing: 4, maxLines: 5) {
-                        ForEach(sorted, id: \.key) { tool, count in
-                            ToolBadgeView(tool: tool, count: count)
+                GridRow {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Tools Used").font(.subheadline).fontWeight(.medium)
+                        let sorted = vm.parentTools.sorted { $0.value > $1.value }
+                        FlowLayout(spacing: 4, maxLines: 5) {
+                            ForEach(sorted, id: \.key) { tool, count in
+                                ToolBadgeView(tool: tool, count: count)
+                            }
                         }
                     }
+                    .gridCellColumns(2)
                 }
             }
+        }
+    }
 
-            Divider()
+    private var codexSummarySection: some View {
+        Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 4) {
+            GridRow {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(agent.shortDir)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(agent.durationText)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text("\((agent.tokensUsed ?? 0).formatted(.number.notation(.compactName))) tok")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.orange)
+                    Text(agent.model)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+                .gridColumnAlignment(.trailing)
+            }
+
+            if agent.contextPercent > 0 {
+                GridRow {
+                    ContextProgressBar(
+                        contextPercent: agent.contextPercent,
+                        label: agent.contextWindowText.isEmpty ? "" : "· \(agent.contextWindowText)"
+                    )
+                    .gridCellColumns(2)
+                }
+            }
+        }
+    }
+
+    private var childSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("Subagents").font(.subheadline).fontWeight(.medium)
                 if !vm.subagents.isEmpty {
@@ -446,7 +562,7 @@ struct SubagentDetailView<VM: SubagentDetailState & SubagentDetailActions>: View
                         ForEach(Array(vm.sortedSubagents(by: settings.subagentSortOrder).enumerated()), id: \.element.id) { idx, sub in
                             SubagentRowView(sub: sub, contextBudget: settings.subagentContextBudget)
                                 .contentShape(Rectangle())
-                                .onTapGesture { logTarget = .subagent(sub) }
+                                .onTapGesture { logTarget = vm.logTarget(for: sub) }
                                 .background(GeometryReader { geo in
                                     Color.clear.preference(
                                         key: RowHeightsKey.self,
@@ -463,7 +579,6 @@ struct SubagentDetailView<VM: SubagentDetailState & SubagentDetailActions>: View
                 }
             }
         }
-        .padding(16)
         .task {
             await vm.load()
             await vm.startPolling()

@@ -11,8 +11,10 @@ public struct SubagentInfo: Codable, Identifiable {
     public let toolCounts: [String: Int]  // e.g. ["Read": 15, "Edit": 42, "Bash": 1]
     public let description: String   // e.g. "Explore UI navigation and views"
     public let subagentType: String  // e.g. "Explore", "solid-coder:validate-findings-agent"
+    public let contextWindow: Int    // model context window when known
     public let lastModified: Double  // file mtime as timeIntervalSince1970
     public let worktreeName: String  // e.g. "friendly-bose" — empty if not a worktree subagent
+    public let sourceLabel: String   // e.g. "Codex Task" for non-Claude child session types
 
     public var id: String { agentID }
 
@@ -27,7 +29,9 @@ public struct SubagentInfo: Codable, Identifiable {
                 linesAdded: Int = 0, linesRemoved: Int = 0,
                 toolCounts: [String: Int] = [:],
                 description: String = "", subagentType: String = "",
-                lastModified: Double = 0, worktreeName: String = "") {
+                contextWindow: Int = 0,
+                lastModified: Double = 0, worktreeName: String = "",
+                sourceLabel: String = "") {
         self.agentID = agentID
         self.model = model
         self.cost = cost
@@ -37,8 +41,10 @@ public struct SubagentInfo: Codable, Identifiable {
         self.toolCounts = toolCounts
         self.description = description
         self.subagentType = subagentType
+        self.contextWindow = contextWindow
         self.lastModified = lastModified
         self.worktreeName = worktreeName
+        self.sourceLabel = sourceLabel
     }
 }
 
@@ -94,7 +100,7 @@ public enum ClaudeModel: CaseIterable {
         switch self {
         case .opus4_7:   return ["opus-4-7", "Opus 4.7"]
         case .opus4_6:   return ["opus-4-6", "Opus 4.6"]
-        case .opus4_5:   return ["opus-4-5", "Opus 4.5"]
+        case .opus4_5:   return ["opus-4-5", "opus-4.5", "Opus 4.5"]
         case .sonnet4_6: return ["sonnet-4-6", "Sonnet 4.6"]
         case .sonnet4_5: return ["sonnet-4-5", "Sonnet 4.5"]
         case .sonnet4:   return ["sonnet-4-", "sonnet-4[", "Sonnet 4 "]
@@ -163,6 +169,57 @@ public enum ClaudeModel: CaseIterable {
 /// Parses Claude Code JSONL conversation files to extract token usage and compute costs.
 public enum JSONLParser {
 
+    /// Count newline-delimited lines in `s`. Empty string is 0 lines.
+    private static func lineCount(_ s: String?) -> Int {
+        guard let s, !s.isEmpty else { return 0 }
+        return s.components(separatedBy: "\n").count
+    }
+
+    /// Tracks pending Edit/Write tool calls and resolves their line counts
+    /// from `toolUseResult.structuredPatch` (accurate, parent session) when
+    /// available, falling back to input old/new strings otherwise (subagent
+    /// files don't record structuredPatch).
+    fileprivate struct EditLineCounter {
+        var added = 0
+        var removed = 0
+        private var pending: [String: JSONLEntry.ToolCall] = [:]
+
+        fileprivate mutating func observeToolUse(_ tc: JSONLEntry.ToolCall) {
+            guard let id = tc.id else { return }
+            switch tc.name {
+            case "Edit", "Write", "MultiEdit":
+                pending[id] = tc
+            default: break
+            }
+        }
+
+        fileprivate mutating func observeToolResult(id: String?, result: JSONLEntry.ToolUseResult?) {
+            guard let id, let result else { return }
+            // Even if structuredPatch is empty (e.g. no-op edit), an explicit
+            // result supersedes the input-based fallback.
+            let (a, r) = result.addedRemoved
+            added += a
+            removed += r
+            pending.removeValue(forKey: id)
+        }
+
+        /// Apply input-based fallback for any tool calls whose structured
+        /// result was never observed (typical for subagent JSONL files).
+        mutating func finalize() {
+            for (_, tc) in pending {
+                switch tc.name {
+                case "Edit":
+                    removed += lineCount(tc.input.old_string)
+                    added += lineCount(tc.input.new_string)
+                case "Write":
+                    added += lineCount(tc.input.content)
+                default: break
+                }
+            }
+            pending.removeAll()
+        }
+    }
+
     /// Parse a session JSONL file and return aggregated usage data.
     public static func parseSession(at url: URL, sessionID: String, workingDir: String) -> SessionUsage? {
         guard let data = try? Data(contentsOf: url) else { return nil }
@@ -172,8 +229,7 @@ public enum JSONLParser {
         let agentName = ""
         var firstTimestamp: Date?
         var lastTimestamp: Date?
-        var linesAdded = 0
-        var linesRemoved = 0
+        var counter = EditLineCounter()
 
         // Collect per-message usage. JSONL contains streaming partials AND final
         // entries for the same message ID — keep only the last (final) one.
@@ -195,21 +251,20 @@ public enum JSONLParser {
                 lastTimestamp = ts
             }
 
-            // Count line changes from Edit/Write tool calls
+            // Count line changes from Edit/Write tool calls.
+            // Parent-session JSONL records `toolUseResult.structuredPatch`
+            // for accurate +/- counts; subagent files don't, so we fall
+            // back to input old_string/new_string lengths in finalize().
             if entry.type == "assistant", let message = entry.message {
                 for toolCall in message.toolCalls ?? [] {
-                    switch toolCall.name {
-                    case "Edit":
-                        let oldLines = (toolCall.input.old_string ?? "").components(separatedBy: "\n").count
-                        let newLines = (toolCall.input.new_string ?? "").components(separatedBy: "\n").count
-                        let delta = newLines - oldLines
-                        if delta > 0 { linesAdded += delta } else { linesRemoved += -delta }
-                    case "Write":
-                        linesAdded += (toolCall.input.content ?? "").components(separatedBy: "\n").count
-                    default:
-                        break
-                    }
+                    counter.observeToolUse(toolCall)
                 }
+            }
+            if entry.type == "user" {
+                counter.observeToolResult(
+                    id: entry.message?.toolResultID,
+                    result: entry.toolUseResult
+                )
             }
 
             guard entry.type == "assistant",
@@ -243,6 +298,8 @@ public enum JSONLParser {
 
         guard totalOutput > 0 else { return nil }
 
+        counter.finalize()
+
         let resolved = ClaudeModel.from(modelID: modelID)
 
         let usage = TokenUsage(
@@ -265,8 +322,8 @@ public enum JSONLParser {
             displayModel: resolved.displayName,
             costUSD: PriceCalculator.cost(for: usage, model: resolved) + subagentCost,
             contextPercent: contextPct,
-            linesAdded: linesAdded,
-            linesRemoved: linesRemoved,
+            linesAdded: counter.added,
+            linesRemoved: counter.removed,
             sessionID: sessionID,
             workingDir: workingDir,
             agentName: agentName,
@@ -323,6 +380,16 @@ public enum JSONLParser {
                 merged[key, default: SourceModelStats()].linesRemoved += val.linesRemoved
             }
         }
+
+        // Include bare (hook) session costs from the project root directory
+        let encoded = SessionScanner.encodeProjectPath(workingDir)
+        let projectDir = resolvedDir.appendingPathComponent(encoded)
+        for child in parseBareChildren(parentSessionID: sessionID, in: projectDir) {
+            merged[child.model, default: SourceModelStats()].cost += child.cost
+            merged[child.model, default: SourceModelStats()].linesAdded += child.linesAdded
+            merged[child.model, default: SourceModelStats()].linesRemoved += child.linesRemoved
+        }
+
         return merged
     }
 
@@ -345,8 +412,7 @@ public enum JSONLParser {
                 let cacheCreation: Int; let cacheRead: Int
             }
             var usageByMsgID: [String: MsgUsage] = [:]
-            var linesAdded = 0
-            var linesRemoved = 0
+            var counter = EditLineCounter()
             var dominantModel = ""
             var toolCounts: [String: Int] = [:]
 
@@ -359,17 +425,14 @@ public enum JSONLParser {
                 if entry.type == "assistant", let message = entry.message {
                     for toolCall in message.toolCalls ?? [] {
                         toolCounts[toolCall.name, default: 0] += 1
-                        switch toolCall.name {
-                        case "Edit":
-                            let oldLines = (toolCall.input.old_string ?? "").components(separatedBy: "\n").count
-                            let newLines = (toolCall.input.new_string ?? "").components(separatedBy: "\n").count
-                            let delta = newLines - oldLines
-                            if delta > 0 { linesAdded += delta } else { linesRemoved += -delta }
-                        case "Write":
-                            linesAdded += (toolCall.input.content ?? "").components(separatedBy: "\n").count
-                        default: break
-                        }
+                        counter.observeToolUse(toolCall)
                     }
+                }
+                if entry.type == "user" {
+                    counter.observeToolResult(
+                        id: entry.message?.toolResultID,
+                        result: entry.toolUseResult
+                    )
                 }
 
                 guard entry.type == "assistant",
@@ -388,6 +451,7 @@ public enum JSONLParser {
                     cacheRead: usage.cache_read_input_tokens ?? 0
                 )
             }
+            counter.finalize()
 
             for (_, mu) in usageByMsgID {
                 let resolved = ClaudeModel.from(modelID: mu.model)
@@ -401,10 +465,10 @@ public enum JSONLParser {
             }
 
             // Attribute lines to the dominant model for this subagent file
-            if linesAdded > 0 || linesRemoved > 0, !dominantModel.isEmpty {
+            if counter.added > 0 || counter.removed > 0, !dominantModel.isEmpty {
                 let key = ClaudeModel.from(modelID: dominantModel).displayName
-                result[key, default: SourceModelStats()].linesAdded += linesAdded
-                result[key, default: SourceModelStats()].linesRemoved += linesRemoved
+                result[key, default: SourceModelStats()].linesAdded += counter.added
+                result[key, default: SourceModelStats()].linesRemoved += counter.removed
             }
         }
 
@@ -548,8 +612,7 @@ public enum JSONLParser {
             }
             var usageByMsgID: [String: MsgUsage] = [:]
             var lastInputTokens = 0
-            var linesAdded = 0
-            var linesRemoved = 0
+            var counter = EditLineCounter()
             var toolCounts: [String: Int] = [:]
 
             for line in content.split(separator: "\n") {
@@ -561,17 +624,14 @@ public enum JSONLParser {
                 if entry.type == "assistant", let message = entry.message {
                     for toolCall in message.toolCalls ?? [] {
                         toolCounts[toolCall.name, default: 0] += 1
-                        switch toolCall.name {
-                        case "Edit":
-                            let oldLines = (toolCall.input.old_string ?? "").components(separatedBy: "\n").count
-                            let newLines = (toolCall.input.new_string ?? "").components(separatedBy: "\n").count
-                            let delta = newLines - oldLines
-                            if delta > 0 { linesAdded += delta } else { linesRemoved += -delta }
-                        case "Write":
-                            linesAdded += (toolCall.input.content ?? "").components(separatedBy: "\n").count
-                        default: break
-                        }
+                        counter.observeToolUse(toolCall)
                     }
+                }
+                if entry.type == "user" {
+                    counter.observeToolResult(
+                        id: entry.message?.toolResultID,
+                        result: entry.toolUseResult
+                    )
                 }
 
                 guard entry.type == "assistant",
@@ -591,6 +651,7 @@ public enum JSONLParser {
                 )
                 lastInputTokens = totalIn
             }
+            counter.finalize()
 
             guard !usageByMsgID.isEmpty else { continue }
 
@@ -617,8 +678,8 @@ public enum JSONLParser {
                 model: displayModel,
                 cost: totalCost,
                 lastInputTokens: lastInputTokens,
-                linesAdded: linesAdded,
-                linesRemoved: linesRemoved,
+                linesAdded: counter.added,
+                linesRemoved: counter.removed,
                 toolCounts: toolCounts,
                 description: agentMeta?.description ?? "",
                 subagentType: agentMeta?.subagentType ?? "",
@@ -630,6 +691,139 @@ public enum JSONLParser {
         return results.sorted { $0.cost > $1.cost }
     }
 
+    /// Parse bare (sdk-cli hook) sessions in `projectDir` that are children of `parentSessionID`.
+    /// Bare sessions live at the project root (not in a `subagents/` subdirectory) and are linked
+    /// to their parent via a `# spawned-by: {parentSessionID}` prefix in the first user message.
+    public static func parseBareChildren(parentSessionID: String, in projectDir: URL) -> [SubagentInfo] {
+        let fm = FileManager.default
+        guard let files = try? fm.contentsOfDirectory(at: projectDir, includingPropertiesForKeys: nil) else {
+            return []
+        }
+
+        let decoder = JSONDecoder()
+        var results: [SubagentInfo] = []
+        let spawnedByPrefix = "# spawned-by: \(parentSessionID)"
+
+        for file in files where file.pathExtension == "jsonl" {
+            let sessionID = file.deletingPathExtension().lastPathComponent
+            guard sessionID != parentSessionID else { continue }
+
+            guard let data = try? Data(contentsOf: file),
+                  let content = String(data: data, encoding: .utf8) else { continue }
+
+            let lines = content.split(separator: "\n", omittingEmptySubsequences: true)
+
+            // Scan first 30 lines to detect: bare session (sdk-cli) linked to this parent
+            var isBareChild = false
+            for line in lines.prefix(30) {
+                guard let lineData = line.data(using: .utf8),
+                      let raw = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
+                      raw["type"] as? String == "user"
+                else { continue }
+
+                guard raw["entrypoint"] as? String == "sdk-cli" else { break }
+
+                if let msg = raw["message"] as? [String: Any],
+                   let msgContent = msg["content"] as? String,
+                   msgContent.hasPrefix(spawnedByPrefix) {
+                    isBareChild = true
+                }
+                break
+            }
+
+            guard isBareChild else { continue }
+
+            // Parse usage, tool counts, and ai-title from the full file
+            struct MsgUsage {
+                let model: String; let input: Int; let output: Int
+                let cacheCreation: Int; let cacheRead: Int
+            }
+            var usageByMsgID: [String: MsgUsage] = [:]
+            var lastInputTokens = 0
+            var counter = EditLineCounter()
+            var toolCounts: [String: Int] = [:]
+            var aiTitle = ""
+
+            for line in lines {
+                guard let lineData = line.data(using: .utf8),
+                      let entry = try? decoder.decode(JSONLEntry.self, from: lineData)
+                else { continue }
+
+                if entry.type == "ai-title", let title = entry.aiTitle, !title.isEmpty {
+                    aiTitle = title
+                }
+
+                if entry.type == "assistant", let message = entry.message {
+                    for toolCall in message.toolCalls ?? [] {
+                        toolCounts[toolCall.name, default: 0] += 1
+                        counter.observeToolUse(toolCall)
+                    }
+                }
+                if entry.type == "user" {
+                    counter.observeToolResult(
+                        id: entry.message?.toolResultID,
+                        result: entry.toolUseResult
+                    )
+                }
+
+                guard entry.type == "assistant",
+                      let message = entry.message,
+                      let usage = message.usage,
+                      let msgID = message.id,
+                      let model = message.model, !model.isEmpty
+                else { continue }
+
+                let totalIn = (usage.input_tokens ?? 0)
+                    + (usage.cache_creation_input_tokens ?? 0)
+                    + (usage.cache_read_input_tokens ?? 0)
+                usageByMsgID[msgID] = MsgUsage(
+                    model: model,
+                    input: usage.input_tokens ?? 0,
+                    output: usage.output_tokens ?? 0,
+                    cacheCreation: usage.cache_creation_input_tokens ?? 0,
+                    cacheRead: usage.cache_read_input_tokens ?? 0
+                )
+                lastInputTokens = totalIn
+            }
+            counter.finalize()
+
+            guard !usageByMsgID.isEmpty else { continue }
+
+            var modelCounts: [String: Int] = [:]
+            var totalCost = 0.0
+            for (_, mu) in usageByMsgID {
+                modelCounts[mu.model, default: 0] += 1
+                let resolved = ClaudeModel.from(modelID: mu.model)
+                totalCost += PriceCalculator.cost(for: TokenUsage(
+                    inputTokens: mu.input, outputTokens: mu.output,
+                    cacheCreationTokens: mu.cacheCreation, cacheReadTokens: mu.cacheRead
+                ), model: resolved)
+            }
+            let dominantModel = modelCounts.max(by: { $0.value < $1.value })?.key ?? ""
+            let displayModel = ClaudeModel.from(modelID: dominantModel).displayName
+
+            let mtime = (try? file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)?
+                .timeIntervalSince1970 ?? 0
+
+            results.append(SubagentInfo(
+                agentID: sessionID,
+                model: displayModel,
+                cost: totalCost,
+                lastInputTokens: lastInputTokens,
+                linesAdded: counter.added,
+                linesRemoved: counter.removed,
+                toolCounts: toolCounts,
+                description: aiTitle,
+                subagentType: "",
+                lastModified: mtime,
+                worktreeName: "",
+                sourceLabel: "Hook"
+            ))
+        }
+
+        return results
+    }
+
     // MARK: - JSONL Decodable Types
 
     private static let timestampFormatter: ISO8601DateFormatter = {
@@ -638,17 +832,47 @@ public enum JSONLParser {
         return f
     }()
 
-    private struct JSONLEntry: Decodable {
+    fileprivate struct JSONLEntry: Decodable {
         let type: String
         let message: MessageContent?
         let sessionId: String?
         let cwd: String?
         let slug: String?
         let timestamp: String?
+        let toolUseResult: ToolUseResult?
+        let aiTitle: String?
+        let entrypoint: String?
 
         var parsedTimestamp: Date? {
             guard let ts = timestamp else { return nil }
             return JSONLParser.timestampFormatter.date(from: ts)
+        }
+
+        struct ToolUseResult: Decodable {
+            let structuredPatch: [PatchHunk]?
+
+            struct PatchHunk: Decodable {
+                let lines: [String]?
+            }
+
+            init(from decoder: Decoder) throws {
+                let c = try? decoder.container(keyedBy: CodingKeys.self)
+                self.structuredPatch = try? c?.decode([PatchHunk].self, forKey: .structuredPatch)
+            }
+
+            enum CodingKeys: String, CodingKey { case structuredPatch }
+
+            /// Count `+`/`-` prefixed lines across all hunks (git --stat semantics).
+            var addedRemoved: (added: Int, removed: Int) {
+                var added = 0, removed = 0
+                for hunk in structuredPatch ?? [] {
+                    for line in hunk.lines ?? [] {
+                        if line.hasPrefix("+") { added += 1 }
+                        else if line.hasPrefix("-") { removed += 1 }
+                    }
+                }
+                return (added, removed)
+            }
         }
 
         struct MessageContent: Decodable {
@@ -673,6 +897,7 @@ public enum JSONLParser {
 
             enum ContentItem: Decodable {
                 case toolCall(ToolCall)
+                case toolResult(String)
                 case text(String)
                 case other
 
@@ -681,6 +906,9 @@ public enum JSONLParser {
                     let type = try? c.decode(String.self, forKey: .type)
                     if type == "tool_use" {
                         self = .toolCall(try ToolCall(from: decoder))
+                    } else if type == "tool_result" {
+                        let tid = (try? c.decode(String.self, forKey: .tool_use_id)) ?? ""
+                        self = .toolResult(tid)
                     } else if type == "text" {
                         let text = (try? c.decode(String.self, forKey: .text)) ?? ""
                         self = .text(text)
@@ -689,11 +917,19 @@ public enum JSONLParser {
                     }
                 }
 
-                enum CodingKeys: String, CodingKey { case type, text }
+                enum CodingKeys: String, CodingKey { case type, text, tool_use_id }
+            }
+
+            var toolResultID: String? {
+                content?.lazy.compactMap {
+                    if case .toolResult(let id) = $0 { return id }
+                    return nil
+                }.first
             }
         }
 
         struct ToolCall: Decodable {
+            let id: String?
             let name: String
             let input: ToolInput
 

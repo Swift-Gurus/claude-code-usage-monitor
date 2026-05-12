@@ -4,6 +4,7 @@ public enum AgentSource: String {
     case cli = "CLI"
     case commander = "Commander"
     case desktop = "Desktop"
+    case codex = "Codex"
 }
 
 public struct AgentInfo: Identifiable {
@@ -29,6 +30,7 @@ public struct AgentInfo: Identifiable {
     public let rateLimits: RateLimits?
     public let branch: String        // git branch name, e.g. "claude/friendly-bose"
     public let worktreeName: String  // e.g. "friendly-bose" — stored, not derived from workingDir
+    public let tokensUsed: Int?
 
     public var id: Int { pid }
 
@@ -86,7 +88,8 @@ public struct AgentInfo: Identifiable {
         durationMs: Double, apiDurationMs: Double, updatedAt: TimeInterval, cpuUsage: Double,
         isIdle: Bool, source: AgentSource,
         accountID: UUID = UUID(), accountName: String = "Default", claudeDir: String = "",
-        rateLimits: RateLimits? = nil, branch: String = "", worktreeName: String = ""
+        rateLimits: RateLimits? = nil, branch: String = "", worktreeName: String = "",
+        tokensUsed: Int? = nil
     ) {
         self.pid = pid
         self.model = model
@@ -112,6 +115,7 @@ public struct AgentInfo: Identifiable {
         self.rateLimits = rateLimits
         self.branch = branch
         self.worktreeName = worktreeName
+        self.tokensUsed = tokensUsed
     }
 
     /// The projects directory for this agent's account.
@@ -130,7 +134,9 @@ public final class AgentTracker {
     public var parentToolCounts: [Int: [String: Int]] = [:]
 
     public var accounts: [Account]
+    let codexSessions: CodexSessionInspecting
     private let decoder = JSONDecoder()
+    private let codexAgentFactory: CodexAgentFactory
     /// Cache: sessionID → (max individual file mtime in subagents dir, per-model stats)
     /// Uses max file mtime (not dir mtime) to detect when existing subagent files grow.
     private var subagentCache: [String: (mtime: Date, stats: [String: SourceModelStats])] = [:]
@@ -138,16 +144,98 @@ public final class AgentTracker {
     private var parentToolCache: [String: (mtime: Date, counts: [String: Int])] = [:]
     /// Serial queue — ensures subagent scans never run concurrently, preventing data races
     private let subagentQueue = DispatchQueue(label: "com.swiftgurus.subagentScanner", qos: .utility)
+    /// Background queue for Codex SQLite + JSONL I/O — never blocks the main thread
+    private let codexQueue = DispatchQueue(label: "com.swiftgurus.codexFetch", qos: .utility)
+    /// Serial queue for agent file I/O, ps subprocess, and JSONL parsing — keeps main thread free
+    private let reloadQueue = DispatchQueue(label: "com.swiftgurus.agentReload", qos: .userInitiated)
+    /// Most-recent Codex agent list, refreshed in the background on every reload cycle
+    private var codexAgentCache: [AgentInfo] = []
+    /// Prevents reload task pile-up on reloadQueue — only one reload enqueued at a time
+    private var reloadQueued = false
 
     public init(accounts: [Account] = [.default]) {
         self.accounts = accounts
+        let codexSessions = CodexSessionRepository()
+        self.codexSessions = codexSessions
+        self.codexAgentFactory = CodexAgentFactory(
+            accountID: UUID(uuidString: "5A4C2F3A-6F5E-4F53-9D6B-1A8D7A2F4E11")!,
+            accountName: "Codex",
+            claudeDir: codexSessions.homePath
+        )
+        scheduleCodexCacheRefresh()
     }
 
-    public func reload() {
-        let fm = FileManager.default
+    init(
+        accounts: [Account],
+        codexSessions: CodexSessionInspecting,
+        codexAccountID: UUID = UUID(uuidString: "5A4C2F3A-6F5E-4F53-9D6B-1A8D7A2F4E11")!
+    ) {
+        self.accounts = accounts
+        self.codexSessions = codexSessions
+        self.codexAgentFactory = CodexAgentFactory(
+            accountID: codexAccountID,
+            accountName: "Codex",
+            claudeDir: codexSessions.homePath
+        )
+        scheduleCodexCacheRefresh()
+    }
+
+    /// Refreshes `codexAgentCache` on `codexQueue` so that Codex SQLite/JSONL I/O
+    /// never executes on the main thread. Called from `reload()` and both inits.
+    private func scheduleCodexCacheRefresh() {
+        let sessions = codexSessions
+        let factory = codexAgentFactory
+        codexQueue.async { [weak self] in
+            let agents = sessions.findActiveSessions(now: Date()).map { factory.makeAgent(from: $0) }
+            DispatchQueue.main.async { [weak self] in
+                self?.codexAgentCache = agents
+            }
+        }
+    }
+
+    /// Reload agent list in the background. `completion` is called on the main thread
+    /// after `activeAgents` has been updated — use it to clear loading indicators.
+    public func reload(completion: (() -> Void)? = nil) {
+        // Drop the request if one is already queued; still call completion so callers
+        // (e.g. refreshInFlight guards) don't hang forever.
+        guard !reloadQueued else {
+            completion?()
+            return
+        }
+        reloadQueued = true
+
         let dateFmt = DateFormatter()
         dateFmt.dateFormat = "yyyy-MM-dd"
         let todayStr = dateFmt.string(from: Date())
+        // Snapshot all main-thread state before leaving — avoids data races AND keeps
+        // NSWorkspace.runningApplications (AppKit, main-thread only) off the background queue.
+        let accountsSnapshot = accounts
+        let codexCache = codexAgentCache
+        let desktopSessions = DesktopAppScanner.findActiveSessions()
+
+        reloadQueue.async { [weak self] in
+            guard let self else {
+                DispatchQueue.main.async { completion?() }
+                return
+            }
+            self.reloadOnBackground(
+                accounts: accountsSnapshot,
+                codexCache: codexCache,
+                desktopSessions: desktopSessions,
+                todayStr: todayStr,
+                completion: completion
+            )
+        }
+    }
+
+    private func reloadOnBackground(
+        accounts: [Account],
+        codexCache: [AgentInfo],
+        desktopSessions: [DesktopAppScanner.DesktopSession],
+        todayStr: String,
+        completion: (() -> Void)? = nil
+    ) {
+        let fm = FileManager.default
 
         var agents: [AgentInfo] = []
 
@@ -242,8 +330,8 @@ public final class AgentTracker {
         }
 
         // Desktop app sessions — discovered from ~/Library/Application Support/Claude/claude-code-sessions/
+        // (desktopSessions was fetched on the main thread in reload() since NSWorkspace requires it)
         let existingSessionIDs = Set(agents.map(\.sessionID))
-        let desktopSessions = DesktopAppScanner.findActiveSessions()
         for ds in desktopSessions {
             // Skip if already tracked via statusline (matched by cliSessionId)
             guard !existingSessionIDs.contains(ds.cliSessionID) else { continue }
@@ -298,6 +386,11 @@ public final class AgentTracker {
             ))
         }
 
+        // Use the pre-fetched cache — no blocking I/O on the main thread.
+        // A fresh background fetch is queued below for the next cycle.
+        agents += codexCache
+        scheduleCodexCacheRefresh()
+
         // Check JSONL activity: if parent or any subagent JSONL modified within 60s, agent is active
         var jsonlActivePIDs = Set<Int>()
         let now = Date()
@@ -338,7 +431,7 @@ public final class AgentTracker {
         }
 
         // Re-evaluate idle: agent is active if recently updated OR JSONL recently modified
-        activeAgents = agents.map { agent in
+        let finalAgents = agents.map { agent in
             let recentlyUpdated = Date().timeIntervalSince1970 - agent.updatedAt < 60
             let jsonlActive = jsonlActivePIDs.contains(agent.pid)
             let idle = !recentlyUpdated && !jsonlActive
@@ -354,14 +447,21 @@ public final class AgentTracker {
                 source: agent.source,
                 accountID: agent.accountID, accountName: agent.accountName,
                 claudeDir: agent.claudeDir, rateLimits: agent.rateLimits,
-                branch: agent.branch, worktreeName: agent.worktreeName
+                branch: agent.branch, worktreeName: agent.worktreeName,
+                tokensUsed: agent.tokensUsed
             )
         }.sorted { $0.pid < $1.pid }
 
+        // Push @Observable property update to main thread; then clear the guard and notify caller.
+        DispatchQueue.main.async { [weak self] in
+            self?.activeAgents = finalAgents
+            self?.reloadQueued = false
+            completion?()
+        }
+
         // Scan subagents on dedicated serial queue — prevents data races and blocks main thread
-        let agentsSnapshot = activeAgents
         subagentQueue.async { [weak self] in
-            self?.writeSubagentFiles(agents: agentsSnapshot, todayStr: todayStr)
+            self?.writeSubagentFiles(agents: finalAgents, todayStr: todayStr)
         }
     }
 
@@ -369,15 +469,17 @@ public final class AgentTracker {
         let fm = FileManager.default
 
         for agent in agents where !agent.sessionID.isEmpty {
+            let encoded = SessionScanner.encodeProjectPath(agent.workingDir)
+            let projectDir = agent.projectsDir.appendingPathComponent(encoded)
+
             // Find all subagent dirs: main project + worktree project dirs
             let allSubagentDirs = SessionScanner.findSubagentDirs(
                 sessionID: agent.sessionID,
                 workingDir: agent.workingDir,
                 projectsDir: agent.projectsDir
             )
-            guard !allSubagentDirs.isEmpty else { continue }
 
-            // Use max individual file mtime across ALL subagent dirs
+            // Compute max mtime from subagent dirs
             var maxMtime = Date.distantPast
             for (subDir, _) in allSubagentDirs {
                 let files = (try? fm.contentsOfDirectory(at: subDir, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
@@ -386,9 +488,23 @@ public final class AgentTracker {
                 }.max() ?? Date.distantPast
                 if dirMax > maxMtime { maxMtime = dirMax }
             }
+
+            // Also factor in project-root JSONL mtimes to catch bare session changes.
+            // Only consider files other than the parent session itself.
+            let projectFiles = (try? fm.contentsOfDirectory(
+                at: projectDir, includingPropertiesForKeys: [.contentModificationDateKey]
+            )) ?? []
+            let projectMax = projectFiles
+                .filter { $0.pathExtension == "jsonl" && $0.deletingPathExtension().lastPathComponent != agent.sessionID }
+                .compactMap { try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate }
+                .max() ?? Date.distantPast
+            if projectMax > maxMtime { maxMtime = projectMax }
+
+            // Skip if nothing to process at all
+            guard !allSubagentDirs.isEmpty || maxMtime > Date.distantPast else { continue }
             guard subagentCache[agent.sessionID]?.mtime != maxMtime else { continue }
 
-            // Merge stats from all subagent dirs
+            // Merge stats from standard subagent dirs
             var mergedStats: [String: SourceModelStats] = [:]
             for (subDir, _) in allSubagentDirs {
                 let dirStats = JSONLParser.parseSubagents(in: subDir)
@@ -398,6 +514,15 @@ public final class AgentTracker {
                     mergedStats[key, default: SourceModelStats()].linesRemoved += val.linesRemoved
                 }
             }
+
+            // Parse bare children once — reuse for both cost rollup and detail list
+            let bareChildren = JSONLParser.parseBareChildren(parentSessionID: agent.sessionID, in: projectDir)
+            for child in bareChildren {
+                mergedStats[child.model, default: SourceModelStats()].cost += child.cost
+                mergedStats[child.model, default: SourceModelStats()].linesAdded += child.linesAdded
+                mergedStats[child.model, default: SourceModelStats()].linesRemoved += child.linesRemoved
+            }
+
             subagentCache[agent.sessionID] = (mtime: maxMtime, stats: mergedStats)
 
             // Write {pid}.subagents.json to usage folder so UsageData can read it
@@ -408,6 +533,8 @@ public final class AgentTracker {
                 todayDir = accountUsageDir.appendingPathComponent(todayStr)
             case .commander:
                 todayDir = accountUsageDir.appendingPathComponent("commander").appendingPathComponent(todayStr)
+            case .codex:
+                continue
             }
 
             if let data = try? JSONEncoder().encode(mergedStats) {
@@ -423,6 +550,9 @@ public final class AgentTracker {
             for (subDir, wtName) in allSubagentDirs {
                 allDetails += JSONLParser.parseSubagentDetails(in: subDir, meta: meta, worktreeName: wtName ?? "")
             }
+
+            // Append already-parsed bare children (no second scan needed)
+            allDetails += bareChildren
             if !allDetails.isEmpty {
                 if let data = try? JSONEncoder().encode(allDetails) {
                     try? data.write(
@@ -518,5 +648,13 @@ public final class AgentTracker {
         return projectsDir
             .appendingPathComponent(encoded)
             .appendingPathComponent("\(sessionID).jsonl")
+    }
+
+    private static func syntheticPID(for id: String, offset: Int) -> Int {
+        var value = 5381
+        for byte in id.utf8 {
+            value = ((value << 5) &+ value) &+ Int(byte)
+        }
+        return abs(value % 1_000_000) + offset
     }
 }
