@@ -1,0 +1,322 @@
+{
+  "file_path": "/Users/crowea/Developer/Swift-Gurus/claude-code-usage-monitor/Sources/LogViewerView.swift",
+  "timestamp": "2026-04-27T00:58:01Z",
+  "principles": [
+    {
+      "agent": "dry",
+      "principle": "Don't Repeat Yourself",
+      "severity": "SEVERE",
+      "unit_name": "LogViewerView",
+      "unit_kind": "struct",
+      "findings": [
+        {
+          "id": "dry-001",
+          "severity": "SEVERE",
+          "metric": "DRY-2",
+          "line_start": 932,
+          "line_end": 945,
+          "title": "Duplicate task status mapping helpers",
+          "issue": "todoIcon(_:) and todoColor(_:) duplicate the same status-to-presentation mapping that taskIcon(_:) and taskColor(_:) implement later in the same changed unit.",
+          "impact": "Adding or renaming a task status now requires updating two separate helper pairs, and the mappings can drift between the inline checklist and the task panel.",
+          "rule_source": "DRY-2 Inlined Duplication"
+        },
+        {
+          "id": "dry-002",
+          "severity": "SEVERE",
+          "metric": "DRY-2",
+          "line_start": 712,
+          "line_end": 910,
+          "title": "Duplicate diff rendering flow",
+          "issue": "editDiffView(_:) and writeDiffView(_:) repeat the same split-lines, large-output fallback, file path label, monospaced line rendering, padding, text selection, and rounded background sequence.",
+          "impact": "Future changes to diff presentation, truncation thresholds, or styling must be made in both branches and can diverge for edit and write tool output.",
+          "rule_source": "DRY-2 Inlined Duplication"
+        }
+      ],
+      "suggestions": []
+    },
+    {
+      "agent": "isp",
+      "principle": "Interface Segregation Principle",
+      "severity": "MINOR",
+      "unit_name": "LogViewerState",
+      "unit_kind": "protocol",
+      "findings": [
+        {
+          "id": "isp-001",
+          "severity": "MINOR",
+          "metric": "ISP-1",
+          "line_start": 21,
+          "line_end": 30,
+          "title": "Protocol width is in the minor band",
+          "issue": "LogViewerState declares 8 requirements, which falls in the ISP-1 minor width band of 6-8 requirements. The single project conformer, LogViewerViewModel, meaningfully implements all 8 requirements, so there is no coverage or cohesion violation.",
+          "impact": "The protocol is currently usable by its only conformer, but future conformers may be coupled to the full log viewer state surface even if they only need a subset.",
+          "rule_source": "references/principles/ISP/rule.md#ISP-1"
+        }
+      ],
+      "suggestions": []
+    },
+    {
+      "agent": "ocp",
+      "principle": "Open/Closed Principle",
+      "severity": "MINOR",
+      "unit_name": "LogViewerView",
+      "unit_kind": "struct",
+      "findings": [
+        {
+          "id": "ocp-001",
+          "severity": "MINOR",
+          "metric": "OCP-2",
+          "line_start": 218,
+          "line_end": 231,
+          "title": "Concrete session dependency limits extension",
+          "issue": "LogViewerView accepts a concrete SessionManager and derives TTYBridge from it, so alternate session-control behavior must conform to that concrete type rather than a narrower abstraction.",
+          "impact": "The dependency is injected and therefore not sealed, but it leaves the view less open to alternate interactive-session implementations than the generic ViewModel boundary does.",
+          "rule_source": "OCP-2 Testability: 0 sealed points with 1-2 testable DIRECT INJECTED concrete dependencies is MINOR."
+        }
+      ],
+      "suggestions": []
+    },
+    {
+      "agent": "srp",
+      "principle": "Single Responsibility Principle",
+      "severity": "MINOR",
+      "unit_name": "LogViewerViewModel",
+      "unit_kind": "class",
+      "findings": [
+        {
+          "id": "srp-001",
+          "severity": "MINOR",
+          "metric": "SRP-1",
+          "line_start": 69,
+          "line_end": 198,
+          "title": "View model performs several presentation-state actions",
+          "issue": "The unit performs five distinct verbs: resolves file URLs, formats role labels, loads messages, polls, and rebuilds derived state. The methods still serve one presentation-state stakeholder and remain in one cohesion group, so this stays within the SRP minor band.",
+          "impact": "Future changes to the same presentation-state workflow may increase pressure on the view model, but there is no structural multi-responsibility split yet.",
+          "rule_source": "SRP-1: 3+ verbs, 1 group, 1 stakeholder is MINOR."
+        }
+      ],
+      "suggestions": []
+    },
+    {
+      "agent": "srp",
+      "principle": "Single Responsibility Principle",
+      "severity": "SEVERE",
+      "unit_name": "LogViewerView",
+      "unit_kind": "struct",
+      "findings": [
+        {
+          "id": "srp-002",
+          "severity": "SEVERE",
+          "metric": "SRP-2",
+          "line_start": 214,
+          "line_end": 1288,
+          "title": "View contains multiple disjoint responsibility groups",
+          "issue": "LogViewerView has separate cohesion groups for screen/message rendering, PTY bridge input and prompts, navigation/file opening, and task progress display. Methods such as permissionPrompt(_:), askUserQuestionPrompt(_:toolID:), planApprovalPrompt(), inputField, and sendInput() operate on bridge/input prompt state, while taskPanelView/taskIcon/taskColor form a task-panel cluster and the message/tool renderers form another cluster.",
+          "impact": "Independent changes to prompt interaction, task progress UX, navigation, or message/tool rendering all require edits to the same view type, making regressions more likely as the screen grows.",
+          "rule_source": "SRP-2: 2+ cohesion groups is SEVERE."
+        },
+        {
+          "id": "srp-003",
+          "severity": "SEVERE",
+          "metric": "SRP-1",
+          "line_start": 214,
+          "line_end": 1288,
+          "title": "View performs many actions for multiple stakeholders",
+          "issue": "The unit performs 16 distinct verbs, including resolving, checking, formatting, calculating, rendering, composing, orchestrating, mapping, dispatching, diffing, prompting, sending, and summarizing. These map to multiple stakeholders: visual/message presentation, interactive session workflow, navigation/file-opening UX, and task progress UX.",
+          "impact": "The type has multiple independent reasons to change, so feature work in one workflow can affect unrelated rendering and interaction behavior.",
+          "rule_source": "SRP-1: 3+ verbs with 2+ stakeholders is SEVERE."
+        }
+      ],
+      "suggestions": []
+    },
+    {
+      "agent": "srp",
+      "principle": "Single Responsibility Principle",
+      "severity": "MINOR",
+      "unit_name": "ToolResultView",
+      "unit_kind": "struct",
+      "findings": [
+        {
+          "id": "srp-004",
+          "severity": "MINOR",
+          "metric": "SRP-1",
+          "line_start": 1314,
+          "line_end": 1363,
+          "title": "Tool result view performs several display actions",
+          "issue": "The unit renders, toggles, and previews tool-result content. These actions are cohesive around one display stakeholder, so the issue remains minor.",
+          "impact": "Additional display behaviors in this type could push it toward a larger component, but the current methods still share one responsibility.",
+          "rule_source": "SRP-1: 3+ verbs, 1 group, 1 stakeholder is MINOR."
+        }
+      ],
+      "suggestions": []
+    },
+    {
+      "agent": "structured-concurrency",
+      "principle": "Structured Concurrency",
+      "severity": "SEVERE",
+      "unit_name": "LogViewerViewModel",
+      "unit_kind": "class",
+      "findings": [
+        {
+          "id": "SC-2-LogViewerViewModel-001",
+          "metric": "SC-2",
+          "severity": "SEVERE",
+          "description": "Task.detached is created outside a SwiftUI .task modifier without storing a task handle or providing a cancellation path. The loaded SC-2 rule requires every Task or Task.detached outside SwiftUI .task to be stored and cancellable.",
+          "line_start": 122,
+          "line_end": 129
+        }
+      ],
+      "suggestions": []
+    },
+    {
+      "agent": "swiftui",
+      "principle": "SwiftUI Best Practices",
+      "severity": "SEVERE",
+      "unit_name": "StatusDot",
+      "unit_kind": "struct",
+      "findings": [
+        {
+          "id": "sui-001",
+          "severity": "SEVERE",
+          "metric": "SUI-6",
+          "line_start": 199,
+          "line_end": 199,
+          "title": "View has no preview instantiation",
+          "issue": "StatusDot is a file-scope View struct, but no #Preview or PreviewProvider instantiates it anywhere in the module.",
+          "impact": "The component cannot be visually validated in Xcode previews.",
+          "rule_source": "SwiftUI SUI-6 Preview Coverage"
+        },
+        {
+          "id": "sui-002",
+          "severity": "SEVERE",
+          "metric": "SUI-8",
+          "line_start": 204,
+          "line_end": 204,
+          "title": "Literal fixed frame",
+          "issue": "StatusDot hardcodes both width and height with .frame(width: 6, height: 6).",
+          "impact": "Literal fixed dimensions bypass adaptive SwiftUI layout.",
+          "rule_source": "SwiftUI SUI-8 Adaptive Sizing"
+        }
+      ],
+      "suggestions": []
+    },
+    {
+      "agent": "swiftui",
+      "principle": "SwiftUI Best Practices",
+      "severity": "SEVERE",
+      "unit_name": "LogViewerView",
+      "unit_kind": "struct",
+      "findings": [
+        {
+          "id": "sui-003",
+          "severity": "SEVERE",
+          "metric": "SUI-1",
+          "line_start": 345,
+          "line_end": 430,
+          "title": "View-returning property exceeds complexity thresholds",
+          "issue": "logContent contains nested conditional view builders and many child expressions; measured max nesting is 6 and expression count is 24, exceeding SUI-1 thresholds.",
+          "impact": "The view hierarchy is difficult to scan and should be decomposed into smaller SwiftUI views.",
+          "rule_source": "SwiftUI SUI-1 Body Complexity"
+        },
+        {
+          "id": "sui-004",
+          "severity": "SEVERE",
+          "metric": "SUI-2",
+          "line_start": 1214,
+          "line_end": 1216,
+          "title": "View performs state transformation",
+          "issue": "taskPanelView filters vm.taskList to compute the completed count inside the SwiftUI view.",
+          "impact": "Business or derived state computation in the view makes the view less purely a function of already-prepared state.",
+          "rule_source": "SwiftUI SUI-2 View Purity"
+        },
+        {
+          "id": "sui-005",
+          "severity": "SEVERE",
+          "metric": "SUI-3",
+          "line_start": 461,
+          "line_end": 467,
+          "title": "Nested child view has a long modifier chain",
+          "issue": "The nested Text(thinking) child chains six modifiers inside the ExpandableSection content closure.",
+          "impact": "Long nested modifier chains make view-builder closures harder to read and should be extracted.",
+          "rule_source": "SwiftUI SUI-3 Modifier Chain Length"
+        },
+        {
+          "id": "sui-006",
+          "severity": "SEVERE",
+          "metric": "SUI-6",
+          "line_start": 214,
+          "line_end": 214,
+          "title": "View has no preview instantiation",
+          "issue": "LogViewerView is a file-scope View struct, but no #Preview or PreviewProvider instantiates it anywhere in the module.",
+          "impact": "The full log viewer cannot be visually validated in Xcode previews.",
+          "rule_source": "SwiftUI SUI-6 Preview Coverage"
+        },
+        {
+          "id": "sui-007",
+          "severity": "SEVERE",
+          "metric": "SUI-8",
+          "line_start": 1243,
+          "line_end": 1243,
+          "title": "Literal fixed frame",
+          "issue": "taskPanelView applies .frame(height: 4) with a literal numeric height to the progress bar GeometryReader.",
+          "impact": "Literal fixed dimensions bypass adaptive SwiftUI layout.",
+          "rule_source": "SwiftUI SUI-8 Adaptive Sizing"
+        }
+      ],
+      "suggestions": []
+    },
+    {
+      "agent": "swiftui",
+      "principle": "SwiftUI Best Practices",
+      "severity": "SEVERE",
+      "unit_name": "ExpandableSection",
+      "unit_kind": "struct",
+      "findings": [
+        {
+          "id": "sui-008",
+          "severity": "SEVERE",
+          "metric": "SUI-6",
+          "line_start": 1289,
+          "line_end": 1289,
+          "title": "View has no preview instantiation",
+          "issue": "ExpandableSection is a file-scope View struct, but no #Preview or PreviewProvider instantiates it anywhere in the module.",
+          "impact": "The reusable disclosure component cannot be visually validated in Xcode previews.",
+          "rule_source": "SwiftUI SUI-6 Preview Coverage"
+        }
+      ],
+      "suggestions": []
+    },
+    {
+      "agent": "swiftui",
+      "principle": "SwiftUI Best Practices",
+      "severity": "SEVERE",
+      "unit_name": "ToolResultView",
+      "unit_kind": "struct",
+      "findings": [
+        {
+          "id": "sui-009",
+          "severity": "SEVERE",
+          "metric": "SUI-2",
+          "line_start": 1323,
+          "line_end": 1328,
+          "title": "View transforms content into derived display state",
+          "issue": "ToolResultView splits content into lines and computes a truncated preview in init(content:).",
+          "impact": "Transformation logic in the view weakens view purity and makes the component responsible for preparing data.",
+          "rule_source": "SwiftUI SUI-2 View Purity"
+        },
+        {
+          "id": "sui-010",
+          "severity": "SEVERE",
+          "metric": "SUI-6",
+          "line_start": 1314,
+          "line_end": 1314,
+          "title": "View has no preview instantiation",
+          "issue": "ToolResultView is a file-scope View struct, but no #Preview or PreviewProvider instantiates it anywhere in the module.",
+          "impact": "The tool-result renderer cannot be visually validated in Xcode previews.",
+          "rule_source": "SwiftUI SUI-6 Preview Coverage"
+        }
+      ],
+      "suggestions": []
+    }
+  ]
+}

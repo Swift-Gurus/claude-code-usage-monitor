@@ -1,0 +1,6 @@
+[marketplaces.solid-coder-local]
+source_type = "local"
+source = "/Users/crowea/Developer/Swift-Gurus/solid-coder"
+
+[plugins."solid-coder@solid-coder-local"]
+enabled = true

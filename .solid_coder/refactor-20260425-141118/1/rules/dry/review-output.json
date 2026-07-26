@@ -1,0 +1,282 @@
+{
+  "agent": "dry",
+  "principle": "Don't Repeat Yourself",
+  "timestamp": "2026-04-25T14:11:18Z",
+  "documentation_sources": [
+    "/Users/crowea/Developer/Swift-Gurus/solid-coder/references/principles/DRY/rule.md",
+    "/Users/crowea/Developer/Swift-Gurus/solid-coder/references/principles/DRY/review/instructions.md"
+  ],
+  "files": [
+    {
+      "file_path": "Sources/LogViewerView.swift",
+      "units": [
+        {
+          "unit_name": "TaskListItem",
+          "unit_kind": "struct",
+          "metrics": {
+            "reuse_misses": { "count": 0, "table": [] },
+            "inlined_duplications": { "count": 0, "table": [] },
+            "missing_abstractions": { "count": 0, "table": [] }
+          },
+          "scoring": {
+            "reuse_severity": "COMPLIANT",
+            "duplication_severity": "COMPLIANT",
+            "infrastructure_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogViewerState",
+          "unit_kind": "protocol",
+          "metrics": {
+            "reuse_misses": { "count": 0, "table": [] },
+            "inlined_duplications": { "count": 0, "table": [] },
+            "missing_abstractions": { "count": 0, "table": [] }
+          },
+          "scoring": {
+            "reuse_severity": "COMPLIANT",
+            "duplication_severity": "COMPLIANT",
+            "infrastructure_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogViewerActions",
+          "unit_kind": "protocol",
+          "metrics": {
+            "reuse_misses": { "count": 0, "table": [] },
+            "inlined_duplications": { "count": 0, "table": [] },
+            "missing_abstractions": { "count": 0, "table": [] }
+          },
+          "scoring": {
+            "reuse_severity": "COMPLIANT",
+            "duplication_severity": "COMPLIANT",
+            "infrastructure_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogMessageParsing",
+          "unit_kind": "protocol",
+          "metrics": {
+            "reuse_misses": { "count": 0, "table": [] },
+            "inlined_duplications": { "count": 0, "table": [] },
+            "missing_abstractions": { "count": 0, "table": [] }
+          },
+          "scoring": {
+            "reuse_severity": "COMPLIANT",
+            "duplication_severity": "COMPLIANT",
+            "infrastructure_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogParserAdapter",
+          "unit_kind": "struct",
+          "metrics": {
+            "reuse_misses": { "count": 0, "table": [] },
+            "inlined_duplications": { "count": 0, "table": [] },
+            "missing_abstractions": { "count": 0, "table": [] }
+          },
+          "scoring": {
+            "reuse_severity": "COMPLIANT",
+            "duplication_severity": "COMPLIANT",
+            "infrastructure_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogViewerViewModel",
+          "unit_kind": "class",
+          "metrics": {
+            "reuse_misses": { "count": 0, "table": [] },
+            "inlined_duplications": { "count": 0, "table": [] },
+            "missing_abstractions": { "count": 0, "table": [] }
+          },
+          "scoring": {
+            "reuse_severity": "COMPLIANT",
+            "duplication_severity": "COMPLIANT",
+            "infrastructure_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "StatusDot",
+          "unit_kind": "struct",
+          "metrics": {
+            "reuse_misses": { "count": 0, "table": [] },
+            "inlined_duplications": { "count": 0, "table": [] },
+            "missing_abstractions": { "count": 0, "table": [] }
+          },
+          "scoring": {
+            "reuse_severity": "COMPLIANT",
+            "duplication_severity": "COMPLIANT",
+            "infrastructure_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogViewerView",
+          "unit_kind": "struct",
+          "metrics": {
+            "reuse_misses": {
+              "count": 0,
+              "table": []
+            },
+            "inlined_duplications": {
+              "count": 3,
+              "table": [
+                {
+                  "method_a": "todoIcon(_:)",
+                  "location_a": "Sources/LogViewerView.swift:930-936",
+                  "method_b": "taskIcon(_:)",
+                  "location_b": "Sources/LogViewerView.swift:1265-1272",
+                  "classification": "STRUCTURAL",
+                  "reasoning": "Both methods take a status String and return an SF Symbol name via the same switch-on-status control flow. They share two identical cases ('completed' -> 'checkmark.circle.fill', 'in_progress' -> 'circle.dotted.circle') and the same default 'circle'. taskIcon only adds an extra 'deleted' case. The status->icon mapping is the same algorithm and should be a single shared helper that takes the supported status set."
+                },
+                {
+                  "method_a": "todoColor(_:)",
+                  "location_a": "Sources/LogViewerView.swift:938-944",
+                  "method_b": "taskColor(_:)",
+                  "location_b": "Sources/LogViewerView.swift:1274-1281",
+                  "classification": "STRUCTURAL",
+                  "reasoning": "Both methods take a status String and return a Color via the same switch-on-status structure with identical mappings ('completed' -> .green, 'in_progress' -> .orange, default -> .secondary). taskColor only adds an extra 'deleted' -> .red case. Same algorithm with the same concrete types — should be a single shared helper paired with todoIcon/taskIcon."
+                },
+                {
+                  "method_a": "editDiffView(_:)",
+                  "location_a": "Sources/LogViewerView.swift:710-767",
+                  "method_b": "writeDiffView(_:)",
+                  "location_b": "Sources/LogViewerView.swift:871-909",
+                  "classification": "STRUCTURAL",
+                  "reasoning": "Both methods follow the same algorithm: (1) split content into lines via components(separatedBy: '\\n'); (2) check a line-count threshold and short-circuit to a ToolResultView fallback; (3) render an optional file path header in monospaced tertiary text; (4) render each line with a fixed prefix ('+ '/'- '), monospaced size 10, colored (green/red) opacity 0.9, with identical .frame/.padding/.background modifiers; (5) wrap in the same primary.opacity(0.04) RoundedRectangle. The per-line block at 740-748, 750-759, 894-902 is essentially the same view builder repeated three times across the two methods."
+                }
+              ]
+            },
+            "missing_abstractions": {
+              "count": 3,
+              "table": [
+                {
+                  "type": "LogViewerView",
+                  "pattern": "Diff-line rendering: a per-line view that prefixes content with a marker ('+'/'-'), uses monospaced size-10 text, applies a tinted foreground+background pair, and shares identical horizontal/vertical padding. Repeated three times inside editDiffView (red removed lines, green added lines) and writeDiffView (green added lines).",
+                  "reuse_potential": "High — any future tool renderer that shows added/removed/highlighted lines (e.g., patch previews, hook output diffs, mcp tool diff payloads) needs the same row. Should be extracted as a standalone DiffLineView (or DiffBlockView) component parameterised by prefix, color, and lines, then reused by both Edit and Write renderers."
+                },
+                {
+                  "type": "LogViewerView",
+                  "pattern": "Status-to-presentation mapping: a switch statement that maps a string/enum status to either an SF Symbol name or a Color. Inlined in todoIcon/todoColor (lines 930-944), taskIcon/taskColor (1265-1281), and overlaps with the same idea in dotColor/bubbleColor (527-541) and SkillToolExpandedContent.statusColor.",
+                  "reuse_potential": "High — every list/checklist surface (todos, tasks, hook badges, role indicators) needs the same status->visual mapping. Should be extracted as a single TaskStatusStyle (or StatusVisuals) value type that yields icon+color from a status, eliminating four near-identical switches."
+                },
+                {
+                  "type": "LogViewerView",
+                  "pattern": "Approval-prompt buttons: two/three-button row that sends raw control bytes through a bridge (Enter for accept, Esc for reject, optional arrow+Enter for 'always'). Inlined in permissionPrompt (966-1029) and planApprovalPrompt (1095-1138) with the same button widget recipe (.borderedProminent, .controlSize(.small), .frame(maxWidth: .infinity), .padding(.vertical, 6)).",
+                  "reuse_potential": "Medium-High — every interactive prompt (current and future: askUserQuestion submit, deny, escape) reuses the same button shape and the same raw-bytes-via-bridge action contract. Should be extracted as a PromptActionButton (label, tint, raw bytes) plus a PromptActionRow container so prompt views just declare the buttons."
+                }
+              ]
+            }
+          },
+          "scoring": {
+            "reuse_severity": "COMPLIANT",
+            "duplication_severity": "SEVERE",
+            "infrastructure_severity": "SEVERE",
+            "final_severity": "SEVERE"
+          },
+          "findings": [
+            {
+              "id": "dry-001",
+              "severity": "SEVERE",
+              "metric": "DRY-2",
+              "line_start": 930,
+              "line_end": 1281,
+              "title": "todoIcon/taskIcon and todoColor/taskColor duplicate the same status->visual switch",
+              "issue": "todoIcon (930-936) and taskIcon (1265-1272) implement the same switch-on-status algorithm with two identical cases and identical default. todoColor (938-944) and taskColor (1274-1281) do the same for colors. taskIcon/taskColor only add a 'deleted' branch. The status->icon and status->color mappings are duplicated as four small functions inside the same view.",
+              "impact": "Any future status (e.g. 'cancelled', 'blocked') must be added to two icon functions and two color functions in lock-step. The four functions can drift, producing a checklist that highlights 'completed' green in tasks but not in todos, or vice versa.",
+              "rule_source": "DRY-2 Inlined duplication: same logical sequence in 2+ locations (STRUCTURAL — same algorithm, same concrete types)"
+            },
+            {
+              "id": "dry-002",
+              "severity": "SEVERE",
+              "metric": "DRY-2",
+              "line_start": 710,
+              "line_end": 909,
+              "title": "editDiffView and writeDiffView duplicate the diff-rendering algorithm",
+              "issue": "editDiffView (710-767) and writeDiffView (871-909) repeat the same five-step pipeline: split into lines, threshold-check vs ToolResultView fallback, render file-path header, render each line with prefix+color via the same Text+padding+background recipe, wrap in primary.opacity(0.04) RoundedRectangle. The per-line block is repeated three times (red removed, green added in editDiffView; green added in writeDiffView).",
+              "impact": "Tweaking diff appearance (font size, padding, background, threshold cutoff) requires synchronised edits in three places inside this struct. Future tool renderers that need similar before/after rendering (e.g. NotebookEdit, hook diffs) will copy the block again.",
+              "rule_source": "DRY-2 Inlined duplication: same logical sequence in 2+ locations (STRUCTURAL — same algorithm)"
+            },
+            {
+              "id": "dry-003",
+              "severity": "SEVERE",
+              "metric": "DRY-3",
+              "line_start": 710,
+              "line_end": 909,
+              "title": "Diff-line view is a generic pattern not extracted as a reusable component",
+              "issue": "The single-line diff view (Text('<prefix> <line>'), .font(monospaced 10), .foregroundStyle(color.opacity(0.9)), .frame(maxWidth: .infinity, alignment: .leading), .padding(.horizontal, 4), .padding(.vertical, 1), .background(color.opacity(0.1))) is generic UI that has no domain coupling to Edit or Write. It is buried inside two ViewBuilders rather than being a standalone view component.",
+              "impact": "Other tool renderers (mcp, hook, future patch tool) cannot reuse the row visual; future visual changes must hunt across two methods and three loops.",
+              "rule_source": "DRY-3 Missing abstraction: generic UI composition pattern not extracted for reuse"
+            },
+            {
+              "id": "dry-004",
+              "severity": "SEVERE",
+              "metric": "DRY-3",
+              "line_start": 527,
+              "line_end": 1281,
+              "title": "Status->icon/color mapping is repeated as ad-hoc switch statements instead of a shared style abstraction",
+              "issue": "Four separate switch-based mapping helpers (dotColor 527-533 for role, bubbleColor 535-541 for role, todoIcon 930-936, todoColor 938-944, taskIcon 1265-1272, taskColor 1274-1281) each map a small enum/string to a presentation value. The pattern 'status -> visual style' is generic and not specific to LogViewerView's domain.",
+              "impact": "Adding a new status or role visual requires touching multiple methods that should share a single TaskStatusStyle/RoleStyle value. Risk of inconsistency between paired icon+color helpers (e.g. status mapped to color but missing icon entry).",
+              "rule_source": "DRY-3 Missing abstraction: generic data-flow/UI pattern repeated across the type without extraction"
+            },
+            {
+              "id": "dry-005",
+              "severity": "SEVERE",
+              "metric": "DRY-3",
+              "line_start": 966,
+              "line_end": 1138,
+              "title": "Permission/plan approval prompts duplicate the same 'send raw bytes via bridge' button row pattern",
+              "issue": "permissionPrompt (966-1029) and planApprovalPrompt (1095-1138) both build a button row where each button sends a fixed control sequence via bridge?.sendRaw(...) and shares the same modifier recipe (.borderedProminent, .controlSize(.small), .frame(maxWidth: .infinity), .padding(.vertical, 6)). The buttons differ only in label, tint, and the raw bytes sent.",
+              "impact": "Any change to button styling, accessibility, or bridge contract must be replicated across both prompt views. Any new prompt (e.g. for askUserQuestion deny, future approval flows) is likely to copy the same scaffold a third time.",
+              "rule_source": "DRY-3 Missing abstraction: generic UI composition + behavioural pattern (raw-bytes-via-bridge button) not extracted as a reusable component"
+            }
+          ]
+        },
+        {
+          "unit_name": "ExpandableSection",
+          "unit_kind": "struct",
+          "metrics": {
+            "reuse_misses": { "count": 0, "table": [] },
+            "inlined_duplications": { "count": 0, "table": [] },
+            "missing_abstractions": { "count": 0, "table": [] }
+          },
+          "scoring": {
+            "reuse_severity": "COMPLIANT",
+            "duplication_severity": "COMPLIANT",
+            "infrastructure_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "ToolResultView",
+          "unit_kind": "struct",
+          "metrics": {
+            "reuse_misses": { "count": 0, "table": [] },
+            "inlined_duplications": { "count": 0, "table": [] },
+            "missing_abstractions": { "count": 0, "table": [] }
+          },
+          "scoring": {
+            "reuse_severity": "COMPLIANT",
+            "duplication_severity": "COMPLIANT",
+            "infrastructure_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        }
+      ]
+    }
+  ]
+}

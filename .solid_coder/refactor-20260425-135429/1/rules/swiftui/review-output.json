@@ -1,0 +1,774 @@
+{
+  "agent": "swiftui",
+  "principle": "SwiftUI Best Practices",
+  "timestamp": "2026-04-25T13:54:29Z",
+  "documentation_sources": [
+    "/Users/crowea/Developer/Swift-Gurus/solid-coder/references/coding/apple/SwiftUI/rule.md",
+    "/Users/crowea/Developer/Swift-Gurus/solid-coder/references/coding/apple/SwiftUI/review/instructions.md"
+  ],
+  "files": [
+    {
+      "file_path": "Sources/LogViewerView.swift",
+      "units": [
+        {
+          "unit_name": "TaskListItem",
+          "unit_kind": "struct",
+          "metrics": {
+            "body_complexity": { "max_nesting_depth": 0, "view_expression_count": 0 },
+            "view_purity": { "impure_count": 0, "has_data_fetch": false, "table": [] },
+            "modifier_chain": { "max_nested_chain": 0, "flagged_views": [] },
+            "vm_injection": { "has_vm": false, "injection_style": "n/a" },
+            "preview_containment": { "preview_only_types": [] },
+            "preview_coverage": { "views_without_preview": [] },
+            "container_accessibility": { "flagged_containers": [] },
+            "adaptive_sizing": { "fixed_frame_count": 0, "flagged_frames": [] },
+            "actor_isolation": { "over_isolated_count": 0, "nonisolated_escape_count": 0, "flagged_types": [] }
+          },
+          "scoring": {
+            "body_severity": "COMPLIANT",
+            "purity_severity": "COMPLIANT",
+            "modifier_chain_severity": "COMPLIANT",
+            "vm_injection_severity": "COMPLIANT",
+            "preview_containment_severity": "COMPLIANT",
+            "preview_coverage_severity": "COMPLIANT",
+            "container_accessibility_severity": "COMPLIANT",
+            "adaptive_sizing_severity": "COMPLIANT",
+            "actor_isolation_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogViewerState",
+          "unit_kind": "protocol",
+          "metrics": {
+            "body_complexity": { "max_nesting_depth": 0, "view_expression_count": 0 },
+            "view_purity": { "impure_count": 0, "has_data_fetch": false, "table": [] },
+            "modifier_chain": { "max_nested_chain": 0, "flagged_views": [] },
+            "vm_injection": { "has_vm": false, "injection_style": "n/a" },
+            "preview_containment": { "preview_only_types": [] },
+            "preview_coverage": { "views_without_preview": [] },
+            "container_accessibility": { "flagged_containers": [] },
+            "adaptive_sizing": { "fixed_frame_count": 0, "flagged_frames": [] },
+            "actor_isolation": { "over_isolated_count": 0, "nonisolated_escape_count": 0, "flagged_types": [] }
+          },
+          "scoring": {
+            "body_severity": "COMPLIANT",
+            "purity_severity": "COMPLIANT",
+            "modifier_chain_severity": "COMPLIANT",
+            "vm_injection_severity": "COMPLIANT",
+            "preview_containment_severity": "COMPLIANT",
+            "preview_coverage_severity": "COMPLIANT",
+            "container_accessibility_severity": "COMPLIANT",
+            "adaptive_sizing_severity": "COMPLIANT",
+            "actor_isolation_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogViewerActions",
+          "unit_kind": "protocol",
+          "metrics": {
+            "body_complexity": { "max_nesting_depth": 0, "view_expression_count": 0 },
+            "view_purity": { "impure_count": 0, "has_data_fetch": false, "table": [] },
+            "modifier_chain": { "max_nested_chain": 0, "flagged_views": [] },
+            "vm_injection": { "has_vm": false, "injection_style": "n/a" },
+            "preview_containment": { "preview_only_types": [] },
+            "preview_coverage": { "views_without_preview": [] },
+            "container_accessibility": { "flagged_containers": [] },
+            "adaptive_sizing": { "fixed_frame_count": 0, "flagged_frames": [] },
+            "actor_isolation": { "over_isolated_count": 0, "nonisolated_escape_count": 0, "flagged_types": [] }
+          },
+          "scoring": {
+            "body_severity": "COMPLIANT",
+            "purity_severity": "COMPLIANT",
+            "modifier_chain_severity": "COMPLIANT",
+            "vm_injection_severity": "COMPLIANT",
+            "preview_containment_severity": "COMPLIANT",
+            "preview_coverage_severity": "COMPLIANT",
+            "container_accessibility_severity": "COMPLIANT",
+            "adaptive_sizing_severity": "COMPLIANT",
+            "actor_isolation_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogMessageParsing",
+          "unit_kind": "protocol",
+          "metrics": {
+            "body_complexity": { "max_nesting_depth": 0, "view_expression_count": 0 },
+            "view_purity": { "impure_count": 0, "has_data_fetch": false, "table": [] },
+            "modifier_chain": { "max_nested_chain": 0, "flagged_views": [] },
+            "vm_injection": { "has_vm": false, "injection_style": "n/a" },
+            "preview_containment": { "preview_only_types": [] },
+            "preview_coverage": { "views_without_preview": [] },
+            "container_accessibility": { "flagged_containers": [] },
+            "adaptive_sizing": { "fixed_frame_count": 0, "flagged_frames": [] },
+            "actor_isolation": { "over_isolated_count": 0, "nonisolated_escape_count": 0, "flagged_types": [] }
+          },
+          "scoring": {
+            "body_severity": "COMPLIANT",
+            "purity_severity": "COMPLIANT",
+            "modifier_chain_severity": "COMPLIANT",
+            "vm_injection_severity": "COMPLIANT",
+            "preview_containment_severity": "COMPLIANT",
+            "preview_coverage_severity": "COMPLIANT",
+            "container_accessibility_severity": "COMPLIANT",
+            "adaptive_sizing_severity": "COMPLIANT",
+            "actor_isolation_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogParserAdapter",
+          "unit_kind": "struct",
+          "metrics": {
+            "body_complexity": { "max_nesting_depth": 0, "view_expression_count": 0 },
+            "view_purity": { "impure_count": 0, "has_data_fetch": false, "table": [] },
+            "modifier_chain": { "max_nested_chain": 0, "flagged_views": [] },
+            "vm_injection": { "has_vm": false, "injection_style": "n/a" },
+            "preview_containment": { "preview_only_types": [] },
+            "preview_coverage": { "views_without_preview": [] },
+            "container_accessibility": { "flagged_containers": [] },
+            "adaptive_sizing": { "fixed_frame_count": 0, "flagged_frames": [] },
+            "actor_isolation": { "over_isolated_count": 0, "nonisolated_escape_count": 0, "flagged_types": [] }
+          },
+          "scoring": {
+            "body_severity": "COMPLIANT",
+            "purity_severity": "COMPLIANT",
+            "modifier_chain_severity": "COMPLIANT",
+            "vm_injection_severity": "COMPLIANT",
+            "preview_containment_severity": "COMPLIANT",
+            "preview_coverage_severity": "COMPLIANT",
+            "container_accessibility_severity": "COMPLIANT",
+            "adaptive_sizing_severity": "COMPLIANT",
+            "actor_isolation_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogViewerViewModel",
+          "unit_kind": "class",
+          "metrics": {
+            "body_complexity": { "max_nesting_depth": 0, "view_expression_count": 0 },
+            "view_purity": { "impure_count": 0, "has_data_fetch": false, "table": [] },
+            "modifier_chain": { "max_nested_chain": 0, "flagged_views": [] },
+            "vm_injection": { "has_vm": false, "injection_style": "n/a" },
+            "preview_containment": { "preview_only_types": [] },
+            "preview_coverage": { "views_without_preview": [] },
+            "container_accessibility": { "flagged_containers": [] },
+            "adaptive_sizing": { "fixed_frame_count": 0, "flagged_frames": [] },
+            "actor_isolation": { "over_isolated_count": 0, "nonisolated_escape_count": 0, "flagged_types": [] }
+          },
+          "scoring": {
+            "body_severity": "COMPLIANT",
+            "purity_severity": "COMPLIANT",
+            "modifier_chain_severity": "COMPLIANT",
+            "vm_injection_severity": "COMPLIANT",
+            "preview_containment_severity": "COMPLIANT",
+            "preview_coverage_severity": "COMPLIANT",
+            "container_accessibility_severity": "COMPLIANT",
+            "adaptive_sizing_severity": "COMPLIANT",
+            "actor_isolation_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "StatusDot",
+          "unit_kind": "struct",
+          "metrics": {
+            "body_complexity": { "max_nesting_depth": 0, "view_expression_count": 1 },
+            "view_purity": { "impure_count": 0, "has_data_fetch": false, "table": [] },
+            "modifier_chain": { "max_nested_chain": 0, "flagged_views": [] },
+            "vm_injection": { "has_vm": false, "injection_style": "n/a" },
+            "preview_containment": { "preview_only_types": [] },
+            "preview_coverage": {
+              "views_without_preview": [
+                { "name": "StatusDot", "file": "Sources/LogViewerView.swift" }
+              ]
+            },
+            "container_accessibility": { "flagged_containers": [] },
+            "adaptive_sizing": {
+              "fixed_frame_count": 1,
+              "flagged_frames": [
+                {
+                  "view_expression": "Circle().fill(color).frame(width: 6, height: 6)",
+                  "location": "body @ line 204",
+                  "fixed_dimension": "both"
+                }
+              ]
+            },
+            "actor_isolation": { "over_isolated_count": 0, "nonisolated_escape_count": 0, "flagged_types": [] }
+          },
+          "scoring": {
+            "body_severity": "COMPLIANT",
+            "purity_severity": "COMPLIANT",
+            "modifier_chain_severity": "COMPLIANT",
+            "vm_injection_severity": "COMPLIANT",
+            "preview_containment_severity": "COMPLIANT",
+            "preview_coverage_severity": "SEVERE",
+            "container_accessibility_severity": "COMPLIANT",
+            "adaptive_sizing_severity": "SEVERE",
+            "actor_isolation_severity": "COMPLIANT",
+            "final_severity": "SEVERE"
+          },
+          "findings": [
+            {
+              "id": "sui-001",
+              "severity": "SEVERE",
+              "metric": "SUI-6",
+              "line_start": 199,
+              "line_end": 206,
+              "title": "StatusDot has no #Preview instantiation anywhere",
+              "issue": "File-scope View struct StatusDot is never instantiated in a #Preview block or PreviewProvider, neither in this file nor anywhere else in the module. Visual regressions in this 6×6 indicator dot cannot be caught during development.",
+              "impact": "Loss of preview-driven visual validation; behavior changes (color, sizing) ship without a visual check.",
+              "rule_source": "SUI-6 Preview Coverage"
+            },
+            {
+              "id": "sui-002",
+              "severity": "SEVERE",
+              "metric": "SUI-8",
+              "line_start": 204,
+              "line_end": 204,
+              "title": "Hardcoded literal frame on Circle (.frame(width: 6, height: 6))",
+              "issue": "StatusDot.body applies a literal-numeric `.frame(width: 6, height: 6)` to its Circle. The view declares its own external dimensions instead of letting the parent size it via proportional layout, Dynamic Type, or constraint modifiers (minWidth/maxWidth, idealWidth, containerRelativeFrame).",
+              "impact": "Cannot adapt to Dynamic Type or accessibility size changes; the indicator is locked to 6 pt regardless of context.",
+              "rule_source": "SUI-8 Adaptive Sizing"
+            }
+          ]
+        },
+        {
+          "unit_name": "LogViewerView",
+          "unit_kind": "struct",
+          "metrics": {
+            "body_complexity": { "max_nesting_depth": 6, "view_expression_count": 80 },
+            "view_purity": {
+              "impure_count": 4,
+              "has_data_fetch": false,
+              "table": [
+                { "method": "dotColor(for:)", "classification": "PURE_VIEW", "reason": "Maps role enum to Color — simple appearance configuration." },
+                { "method": "bubbleColor(for:)", "classification": "PURE_VIEW", "reason": "Maps role enum to Color — simple appearance configuration." },
+                { "method": "toolChipColor(for:)", "classification": "PURE_VIEW", "reason": "Maps ToolData case to Color — simple appearance configuration." },
+                { "method": "todoIcon(_:)", "classification": "PURE_VIEW", "reason": "Maps status string to SF Symbol name." },
+                { "method": "todoColor(_:)", "classification": "PURE_VIEW", "reason": "Maps status string to Color." },
+                { "method": "taskIcon(_:)", "classification": "PURE_VIEW", "reason": "Maps status string to SF Symbol name." },
+                { "method": "taskColor(_:)", "classification": "PURE_VIEW", "reason": "Maps status string to Color." },
+                { "method": "title", "classification": "PURE_VIEW", "reason": "Selects displayable title from target enum — UI-state derivation." },
+                { "method": "scrollHeight", "classification": "PURE_VIEW", "reason": "Derives layout sizing from settings — view configuration." },
+                { "method": "canSendInput", "classification": "PURE_VIEW", "reason": "Boolean UI gating from target/bridge state." },
+                { "method": "isParentTarget", "classification": "PURE_VIEW", "reason": "Boolean enum check for UI." },
+                { "method": "bridge", "classification": "PURE_VIEW", "reason": "Lookup-only delegation to sessionManager — UI-state read, no side effects." },
+                { "method": "navFont", "classification": "PURE_VIEW", "reason": "Display-mode-driven Font selection." },
+                { "method": "titleFont", "classification": "PURE_VIEW", "reason": "Display-mode-driven Font selection." },
+                { "method": "editDiffView(_:)", "classification": "TRANSFORM", "reason": "Splits oldString/newString with `components(separatedBy: \"\\n\")` and conditionally branches on collection size before constructing views — collection transformation belongs in the VM/parser, not the view." },
+                { "method": "writeDiffView(_:)", "classification": "TRANSFORM", "reason": "Splits content into lines with `components(separatedBy: \"\\n\")` and conditionally branches on line count — collection transformation in the view." },
+                { "method": "mcpDetailView(_:resultContent:)", "classification": "TRANSFORM", "reason": "Sorts and joins `d.input` dictionary entries inside the view (`d.input.sorted(by:).map.joined`) — formatting/transform that belongs in the VM." },
+                { "method": "taskPanelView", "classification": "TRANSFORM", "reason": "Computes `tasks.filter { $0.status == \"completed\" }.count` inside the view — derived state for the progress badge belongs on the VM." },
+                { "method": "sendInput()", "classification": "PURE_VIEW", "reason": "Trims whitespace and forwards to bridge — simple action forwarding." },
+                { "method": "messageBubble(_:)", "classification": "PURE_VIEW", "reason": "Returns some View; configures appearance only." },
+                { "method": "toolCallChip(_:)", "classification": "PURE_VIEW", "reason": "Returns some View." },
+                { "method": "toolChipLabel(_:)", "classification": "PURE_VIEW", "reason": "Returns some View." },
+                { "method": "toolExpandedContent(_:resultContent:)", "classification": "PURE_VIEW", "reason": "Returns some View — large switch dispatching to view helpers." },
+                { "method": "promptView(_:)", "classification": "PURE_VIEW", "reason": "Returns some View — switch on tool data case." },
+                { "method": "permissionPrompt(_:)", "classification": "PURE_VIEW", "reason": "Returns some View." },
+                { "method": "askUserQuestionPrompt(_:toolID:)", "classification": "PURE_VIEW", "reason": "Returns some View; updates simple UI state on tap." },
+                { "method": "planApprovalPrompt()", "classification": "PURE_VIEW", "reason": "Returns some View." },
+                { "method": "monoText(_:)", "classification": "PURE_VIEW", "reason": "Returns some View; styling only." },
+                { "method": "toolInputAndResult(_:resultContent:)", "classification": "PURE_VIEW", "reason": "Returns some View." },
+                { "method": "todoChecklist(_:)", "classification": "PURE_VIEW", "reason": "Returns some View." },
+                { "method": "hookDetailView(_:)", "classification": "PURE_VIEW", "reason": "Returns some View." },
+                { "method": "logHeader", "classification": "PURE_VIEW", "reason": "Returns some View — composes header controls." },
+                { "method": "logContent", "classification": "PURE_VIEW", "reason": "Returns some View." },
+                { "method": "inputField", "classification": "PURE_VIEW", "reason": "Returns some View." }
+              ]
+            },
+            "modifier_chain": {
+              "max_nested_chain": 5,
+              "flagged_views": [
+                {
+                  "view_expression": "Button { onDismiss() } label: { ... } .buttonStyle(.plain).foregroundStyle(.blue)",
+                  "location": "logHeader (lines 262-270)",
+                  "modifier_count": 2
+                },
+                {
+                  "view_expression": "Image(systemName: showTaskPanel ? ... : ...).font(navFont)  →  Button { ... } label: { ... }.buttonStyle(.plain).foregroundStyle(...).help(...)",
+                  "location": "logHeader (lines 284-291)",
+                  "modifier_count": 3
+                },
+                {
+                  "view_expression": "Button { ... } label: { Image(...).font(navFont) }.buttonStyle(.plain).foregroundStyle(.red).help(\"Stop session\")",
+                  "location": "logHeader (lines 294-305)",
+                  "modifier_count": 3
+                },
+                {
+                  "view_expression": "Button { onOpenFile(vm.fileURL) } label: { Image(...).font(navFont) }.buttonStyle(.plain).foregroundStyle(.blue).help(...)",
+                  "location": "logHeader (lines 307-315)",
+                  "modifier_count": 3
+                },
+                {
+                  "view_expression": "ScrollView { LazyVStack { ... } }.scrollIndicators(.visible).frame(height: scrollHeight, alignment: .top).onChange(...).onAppear(...)",
+                  "location": "logContent (lines 376-396)",
+                  "modifier_count": 4
+                },
+                {
+                  "view_expression": "Color.black.opacity(0.3).ignoresSafeArea()",
+                  "location": "logContent overlay (lines 409-410)",
+                  "modifier_count": 2
+                },
+                {
+                  "view_expression": "promptView(pending).padding(20).background(.regularMaterial, in: RoundedRectangle(...)).shadow(radius: 8).padding(16)",
+                  "location": "logContent overlay (lines 411-415)",
+                  "modifier_count": 4
+                },
+                {
+                  "view_expression": "Text(thinking).font(...).foregroundStyle(.secondary).textSelection(.enabled).padding(6).frame(maxWidth: .infinity, alignment: .leading).background(...)",
+                  "location": "messageBubble thinking block (lines 459-465)",
+                  "modifier_count": 5
+                },
+                {
+                  "view_expression": "VStack { ... }.padding(8).frame(maxWidth: .infinity, alignment: .leading).background(Color.green.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))",
+                  "location": "messageBubble long-text inner VStack (lines 491-494)",
+                  "modifier_count": 3
+                },
+                {
+                  "view_expression": "ExpandableSection { ... } label: { ... }.padding(8).frame(maxWidth: .infinity, alignment: .leading).background(...)",
+                  "location": "messageBubble long-text outer ExpandableSection (lines 481-503)",
+                  "modifier_count": 3
+                },
+                {
+                  "view_expression": "VStack { ... }.padding(8).frame(maxWidth: .infinity, alignment: .leading).background(bubbleColor(for: msg.role), in: RoundedRectangle(...))",
+                  "location": "messageBubble bubble VStack (lines 505-522)",
+                  "modifier_count": 3
+                },
+                {
+                  "view_expression": "Text(text).font(.system(size: 11)).textSelection(.enabled)",
+                  "location": "messageBubble inner ForEach Text (lines 487-489 / 507-510)",
+                  "modifier_count": 2
+                },
+                {
+                  "view_expression": "HStack { Image, toolChipLabel }.padding(.horizontal, 6).padding(.vertical, 3).background(chipBackground, in: RoundedRectangle(...))",
+                  "location": "toolCallChip non-detail branch (lines 570-578)",
+                  "modifier_count": 3
+                },
+                {
+                  "view_expression": "ExpandableSection { ... } label: { ... }.padding(.horizontal, 6).padding(.vertical, 3).background(chipBackground, in: RoundedRectangle(...))",
+                  "location": "toolCallChip detail branch (lines 580-590)",
+                  "modifier_count": 3
+                },
+                {
+                  "view_expression": "Image(systemName: \"chevron.right\").font(.system(size: 8, weight: .bold)).foregroundStyle(chipColor.opacity(0.8))",
+                  "location": "toolCallChip non-detail HStack (lines 571-573)",
+                  "modifier_count": 2
+                },
+                {
+                  "view_expression": "VStack { Text, monoText }.padding(6).frame(maxWidth: .infinity, alignment: .leading).background(Color.primary.opacity(0.04), in: RoundedRectangle(...))",
+                  "location": "toolExpandedContent agent branch (lines 643-655)",
+                  "modifier_count": 3
+                },
+                {
+                  "view_expression": "Text(d.description).font(.system(size: 10)).foregroundStyle(.secondary)",
+                  "location": "toolExpandedContent taskCreate (lines 658-659)",
+                  "modifier_count": 2
+                },
+                {
+                  "view_expression": "Text(d.activeForm).font(.system(size: 9, design: .monospaced)).foregroundStyle(.tertiary)",
+                  "location": "toolExpandedContent taskCreate (lines 661-662)",
+                  "modifier_count": 2
+                },
+                {
+                  "view_expression": "VStack { ... }.textSelection(.enabled).padding(6).frame(maxWidth: .infinity, alignment: .leading).background(Color.primary.opacity(0.04), in: RoundedRectangle(...))",
+                  "location": "toolExpandedContent taskCreate VStack (lines 656-668)",
+                  "modifier_count": 4
+                },
+                {
+                  "view_expression": "VStack { ForEach { ... } }.padding(6).frame(maxWidth: .infinity, alignment: .leading).background(Color.primary.opacity(0.04), in: RoundedRectangle(...))",
+                  "location": "toolExpandedContent askUserQuestion VStack (lines 676-691)",
+                  "modifier_count": 3
+                },
+                {
+                  "view_expression": "Text(\"- \\(line)\").font(.system(size: 10, design: .monospaced)).foregroundStyle(.red.opacity(0.9)).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 4).padding(.vertical, 1).background(Color.red.opacity(0.1))",
+                  "location": "editDiffView old lines ForEach (lines 740-747)",
+                  "modifier_count": 6
+                },
+                {
+                  "view_expression": "Text(\"+ \\(line)\").font(.system(size: 10, design: .monospaced)).foregroundStyle(.green.opacity(0.9)).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 4).padding(.vertical, 1).background(Color.green.opacity(0.1))",
+                  "location": "editDiffView new lines ForEach (lines 751-758) and writeDiffView (lines 894-901)",
+                  "modifier_count": 6
+                },
+                {
+                  "view_expression": "VStack { ... }.textSelection(.enabled).padding(4).frame(maxWidth: .infinity, alignment: .leading).background(Color.primary.opacity(0.04), in: RoundedRectangle(...))",
+                  "location": "editDiffView outer (lines 732-765) and writeDiffView outer (lines 887-907)",
+                  "modifier_count": 4
+                },
+                {
+                  "view_expression": "VStack { ... }.padding(6).frame(maxWidth: .infinity, alignment: .leading).background(Color.cyan.opacity(0.06), in: RoundedRectangle(...))",
+                  "location": "mcpDetailView (lines 770-794)",
+                  "modifier_count": 3
+                },
+                {
+                  "view_expression": "Text(label).font(.system(size: 8, weight: .bold, design: .monospaced)).foregroundStyle(badgeColor).padding(.horizontal, 4).padding(.vertical, 1).background(badgeColor.opacity(0.15), in: RoundedRectangle(cornerRadius: 2))",
+                  "location": "hookDetailView label badge (lines 822-827)",
+                  "modifier_count": 5
+                },
+                {
+                  "view_expression": "Text(d.command).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled)",
+                  "location": "hookDetailView command (lines 842-845)",
+                  "modifier_count": 3
+                },
+                {
+                  "view_expression": "Text(err).font(.system(size: 10, design: .monospaced)).foregroundStyle(.red).textSelection(.enabled)",
+                  "location": "hookDetailView errorMessage (lines 848-851)",
+                  "modifier_count": 3
+                },
+                {
+                  "view_expression": "Text(errOut).font(.system(size: 10, design: .monospaced)).foregroundStyle(.red.opacity(0.85)).textSelection(.enabled)",
+                  "location": "hookDetailView stderr (lines 857-860)",
+                  "modifier_count": 3
+                },
+                {
+                  "view_expression": "VStack { ... }.padding(6).frame(maxWidth: .infinity, alignment: .leading).background(Color.orange.opacity(0.06), in: RoundedRectangle(...))",
+                  "location": "hookDetailView outer (lines 806-868)",
+                  "modifier_count": 3
+                },
+                {
+                  "view_expression": "VStack { ForEach { ... } }.padding(6).frame(maxWidth: .infinity, alignment: .leading).background(Color.primary.opacity(0.04), in: RoundedRectangle(...))",
+                  "location": "todoChecklist (lines 911-927)",
+                  "modifier_count": 3
+                },
+                {
+                  "view_expression": "Text(\"Allow\").font(.caption).fontWeight(.medium).frame(maxWidth: .infinity).padding(.vertical, 6) → Button { ... }.buttonStyle(.borderedProminent).tint(.green).controlSize(.small)",
+                  "location": "permissionPrompt Allow button (lines 983-995)",
+                  "modifier_count": 7
+                },
+                {
+                  "view_expression": "Button { ... } label: { Text(\"Always\")...4 modifiers }.buttonStyle(.borderedProminent).tint(.blue).controlSize(.small)",
+                  "location": "permissionPrompt Always button (lines 997-1010)",
+                  "modifier_count": 7
+                },
+                {
+                  "view_expression": "Button { ... } label: { Text(\"Deny\")...4 modifiers }.buttonStyle(.borderedProminent).tint(.red).controlSize(.small)",
+                  "location": "permissionPrompt Deny button (lines 1012-1024)",
+                  "modifier_count": 7
+                },
+                {
+                  "view_expression": "VStack { HStack { ... }; HStack { Buttons } }.padding(10).background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))",
+                  "location": "permissionPrompt outer (lines 967-1028)",
+                  "modifier_count": 2
+                },
+                {
+                  "view_expression": "Image(systemName: \"lock.shield\").font(.caption).foregroundStyle(.orange)",
+                  "location": "permissionPrompt header HStack (lines 969-971)",
+                  "modifier_count": 2
+                },
+                {
+                  "view_expression": "Text(tc.name).font(.caption).fontWeight(.medium)",
+                  "location": "permissionPrompt header HStack (lines 972-974)",
+                  "modifier_count": 2
+                },
+                {
+                  "view_expression": "Text(tc.data.summary).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)",
+                  "location": "permissionPrompt header HStack (lines 975-979)",
+                  "modifier_count": 4
+                },
+                {
+                  "view_expression": "Image(...).font(.system(size: 10)).foregroundStyle(...)",
+                  "location": "askUserQuestionPrompt option icon (lines 1053-1055)",
+                  "modifier_count": 2
+                },
+                {
+                  "view_expression": "Text(option.label).font(.caption).foregroundStyle(.primary)",
+                  "location": "askUserQuestionPrompt option label (lines 1057-1059)",
+                  "modifier_count": 2
+                },
+                {
+                  "view_expression": "Text(option.description).font(.caption2).foregroundStyle(.secondary).lineLimit(2)",
+                  "location": "askUserQuestionPrompt option description (lines 1061-1064)",
+                  "modifier_count": 3
+                },
+                {
+                  "view_expression": "HStack { Image, VStack { Text, Text } }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())",
+                  "location": "askUserQuestionPrompt option HStack (lines 1052-1069)",
+                  "modifier_count": 2
+                },
+                {
+                  "view_expression": "Button { ... } label: { Text(\"Submit\").font(.caption).fontWeight(.medium).frame(maxWidth: .infinity).padding(.vertical, 6) }.buttonStyle(.borderedProminent).controlSize(.small)",
+                  "location": "askUserQuestionPrompt Submit (lines 1074-1089)",
+                  "modifier_count": 6
+                },
+                {
+                  "view_expression": "VStack { ... }.padding(10).background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))",
+                  "location": "askUserQuestionPrompt outer (lines 1036-1092)",
+                  "modifier_count": 2
+                },
+                {
+                  "view_expression": "Image(systemName: \"doc.text\").font(.caption).foregroundStyle(.blue)",
+                  "location": "planApprovalPrompt header (lines 1098-1100)",
+                  "modifier_count": 2
+                },
+                {
+                  "view_expression": "Text(\"Plan ready for review\").font(.caption).fontWeight(.medium)",
+                  "location": "planApprovalPrompt header (lines 1101-1103)",
+                  "modifier_count": 2
+                },
+                {
+                  "view_expression": "Button { ... } label: { Text(\"Approve\") + 4 modifiers }.buttonStyle(.borderedProminent).tint(.green).controlSize(.small)",
+                  "location": "planApprovalPrompt Approve (lines 1107-1119)",
+                  "modifier_count": 7
+                },
+                {
+                  "view_expression": "Button { ... } label: { Text(\"Reject\") + 4 modifiers }.buttonStyle(.borderedProminent).tint(.red).controlSize(.small)",
+                  "location": "planApprovalPrompt Reject (lines 1121-1133)",
+                  "modifier_count": 7
+                },
+                {
+                  "view_expression": "VStack { HStack { Image, Text }; HStack { Buttons } }.padding(10).background(Color.purple.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))",
+                  "location": "planApprovalPrompt outer (lines 1095-1138)",
+                  "modifier_count": 2
+                },
+                {
+                  "view_expression": "Text(inputText.isEmpty ? \" \" : inputText).font(.system(size: 12)).padding(8).opacity(0).frame(maxWidth: .infinity, alignment: .leading)",
+                  "location": "inputField placeholder ghost (lines 1146-1150)",
+                  "modifier_count": 4
+                },
+                {
+                  "view_expression": "TextEditor(text: $inputText).font(.system(size: 12)).scrollContentBackground(.hidden).padding(4)",
+                  "location": "inputField TextEditor (lines 1152-1155)",
+                  "modifier_count": 3
+                },
+                {
+                  "view_expression": "Text(\"Type a message...\").font(.system(size: 12)).foregroundStyle(.tertiary).padding(.horizontal, 8).padding(.vertical, 12).allowsHitTesting(false)",
+                  "location": "inputField placeholder (lines 1158-1163)",
+                  "modifier_count": 5
+                },
+                {
+                  "view_expression": "ZStack { Text, TextEditor, Text }.frame(minHeight: 36, maxHeight: 120).background(...).overlay(RoundedRectangle(...).stroke(...))",
+                  "location": "inputField ZStack (lines 1144-1168)",
+                  "modifier_count": 3
+                },
+                {
+                  "view_expression": "Image(systemName: \"arrow.up.circle.fill\").font(.system(size: 24)).foregroundStyle(canSendInput && !inputText.isEmpty ? .blue : .gray)",
+                  "location": "inputField send button label (lines 1173-1175)",
+                  "modifier_count": 2
+                },
+                {
+                  "view_expression": "Button { sendInput() } label: { Image ... }.buttonStyle(.plain).disabled(...).keyboardShortcut(.return, modifiers: .command)",
+                  "location": "inputField send Button (lines 1170-1179)",
+                  "modifier_count": 3
+                },
+                {
+                  "view_expression": "Image(systemName: taskIcon(item.status)).font(.system(size: 10)).foregroundStyle(taskColor(item.status)).imageScale(.small)",
+                  "location": "taskPanelView ForEach (lines 1248-1251)",
+                  "modifier_count": 3
+                },
+                {
+                  "view_expression": "Text(item.content).font(.system(size: 10)).foregroundStyle(...).strikethrough(...).lineLimit(2)",
+                  "location": "taskPanelView ForEach (lines 1252-1256)",
+                  "modifier_count": 4
+                },
+                {
+                  "view_expression": "RoundedRectangle(cornerRadius: 2).fill(Color.green).frame(width: geo.size.width * CGFloat(completed) / CGFloat(tasks.count))",
+                  "location": "taskPanelView progress fill (lines 1236-1238)",
+                  "modifier_count": 2
+                },
+                {
+                  "view_expression": "GeometryReader { ... }.frame(height: 4)",
+                  "location": "taskPanelView progress wrapper (lines 1232-1241)",
+                  "modifier_count": 1
+                }
+              ]
+            },
+            "vm_injection": {
+              "has_vm": true,
+              "injection_style": "protocol",
+              "vm_property": "vm",
+              "vm_type": "VM (generic) where VM: LogViewerState & LogViewerActions, LogViewerState: Observable"
+            },
+            "preview_containment": { "preview_only_types": [] },
+            "preview_coverage": {
+              "views_without_preview": [
+                { "name": "LogViewerView", "file": "Sources/LogViewerView.swift" }
+              ]
+            },
+            "container_accessibility": { "flagged_containers": [] },
+            "adaptive_sizing": {
+              "fixed_frame_count": 1,
+              "flagged_frames": [
+                {
+                  "view_expression": "GeometryReader { ZStack { ... } }.frame(height: 4)",
+                  "location": "taskPanelView progress bar (line 1241)",
+                  "fixed_dimension": "height"
+                }
+              ]
+            },
+            "actor_isolation": { "over_isolated_count": 0, "nonisolated_escape_count": 0, "flagged_types": [] }
+          },
+          "scoring": {
+            "body_severity": "SEVERE",
+            "purity_severity": "SEVERE",
+            "modifier_chain_severity": "SEVERE",
+            "vm_injection_severity": "COMPLIANT",
+            "preview_containment_severity": "COMPLIANT",
+            "preview_coverage_severity": "SEVERE",
+            "container_accessibility_severity": "COMPLIANT",
+            "adaptive_sizing_severity": "SEVERE",
+            "actor_isolation_severity": "COMPLIANT",
+            "final_severity": "SEVERE"
+          },
+          "findings": [
+            {
+              "id": "sui-003",
+              "severity": "SEVERE",
+              "metric": "SUI-1",
+              "line_start": 214,
+              "line_end": 1282,
+              "title": "View body and view-returning helpers exceed nesting/expression thresholds",
+              "issue": "Multiple view-returning properties and methods exceed the SUI-1 thresholds. `body` (lines 319-343) reaches nesting depth ≥3 (VStack > VStack > HStack > ...) with conditional branches. `logHeader` (260-317) contains 8+ view expressions (HStack, 4× Button, 2× HStack, Image, Text, StatusDot, Spacer, etc.) with depth ≥3. `logContent` (345-429) holds the largest tree — ScrollView > LazyVStack > ForEach with overlay/task modifiers, far exceeding 5 expressions and depth 2. `messageBubble`, `toolCallChip`, `toolExpandedContent`, `editDiffView`, `writeDiffView`, `hookDetailView`, `permissionPrompt`, `askUserQuestionPrompt`, `planApprovalPrompt`, `inputField`, `taskPanelView`, `mcpDetailView`, and `todoChecklist` each individually breach the threshold (≥5 expressions and/or nesting ≥2). Each should be split into smaller, named subviews — extracting helpers within the same struct does not satisfy SUI-1, since each view-returning property is measured independently.",
+              "impact": "The view is hard to read, hard to diff, and hard to test. Diagnostics from the SwiftUI compiler degrade rapidly past these thresholds (\"unable to type-check this expression in reasonable time\").",
+              "rule_source": "SUI-1 Body Complexity"
+            },
+            {
+              "id": "sui-004",
+              "severity": "SEVERE",
+              "metric": "SUI-2",
+              "line_start": 710,
+              "line_end": 1263,
+              "title": "View struct contains TRANSFORM logic (collection sort/filter/split) that belongs in the VM",
+              "issue": "Four view-struct members perform collection transformation rather than purely declaring UI: (1) `editDiffView` (lines 710-767) splits oldString/newString with `components(separatedBy:)` and branches on line counts; (2) `writeDiffView` (lines 871-909) likewise splits content into lines and branches on counts; (3) `mcpDetailView` (lines 769-795) sorts/maps/joins `d.input` dictionary entries inline; (4) `taskPanelView` (lines 1212-1263) computes `tasks.filter { $0.status == \"completed\" }.count` for the progress badge. Pre-splitting line arrays and pre-computed completion counts should be exposed by `LogViewerViewModel` (or a dedicated formatter) so the View only renders state.",
+              "impact": "Mixes data transformation with view declaration — re-runs every body re-evaluation, defeats the View-as-pure-function model, and complicates testability (transform logic cannot be unit-tested without instantiating SwiftUI hosting).",
+              "rule_source": "SUI-2 View Purity"
+            },
+            {
+              "id": "sui-005",
+              "severity": "SEVERE",
+              "metric": "SUI-3",
+              "line_start": 260,
+              "line_end": 1263,
+              "title": "Numerous nested child views carry 2+ chained modifiers inside @ViewBuilder closures",
+              "issue": "Many nested children inside @ViewBuilder closures accumulate ≥2 modifiers, violating SUI-3. Worst offenders: `permissionPrompt` Allow/Always/Deny buttons and `planApprovalPrompt` Approve/Reject buttons each pile ~7 modifiers across the Button label and the Button itself (lines 983-1024, 1107-1133). `editDiffView` per-line ForEach Text children chain 6 modifiers each (`.font/.foregroundStyle/.frame/.padding/.padding/.background`, lines 740-747 and 751-758, mirrored in `writeDiffView` lines 894-901). The thinking-block Text in `messageBubble` chains 5 modifiers (lines 459-465). The hook badge Text chains 5 modifiers (lines 822-827). Numerous additional nested children sit at 3-4 modifiers (see `flagged_views` for the full list). Each should be promoted to a named computed property or subview.",
+              "impact": "Long modifier chains on nested children make every closure unscannable and bury intent under formatting, exactly the readability harm SUI-3 targets.",
+              "rule_source": "SUI-3 Modifier Chain Length"
+            },
+            {
+              "id": "sui-006",
+              "severity": "SEVERE",
+              "metric": "SUI-6",
+              "line_start": 214,
+              "line_end": 1282,
+              "title": "LogViewerView has no #Preview/PreviewProvider in the module",
+              "issue": "The file-scope View struct `LogViewerView<VM>` is not instantiated in any `#Preview` block or `PreviewProvider` anywhere in the module (searched the file and the rest of `Sources/` — only `ContextProgressBar.swift` has #Preview blocks, none of which target this view). Without a preview, visual changes cannot be validated during development.",
+              "impact": "No preview-driven feedback loop; layout regressions only surface at runtime.",
+              "rule_source": "SUI-6 Preview Coverage"
+            },
+            {
+              "id": "sui-007",
+              "severity": "SEVERE",
+              "metric": "SUI-8",
+              "line_start": 1241,
+              "line_end": 1241,
+              "title": "Hardcoded literal frame height on GeometryReader (.frame(height: 4))",
+              "issue": "`taskPanelView` constrains the GeometryReader-wrapped progress bar with `.frame(height: 4)` — a literal numeric height. Use proportional sizing (e.g., a `containerRelativeFrame` derived from settings, or a Capsule that sizes by Dynamic Type) so the bar adapts to typography and accessibility size changes.",
+              "impact": "Progress bar is locked at 4 pt regardless of accessibility size or device DPI.",
+              "rule_source": "SUI-8 Adaptive Sizing"
+            }
+          ]
+        },
+        {
+          "unit_name": "ExpandableSection",
+          "unit_kind": "struct",
+          "metrics": {
+            "body_complexity": { "max_nesting_depth": 1, "view_expression_count": 1 },
+            "view_purity": { "impure_count": 0, "has_data_fetch": false, "table": [] },
+            "modifier_chain": { "max_nested_chain": 0, "flagged_views": [] },
+            "vm_injection": { "has_vm": false, "injection_style": "n/a" },
+            "preview_containment": { "preview_only_types": [] },
+            "preview_coverage": {
+              "views_without_preview": [
+                { "name": "ExpandableSection", "file": "Sources/LogViewerView.swift" }
+              ]
+            },
+            "container_accessibility": { "flagged_containers": [] },
+            "adaptive_sizing": { "fixed_frame_count": 0, "flagged_frames": [] },
+            "actor_isolation": { "over_isolated_count": 0, "nonisolated_escape_count": 0, "flagged_types": [] }
+          },
+          "scoring": {
+            "body_severity": "COMPLIANT",
+            "purity_severity": "COMPLIANT",
+            "modifier_chain_severity": "COMPLIANT",
+            "vm_injection_severity": "COMPLIANT",
+            "preview_containment_severity": "COMPLIANT",
+            "preview_coverage_severity": "SEVERE",
+            "container_accessibility_severity": "COMPLIANT",
+            "adaptive_sizing_severity": "COMPLIANT",
+            "actor_isolation_severity": "COMPLIANT",
+            "final_severity": "SEVERE"
+          },
+          "findings": [
+            {
+              "id": "sui-008",
+              "severity": "SEVERE",
+              "metric": "SUI-6",
+              "line_start": 1287,
+              "line_end": 1310,
+              "title": "ExpandableSection has no #Preview instantiation anywhere",
+              "issue": "File-scope generic View struct `ExpandableSection<Content, Label>` is never instantiated in a `#Preview` block or `PreviewProvider` in this file or elsewhere in the module. Even a private generic helper benefits from a preview that exercises both expanded and collapsed states with sample content.",
+              "impact": "Disclosure animation, tint application, and label/content rendering cannot be visually validated without running the full app.",
+              "rule_source": "SUI-6 Preview Coverage"
+            }
+          ]
+        },
+        {
+          "unit_name": "ToolResultView",
+          "unit_kind": "struct",
+          "metrics": {
+            "body_complexity": { "max_nesting_depth": 1, "view_expression_count": 2 },
+            "view_purity": { "impure_count": 0, "has_data_fetch": false, "table": [
+              { "method": "resultLabel", "classification": "PURE_VIEW", "reason": "Returns some View; reads precomputed properties." },
+              { "method": "resultText", "classification": "PURE_VIEW", "reason": "Returns some View; conditional text from precomputed preview/full." }
+            ] },
+            "modifier_chain": { "max_nested_chain": 1, "flagged_views": [] },
+            "vm_injection": { "has_vm": false, "injection_style": "n/a" },
+            "preview_containment": { "preview_only_types": [] },
+            "preview_coverage": {
+              "views_without_preview": [
+                { "name": "ToolResultView", "file": "Sources/LogViewerView.swift" }
+              ]
+            },
+            "container_accessibility": { "flagged_containers": [] },
+            "adaptive_sizing": { "fixed_frame_count": 0, "flagged_frames": [] },
+            "actor_isolation": { "over_isolated_count": 0, "nonisolated_escape_count": 0, "flagged_types": [] }
+          },
+          "scoring": {
+            "body_severity": "COMPLIANT",
+            "purity_severity": "COMPLIANT",
+            "modifier_chain_severity": "COMPLIANT",
+            "vm_injection_severity": "COMPLIANT",
+            "preview_containment_severity": "COMPLIANT",
+            "preview_coverage_severity": "SEVERE",
+            "container_accessibility_severity": "COMPLIANT",
+            "adaptive_sizing_severity": "COMPLIANT",
+            "actor_isolation_severity": "COMPLIANT",
+            "final_severity": "SEVERE"
+          },
+          "findings": [
+            {
+              "id": "sui-009",
+              "severity": "SEVERE",
+              "metric": "SUI-6",
+              "line_start": 1312,
+              "line_end": 1361,
+              "title": "ToolResultView has no #Preview instantiation anywhere",
+              "issue": "File-scope View struct `ToolResultView` is never instantiated in a `#Preview` block or `PreviewProvider` in this file or anywhere else in the module. Both the truncated and expanded states (driven by line count > 20) need preview coverage to validate the collapse/expand behavior visually.",
+              "impact": "Truncation, label state, and result rendering cannot be visually validated outside a running session.",
+              "rule_source": "SUI-6 Preview Coverage"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

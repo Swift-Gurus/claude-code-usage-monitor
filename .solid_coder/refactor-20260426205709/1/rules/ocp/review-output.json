@@ -1,0 +1,524 @@
+{
+  "agent": "ocp",
+  "principle": "Open/Closed Principle",
+  "timestamp": "2026-04-27T01:08:00Z",
+  "documentation_sources": [
+    "references/principles/OCP/rule.md",
+    "references/principles/OCP/review/instructions.md",
+    "references/design_patterns/structural/adapter.md",
+    "references/design_patterns/creational/factory.md",
+    "references/design_patterns/creational/factory-method.md",
+    "references/design_patterns/creational/builder.md"
+  ],
+  "files": [
+    {
+      "file_path": "/Users/crowea/Developer/Swift-Gurus/claude-code-usage-monitor/Sources/LogViewerView.swift",
+      "units": [
+        {
+          "unit_name": "TaskListItem",
+          "unit_kind": "struct",
+          "metrics": {
+            "sealed_variation_points": {
+              "count": 0,
+              "dependency_table": [
+                {
+                  "dependency": "String",
+                  "type": "Swift standard library value type",
+                  "classification": "exception",
+                  "reason": "Pure data structure fields only; no business logic, dependencies, or side effects."
+                }
+              ],
+              "direct_classification": [],
+              "indirect_types": []
+            },
+            "testability": {
+              "direct_untestable_count": 0,
+              "direct_testable_count": 0,
+              "indirect_untestable_count": 0,
+              "indirect_testable_count": 0,
+              "direct_dependency_analyses": [],
+              "indirect_dependency_analyses": []
+            }
+          },
+          "scoring": {
+            "sealed_points_count": 0,
+            "sealed_points_severity": "COMPLIANT",
+            "direct_untestable_count": 0,
+            "direct_untestable_severity": "COMPLIANT",
+            "testable_direct_count": 0,
+            "indirect_untestable_count": 0,
+            "indirect_untestable_severity": "COMPLIANT",
+            "testable_indirect_count": 0,
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogViewerState",
+          "unit_kind": "protocol",
+          "metrics": {
+            "sealed_variation_points": {
+              "count": 0,
+              "dependency_table": [
+                {
+                  "dependency": "LogMessage, TaskListItem, LogToolCall, URL",
+                  "type": "protocol requirement types",
+                  "classification": "abstract",
+                  "reason": "This unit is an abstraction contract and declares no concrete implementation dependency."
+                }
+              ],
+              "direct_classification": [],
+              "indirect_types": []
+            },
+            "testability": {
+              "direct_untestable_count": 0,
+              "direct_testable_count": 0,
+              "indirect_untestable_count": 0,
+              "indirect_testable_count": 0,
+              "direct_dependency_analyses": [],
+              "indirect_dependency_analyses": []
+            }
+          },
+          "scoring": {
+            "sealed_points_count": 0,
+            "sealed_points_severity": "COMPLIANT",
+            "direct_untestable_count": 0,
+            "direct_untestable_severity": "COMPLIANT",
+            "testable_direct_count": 0,
+            "indirect_untestable_count": 0,
+            "indirect_untestable_severity": "COMPLIANT",
+            "testable_indirect_count": 0,
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogViewerActions",
+          "unit_kind": "protocol",
+          "metrics": {
+            "sealed_variation_points": {
+              "count": 0,
+              "dependency_table": [
+                {
+                  "dependency": "async action requirements",
+                  "type": "protocol methods",
+                  "classification": "abstract",
+                  "reason": "This unit is an abstraction contract and declares no concrete implementation dependency."
+                }
+              ],
+              "direct_classification": [],
+              "indirect_types": []
+            },
+            "testability": {
+              "direct_untestable_count": 0,
+              "direct_testable_count": 0,
+              "indirect_untestable_count": 0,
+              "indirect_testable_count": 0,
+              "direct_dependency_analyses": [],
+              "indirect_dependency_analyses": []
+            }
+          },
+          "scoring": {
+            "sealed_points_count": 0,
+            "sealed_points_severity": "COMPLIANT",
+            "direct_untestable_count": 0,
+            "direct_untestable_severity": "COMPLIANT",
+            "testable_direct_count": 0,
+            "indirect_untestable_count": 0,
+            "indirect_untestable_severity": "COMPLIANT",
+            "testable_indirect_count": 0,
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogMessageParsing",
+          "unit_kind": "protocol",
+          "metrics": {
+            "sealed_variation_points": {
+              "count": 0,
+              "dependency_table": [
+                {
+                  "dependency": "URL, LogMessage",
+                  "type": "protocol requirement types",
+                  "classification": "abstract",
+                  "reason": "This unit defines the parsing contract and has no hardcoded parser implementation."
+                }
+              ],
+              "direct_classification": [],
+              "indirect_types": []
+            },
+            "testability": {
+              "direct_untestable_count": 0,
+              "direct_testable_count": 0,
+              "indirect_untestable_count": 0,
+              "indirect_testable_count": 0,
+              "direct_dependency_analyses": [],
+              "indirect_dependency_analyses": []
+            }
+          },
+          "scoring": {
+            "sealed_points_count": 0,
+            "sealed_points_severity": "COMPLIANT",
+            "direct_untestable_count": 0,
+            "direct_untestable_severity": "COMPLIANT",
+            "testable_direct_count": 0,
+            "indirect_untestable_count": 0,
+            "indirect_untestable_severity": "COMPLIANT",
+            "testable_indirect_count": 0,
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogParserAdapter",
+          "unit_kind": "struct",
+          "metrics": {
+            "sealed_variation_points": {
+              "count": 0,
+              "dependency_table": [
+                {
+                  "dependency": "LogParser.parseMessages",
+                  "type": "static parser API",
+                  "classification": "exception",
+                  "reason": "Adapter unit conforms to LogMessageParsing and exists to wrap the static parser API behind an injectable protocol."
+                }
+              ],
+              "direct_classification": [],
+              "indirect_types": []
+            },
+            "testability": {
+              "direct_untestable_count": 0,
+              "direct_testable_count": 0,
+              "indirect_untestable_count": 0,
+              "indirect_testable_count": 0,
+              "direct_dependency_analyses": [],
+              "indirect_dependency_analyses": []
+            }
+          },
+          "scoring": {
+            "sealed_points_count": 0,
+            "sealed_points_severity": "COMPLIANT",
+            "direct_untestable_count": 0,
+            "direct_untestable_severity": "COMPLIANT",
+            "testable_direct_count": 0,
+            "indirect_untestable_count": 0,
+            "indirect_untestable_severity": "COMPLIANT",
+            "testable_indirect_count": 0,
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogViewerViewModel",
+          "unit_kind": "class",
+          "metrics": {
+            "sealed_variation_points": {
+              "count": 0,
+              "dependency_table": [
+                {
+                  "dependency": "AgentInfo",
+                  "type": "initializer parameter and stored property",
+                  "classification": "exception",
+                  "reason": "Input data model used as state; no behavior dependency is invoked on it in this unit."
+                },
+                {
+                  "dependency": "LogTarget",
+                  "type": "initializer parameter and stored property",
+                  "classification": "exception",
+                  "reason": "Input data model used to resolve a URL through an injected resolver."
+                },
+                {
+                  "dependency": "LogMessageParsing",
+                  "type": "protocol-typed initializer parameter",
+                  "classification": "abstract",
+                  "reason": "Parser behavior is injected behind a protocol."
+                },
+                {
+                  "dependency": "ModelResolving",
+                  "type": "protocol-typed initializer parameter",
+                  "classification": "abstract",
+                  "reason": "Model display-name resolution is injected behind a protocol."
+                },
+                {
+                  "dependency": "LogURLResolving",
+                  "type": "protocol-typed initializer parameter",
+                  "classification": "abstract",
+                  "reason": "Log URL resolution is injected behind a protocol."
+                },
+                {
+                  "dependency": "FileSystemProviding",
+                  "type": "protocol-typed initializer parameter",
+                  "classification": "abstract",
+                  "reason": "File-system attributes are read through an injected protocol."
+                },
+                {
+                  "dependency": "Task.detached, Date, Set, Dictionary",
+                  "type": "standard library and concurrency helpers",
+                  "classification": "exception",
+                  "reason": "Helpers and pure data structures with no owned business variation point."
+                }
+              ],
+              "direct_classification": [],
+              "indirect_types": []
+            },
+            "testability": {
+              "direct_untestable_count": 0,
+              "direct_testable_count": 0,
+              "indirect_untestable_count": 0,
+              "indirect_testable_count": 0,
+              "direct_dependency_analyses": [],
+              "indirect_dependency_analyses": []
+            }
+          },
+          "scoring": {
+            "sealed_points_count": 0,
+            "sealed_points_severity": "COMPLIANT",
+            "direct_untestable_count": 0,
+            "direct_untestable_severity": "COMPLIANT",
+            "testable_direct_count": 0,
+            "indirect_untestable_count": 0,
+            "indirect_untestable_severity": "COMPLIANT",
+            "testable_indirect_count": 0,
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "StatusDot",
+          "unit_kind": "struct",
+          "metrics": {
+            "sealed_variation_points": {
+              "count": 0,
+              "dependency_table": [
+                {
+                  "dependency": "SwiftUI View, Color, Circle",
+                  "type": "UI rendering types",
+                  "classification": "exception",
+                  "reason": "Pure SwiftUI UI element with no business logic dependencies."
+                }
+              ],
+              "direct_classification": [],
+              "indirect_types": []
+            },
+            "testability": {
+              "direct_untestable_count": 0,
+              "direct_testable_count": 0,
+              "indirect_untestable_count": 0,
+              "indirect_testable_count": 0,
+              "direct_dependency_analyses": [],
+              "indirect_dependency_analyses": []
+            }
+          },
+          "scoring": {
+            "sealed_points_count": 0,
+            "sealed_points_severity": "COMPLIANT",
+            "direct_untestable_count": 0,
+            "direct_untestable_severity": "COMPLIANT",
+            "testable_direct_count": 0,
+            "indirect_untestable_count": 0,
+            "indirect_untestable_severity": "COMPLIANT",
+            "testable_indirect_count": 0,
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogViewerView",
+          "unit_kind": "struct",
+          "metrics": {
+            "sealed_variation_points": {
+              "count": 0,
+              "dependency_table": [
+                {
+                  "dependency": "VM",
+                  "type": "generic parameter constrained to LogViewerState and LogViewerActions",
+                  "classification": "abstract",
+                  "reason": "ViewModel behavior is supplied through protocol constraints."
+                },
+                {
+                  "dependency": "AgentInfo, LogTarget, AppSettings",
+                  "type": "stored input values",
+                  "classification": "exception",
+                  "reason": "Data/configuration values used to render the view; no concrete behavior dependency is invoked directly."
+                },
+                {
+                  "dependency": "SessionManager",
+                  "type": "optional stored property",
+                  "classification": "direct",
+                  "reason": "Interactive session behavior is accessed through a concrete injected manager."
+                },
+                {
+                  "dependency": "TTYBridge",
+                  "type": "bridge returned by SessionManager",
+                  "classification": "indirect",
+                  "reason": "The bridge is obtained through the concrete session manager dependency."
+                },
+                {
+                  "dependency": "onOpenFile",
+                  "type": "closure property",
+                  "classification": "abstract",
+                  "reason": "File opening behavior is externally replaceable through an injected closure."
+                },
+                {
+                  "dependency": "SwiftUI view types and modifiers",
+                  "type": "UI rendering framework",
+                  "classification": "exception",
+                  "reason": "Pure UI rendering dependencies are exempt under the OCP pure view exception."
+                }
+              ],
+              "direct_classification": [
+                {
+                  "dependency": "SessionManager",
+                  "injection_type": "INJECTED"
+                }
+              ],
+              "indirect_types": [
+                {
+                  "dependency": "TTYBridge",
+                  "source": "SessionManager.bridge(for:)"
+                }
+              ]
+            },
+            "testability": {
+              "direct_untestable_count": 0,
+              "direct_testable_count": 1,
+              "indirect_untestable_count": 0,
+              "indirect_testable_count": 1,
+              "direct_dependency_analyses": [
+                {
+                  "dependency": "SessionManager",
+                  "testable": true,
+                  "sealed_point_count": 0,
+                  "dependency_table": [
+                    {
+                      "dependency": "Injected SessionManager instance",
+                      "type": "concrete collaborator",
+                      "classification": "direct",
+                      "reason": "Concrete dependency is injected into the view, so it is not a sealed non-injected variation point."
+                    }
+                  ],
+                  "direct_classification": [
+                    {
+                      "dependency": "SessionManager",
+                      "injection_type": "INJECTED"
+                    }
+                  ]
+                }
+              ],
+              "indirect_dependency_analyses": [
+                {
+                  "dependency": "TTYBridge",
+                  "testable": true,
+                  "reason": "Obtained indirectly from the injected session manager; the reviewed unit does not instantiate it internally."
+                }
+              ]
+            }
+          },
+          "scoring": {
+            "sealed_points_count": 0,
+            "sealed_points_severity": "COMPLIANT",
+            "direct_untestable_count": 0,
+            "direct_untestable_severity": "COMPLIANT",
+            "testable_direct_count": 1,
+            "indirect_untestable_count": 0,
+            "indirect_untestable_severity": "COMPLIANT",
+            "testable_indirect_count": 1,
+            "final_severity": "MINOR"
+          },
+          "findings": [
+            {
+              "id": "ocp-001",
+              "severity": "MINOR",
+              "metric": "OCP-2",
+              "line_start": 218,
+              "line_end": 231,
+              "title": "Concrete session dependency limits extension",
+              "issue": "LogViewerView accepts a concrete SessionManager and derives TTYBridge from it, so alternate session-control behavior must conform to that concrete type rather than a narrower abstraction.",
+              "impact": "The dependency is injected and therefore not sealed, but it leaves the view less open to alternate interactive-session implementations than the generic ViewModel boundary does.",
+              "rule_source": "OCP-2 Testability: 0 sealed points with 1-2 testable DIRECT INJECTED concrete dependencies is MINOR."
+            }
+          ]
+        },
+        {
+          "unit_name": "ExpandableSection",
+          "unit_kind": "struct",
+          "metrics": {
+            "sealed_variation_points": {
+              "count": 0,
+              "dependency_table": [
+                {
+                  "dependency": "Content, Label, SwiftUI DisclosureGroup",
+                  "type": "generic SwiftUI view composition",
+                  "classification": "exception",
+                  "reason": "Pure SwiftUI UI element with generic extension points and no business logic dependencies."
+                }
+              ],
+              "direct_classification": [],
+              "indirect_types": []
+            },
+            "testability": {
+              "direct_untestable_count": 0,
+              "direct_testable_count": 0,
+              "indirect_untestable_count": 0,
+              "indirect_testable_count": 0,
+              "direct_dependency_analyses": [],
+              "indirect_dependency_analyses": []
+            }
+          },
+          "scoring": {
+            "sealed_points_count": 0,
+            "sealed_points_severity": "COMPLIANT",
+            "direct_untestable_count": 0,
+            "direct_untestable_severity": "COMPLIANT",
+            "testable_direct_count": 0,
+            "indirect_untestable_count": 0,
+            "indirect_untestable_severity": "COMPLIANT",
+            "testable_indirect_count": 0,
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "ToolResultView",
+          "unit_kind": "struct",
+          "metrics": {
+            "sealed_variation_points": {
+              "count": 0,
+              "dependency_table": [
+                {
+                  "dependency": "String, Array, SwiftUI View",
+                  "type": "value data and UI rendering types",
+                  "classification": "exception",
+                  "reason": "Pure UI element that truncates and displays provided text; no business logic dependency is hardcoded."
+                }
+              ],
+              "direct_classification": [],
+              "indirect_types": []
+            },
+            "testability": {
+              "direct_untestable_count": 0,
+              "direct_testable_count": 0,
+              "indirect_untestable_count": 0,
+              "indirect_testable_count": 0,
+              "direct_dependency_analyses": [],
+              "indirect_dependency_analyses": []
+            }
+          },
+          "scoring": {
+            "sealed_points_count": 0,
+            "sealed_points_severity": "COMPLIANT",
+            "direct_untestable_count": 0,
+            "direct_untestable_severity": "COMPLIANT",
+            "testable_direct_count": 0,
+            "indirect_untestable_count": 0,
+            "indirect_untestable_severity": "COMPLIANT",
+            "testable_indirect_count": 0,
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        }
+      ]
+    }
+  ]
+}

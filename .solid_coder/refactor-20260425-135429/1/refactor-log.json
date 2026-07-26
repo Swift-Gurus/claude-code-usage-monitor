@@ -1,0 +1,62 @@
+{
+  "status": "has_severe",
+  "review_only": true,
+  "summary": [
+    {
+      "principle": "dry",
+      "severity": "SEVERE",
+      "findings": 7,
+      "severe": 7,
+      "minor": 0,
+      "path": "/Users/crowea/Developer/Swift-Gurus/claude-code-usage-monitor/.solid_coder/refactor-20260425-135429/1/rules/dry/review-output.json"
+    },
+    {
+      "principle": "isp",
+      "severity": "MINOR",
+      "findings": 1,
+      "severe": 0,
+      "minor": 1,
+      "path": "/Users/crowea/Developer/Swift-Gurus/claude-code-usage-monitor/.solid_coder/refactor-20260425-135429/1/rules/isp/review-output.json"
+    },
+    {
+      "principle": "lsp",
+      "severity": "COMPLIANT",
+      "findings": 0,
+      "severe": 0,
+      "minor": 0,
+      "path": "/Users/crowea/Developer/Swift-Gurus/claude-code-usage-monitor/.solid_coder/refactor-20260425-135429/1/rules/lsp/review-output.json"
+    },
+    {
+      "principle": "ocp",
+      "severity": "SEVERE",
+      "findings": 2,
+      "severe": 1,
+      "minor": 1,
+      "path": "/Users/crowea/Developer/Swift-Gurus/claude-code-usage-monitor/.solid_coder/refactor-20260425-135429/1/rules/ocp/review-output.json"
+    },
+    {
+      "principle": "srp",
+      "severity": "SEVERE",
+      "findings": 6,
+      "severe": 6,
+      "minor": 0,
+      "path": "/Users/crowea/Developer/Swift-Gurus/claude-code-usage-monitor/.solid_coder/refactor-20260425-135429/1/rules/srp/review-output.json"
+    },
+    {
+      "principle": "structured-concurrency",
+      "severity": "SEVERE",
+      "findings": 2,
+      "severe": 2,
+      "minor": 0,
+      "path": "/Users/crowea/Developer/Swift-Gurus/claude-code-usage-monitor/.solid_coder/refactor-20260425-135429/1/rules/structured-concurrency/review-output.json"
+    },
+    {
+      "principle": "swiftui",
+      "severity": "SEVERE",
+      "findings": 9,
+      "severe": 9,
+      "minor": 0,
+      "path": "/Users/crowea/Developer/Swift-Gurus/claude-code-usage-monitor/.solid_coder/refactor-20260425-135429/1/rules/swiftui/review-output.json"
+    }
+  ]
+}

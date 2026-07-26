@@ -1,0 +1,269 @@
+{
+  "agent": "dry",
+  "principle": "Don't Repeat Yourself",
+  "timestamp": "2026-04-27T11:36:41Z",
+  "documentation_sources": [
+    "references/principles/DRY/rule.md",
+    "references/principles/DRY/review/instructions.md"
+  ],
+  "files": [
+    {
+      "file_path": "/Users/crowea/Developer/Swift-Gurus/claude-code-usage-monitor/Sources/LogViewerView.swift",
+      "units": [
+        {
+          "unit_name": "TaskListItem",
+          "unit_kind": "struct",
+          "metrics": {
+            "reuse_misses": { "count": 0, "table": [] },
+            "inlined_duplications": { "count": 0, "table": [] },
+            "missing_abstractions": { "count": 0, "table": [] }
+          },
+          "scoring": {
+            "reuse_severity": "COMPLIANT",
+            "duplication_severity": "COMPLIANT",
+            "infrastructure_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogViewerState",
+          "unit_kind": "protocol",
+          "metrics": {
+            "reuse_misses": { "count": 0, "table": [] },
+            "inlined_duplications": { "count": 0, "table": [] },
+            "missing_abstractions": { "count": 0, "table": [] }
+          },
+          "scoring": {
+            "reuse_severity": "COMPLIANT",
+            "duplication_severity": "COMPLIANT",
+            "infrastructure_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogViewerActions",
+          "unit_kind": "protocol",
+          "metrics": {
+            "reuse_misses": { "count": 0, "table": [] },
+            "inlined_duplications": { "count": 0, "table": [] },
+            "missing_abstractions": { "count": 0, "table": [] }
+          },
+          "scoring": {
+            "reuse_severity": "COMPLIANT",
+            "duplication_severity": "COMPLIANT",
+            "infrastructure_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogMessageParsing",
+          "unit_kind": "protocol",
+          "metrics": {
+            "reuse_misses": { "count": 0, "table": [] },
+            "inlined_duplications": { "count": 0, "table": [] },
+            "missing_abstractions": { "count": 0, "table": [] }
+          },
+          "scoring": {
+            "reuse_severity": "COMPLIANT",
+            "duplication_severity": "COMPLIANT",
+            "infrastructure_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogParserAdapter",
+          "unit_kind": "struct",
+          "metrics": {
+            "reuse_misses": { "count": 0, "table": [] },
+            "inlined_duplications": { "count": 0, "table": [] },
+            "missing_abstractions": { "count": 0, "table": [] }
+          },
+          "scoring": {
+            "reuse_severity": "COMPLIANT",
+            "duplication_severity": "COMPLIANT",
+            "infrastructure_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogViewerViewModel",
+          "unit_kind": "class",
+          "metrics": {
+            "reuse_misses": { "count": 0, "table": [] },
+            "inlined_duplications": { "count": 0, "table": [] },
+            "missing_abstractions": { "count": 0, "table": [] }
+          },
+          "scoring": {
+            "reuse_severity": "COMPLIANT",
+            "duplication_severity": "COMPLIANT",
+            "infrastructure_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "StatusDot",
+          "unit_kind": "struct",
+          "metrics": {
+            "reuse_misses": { "count": 0, "table": [] },
+            "inlined_duplications": { "count": 0, "table": [] },
+            "missing_abstractions": { "count": 0, "table": [] }
+          },
+          "scoring": {
+            "reuse_severity": "COMPLIANT",
+            "duplication_severity": "COMPLIANT",
+            "infrastructure_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogViewerView",
+          "unit_kind": "struct",
+          "metrics": {
+            "reuse_misses": {
+              "count": 0,
+              "table": []
+            },
+            "inlined_duplications": {
+              "count": 4,
+              "table": [
+                {
+                  "method_a": "todoIcon(_:)",
+                  "location_a": "LogViewerView.swift:932",
+                  "method_b": "taskIcon(_:)",
+                  "location_b": "LogViewerView.swift:1267",
+                  "classification": "STRUCTURAL",
+                  "reasoning": "Both switch on a status String and return a system image name. Shared cases: 'completed' -> 'checkmark.circle.fill', 'in_progress' -> 'circle.dotted.circle', default -> 'circle'. taskIcon adds a 'deleted' case. Same algorithm, same type, one extra case — STRUCTURAL duplication."
+                },
+                {
+                  "method_a": "todoColor(_:)",
+                  "location_a": "LogViewerView.swift:940",
+                  "method_b": "taskColor(_:)",
+                  "location_b": "LogViewerView.swift:1276",
+                  "classification": "STRUCTURAL",
+                  "reasoning": "Both switch on a status String and return a Color. Shared cases: 'completed' -> .green, 'in_progress' -> .orange, default -> .secondary. taskColor adds a 'deleted' -> .red case. Same algorithm, same type, one extra case — STRUCTURAL duplication."
+                },
+                {
+                  "method_a": "mcpDetailView(_:resultContent:) — key-value format expression",
+                  "location_a": "LogViewerView.swift:785-788",
+                  "method_b": "toolExpandedContent(_:resultContent:) — .other branch key-value format expression",
+                  "location_b": "LogViewerView.swift:703",
+                  "classification": "IDENTICAL",
+                  "reasoning": "Both inline the identical expression: dict.sorted(by: { $0.key < $1.key }).map { \"\\($0.key): \\($0.value)\" }.joined(separator: \"\\n\") to format a [String: String] dictionary into a display string. The expression is copy-pasted verbatim."
+                },
+                {
+                  "method_a": "editDiffView(_:)",
+                  "location_a": "LogViewerView.swift:712-769",
+                  "method_b": "writeDiffView(_:)",
+                  "location_b": "LogViewerView.swift:873-911",
+                  "classification": "STRUCTURAL",
+                  "reasoning": "Both follow the same algorithm: (1) split content into lines, (2) check a line-count threshold, (3) if exceeded render a fallback layout using ToolResultView, (4) otherwise render an inline diff with per-line monospaced Text rows, a colored foreground, per-line background, and an outer container with textSelection + padding + background. The structural scaffolding — threshold guard, fallback branch, per-line ForEach rendering, container modifiers — is identical. The only differences are the number of content arrays (two for edit, one for write) and the prefix characters/colors per array."
+                }
+              ]
+            },
+            "missing_abstractions": {
+              "count": 1,
+              "table": [
+                {
+                  "type": "LogViewerView",
+                  "pattern": "TaskListItem status -> (icon: String, color: Color) mapping. The bidirectional status-string-to-presentation mapping (icon name + tint color) is implemented twice inside LogViewerView (todoIcon/todoColor for the todo checklist, taskIcon/taskColor for the task panel), and is not extracted into a shared, reusable abstraction.",
+                  "reuse_potential": "High. Any view that renders a TaskListItem row needs the same icon and color for the same status strings. SubagentDetailView or future task-related views would duplicate this mapping again without an extraction."
+                }
+              ]
+            }
+          },
+          "scoring": {
+            "reuse_severity": "COMPLIANT",
+            "duplication_severity": "SEVERE",
+            "infrastructure_severity": "SEVERE",
+            "final_severity": "SEVERE"
+          },
+          "findings": [
+            {
+              "id": "dry-001",
+              "severity": "SEVERE",
+              "metric": "DRY-2",
+              "line_start": 932,
+              "line_end": 946,
+              "title": "todoIcon/todoColor duplicated by taskIcon/taskColor",
+              "issue": "todoIcon(_:) (line 932) and taskIcon(_:) (line 1267) implement the same status-string-to-system-image algorithm. todoColor(_:) (line 940) and taskColor(_:) (line 1276) implement the same status-string-to-Color algorithm. Both pairs are STRUCTURAL duplications — same switch structure, same cases, same return values, with taskIcon/taskColor adding one extra 'deleted' case.",
+              "impact": "Any change to shared status presentation (e.g., renaming the icon for 'in_progress') must be applied in two places. The two implementations will inevitably diverge.",
+              "rule_source": "DRY-2: Inlined Duplication — same logical sequence in multiple locations"
+            },
+            {
+              "id": "dry-002",
+              "severity": "SEVERE",
+              "metric": "DRY-2",
+              "line_start": 785,
+              "line_end": 788,
+              "title": "Dictionary-to-display-string expression duplicated in mcpDetailView and toolExpandedContent",
+              "issue": "The expression `dict.sorted(by: { $0.key < $1.key }).map { \"\\($0.key): \\($0.value)\" }.joined(separator: \"\\n\")` appears verbatim at line 703 (toolExpandedContent .other branch) and again at lines 785-788 (mcpDetailView). This is an IDENTICAL duplication of a formatting expression on [String: String] input.",
+              "impact": "Any formatting change (e.g., separator, sort order, key-value delimiter) must be applied in both locations. The expression is not named, making its intent non-obvious at both call sites.",
+              "rule_source": "DRY-2: Inlined Duplication — identical logic in 2+ locations"
+            },
+            {
+              "id": "dry-003",
+              "severity": "SEVERE",
+              "metric": "DRY-2",
+              "line_start": 712,
+              "line_end": 911,
+              "title": "editDiffView and writeDiffView share the same diff-rendering algorithm",
+              "issue": "editDiffView(_:) (lines 712-769) and writeDiffView(_:) (lines 873-911) implement the same structural algorithm: threshold check -> fallback-to-ToolResultView branch -> inline per-line ForEach rendering with monospaced font, colored foreground, per-line background highlight, and outer container modifiers. This is a STRUCTURAL duplication — the same algorithm applied to slightly different data shapes.",
+              "impact": "Changes to the diff rendering presentation (container styling, font size, threshold value, fallback behavior) must be applied to both methods. The duplication will grow as more tool types with file-content rendering are added.",
+              "rule_source": "DRY-2: Inlined Duplication — same algorithm with different concrete types"
+            },
+            {
+              "id": "dry-004",
+              "severity": "SEVERE",
+              "metric": "DRY-3",
+              "line_start": 913,
+              "line_end": 946,
+              "title": "TaskListItem status-to-presentation mapping not extracted as a shared abstraction",
+              "issue": "The mapping from a TaskListItem status string to a system icon name and a Color is implemented twice inside LogViewerView: once for the todo checklist (todoIcon/todoColor, lines 932-946) and once for the task panel (taskIcon/taskColor, lines 1267-1283). This is a generic presentation pattern — mapping a domain status value to its visual representation — that is not domain-specific to either rendering context and should be extracted as a standalone reusable abstraction (e.g., a static method or extension on TaskListItem, or a TaskStatusPresentation value type).",
+              "impact": "Any view that renders TaskListItem rows must re-implement the same mapping. The two in-file implementations already diverge (taskIcon adds 'deleted'). Further divergence is likely as more status values are added.",
+              "rule_source": "DRY-3: Missing Abstraction — generic pattern not extracted for reuse"
+            }
+          ]
+        },
+        {
+          "unit_name": "ExpandableSection",
+          "unit_kind": "struct",
+          "metrics": {
+            "reuse_misses": { "count": 0, "table": [] },
+            "inlined_duplications": { "count": 0, "table": [] },
+            "missing_abstractions": { "count": 0, "table": [] }
+          },
+          "scoring": {
+            "reuse_severity": "COMPLIANT",
+            "duplication_severity": "COMPLIANT",
+            "infrastructure_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "ToolResultView",
+          "unit_kind": "struct",
+          "metrics": {
+            "reuse_misses": { "count": 0, "table": [] },
+            "inlined_duplications": { "count": 0, "table": [] },
+            "missing_abstractions": { "count": 0, "table": [] }
+          },
+          "scoring": {
+            "reuse_severity": "COMPLIANT",
+            "duplication_severity": "COMPLIANT",
+            "infrastructure_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        }
+      ]
+    }
+  ]
+}

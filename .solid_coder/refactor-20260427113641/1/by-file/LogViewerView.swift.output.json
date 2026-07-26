@@ -1,0 +1,230 @@
+{
+  "file_path": "/Users/crowea/Developer/Swift-Gurus/claude-code-usage-monitor/Sources/LogViewerView.swift",
+  "timestamp": "2026-04-27T11:36:41Z",
+  "principles": [
+    {
+      "agent": "dry",
+      "principle": "Don't Repeat Yourself",
+      "severity": "SEVERE",
+      "unit_name": "LogViewerView",
+      "unit_kind": "struct",
+      "findings": [
+        {
+          "id": "dry-001",
+          "severity": "SEVERE",
+          "metric": "DRY-2",
+          "line_start": 932,
+          "line_end": 946,
+          "title": "todoIcon/todoColor duplicated by taskIcon/taskColor",
+          "issue": "todoIcon(_:) (line 932) and taskIcon(_:) (line 1267) implement the same status-string-to-system-image algorithm. todoColor(_:) (line 940) and taskColor(_:) (line 1276) implement the same status-string-to-Color algorithm. Both pairs are STRUCTURAL duplications \u2014 same switch structure, same cases, same return values, with taskIcon/taskColor adding one extra 'deleted' case.",
+          "impact": "Any change to shared status presentation (e.g., renaming the icon for 'in_progress') must be applied in two places. The two implementations will inevitably diverge.",
+          "rule_source": "DRY-2: Inlined Duplication \u2014 same logical sequence in multiple locations"
+        },
+        {
+          "id": "dry-002",
+          "severity": "SEVERE",
+          "metric": "DRY-2",
+          "line_start": 785,
+          "line_end": 788,
+          "title": "Dictionary-to-display-string expression duplicated in mcpDetailView and toolExpandedContent",
+          "issue": "The expression `dict.sorted(by: { $0.key < $1.key }).map { \"\\($0.key): \\($0.value)\" }.joined(separator: \"\\n\")` appears verbatim at line 703 (toolExpandedContent .other branch) and again at lines 785-788 (mcpDetailView). This is an IDENTICAL duplication of a formatting expression on [String: String] input.",
+          "impact": "Any formatting change (e.g., separator, sort order, key-value delimiter) must be applied in both locations. The expression is not named, making its intent non-obvious at both call sites.",
+          "rule_source": "DRY-2: Inlined Duplication \u2014 identical logic in 2+ locations"
+        },
+        {
+          "id": "dry-003",
+          "severity": "SEVERE",
+          "metric": "DRY-2",
+          "line_start": 712,
+          "line_end": 911,
+          "title": "editDiffView and writeDiffView share the same diff-rendering algorithm",
+          "issue": "editDiffView(_:) (lines 712-769) and writeDiffView(_:) (lines 873-911) implement the same structural algorithm: threshold check -> fallback-to-ToolResultView branch -> inline per-line ForEach rendering with monospaced font, colored foreground, per-line background highlight, and outer container modifiers. This is a STRUCTURAL duplication \u2014 the same algorithm applied to slightly different data shapes.",
+          "impact": "Changes to the diff rendering presentation (container styling, font size, threshold value, fallback behavior) must be applied to both methods. The duplication will grow as more tool types with file-content rendering are added.",
+          "rule_source": "DRY-2: Inlined Duplication \u2014 same algorithm with different concrete types"
+        },
+        {
+          "id": "dry-004",
+          "severity": "SEVERE",
+          "metric": "DRY-3",
+          "line_start": 913,
+          "line_end": 946,
+          "title": "TaskListItem status-to-presentation mapping not extracted as a shared abstraction",
+          "issue": "The mapping from a TaskListItem status string to a system icon name and a Color is implemented twice inside LogViewerView: once for the todo checklist (todoIcon/todoColor, lines 932-946) and once for the task panel (taskIcon/taskColor, lines 1267-1283). This is a generic presentation pattern \u2014 mapping a domain status value to its visual representation \u2014 that is not domain-specific to either rendering context and should be extracted as a standalone reusable abstraction (e.g., a static method or extension on TaskListItem, or a TaskStatusPresentation value type).",
+          "impact": "Any view that renders TaskListItem rows must re-implement the same mapping. The two in-file implementations already diverge (taskIcon adds 'deleted'). Further divergence is likely as more status values are added.",
+          "rule_source": "DRY-3: Missing Abstraction \u2014 generic pattern not extracted for reuse"
+        }
+      ],
+      "suggestions": []
+    },
+    {
+      "agent": "isp",
+      "principle": "Interface Segregation Principle",
+      "severity": "MINOR",
+      "unit_name": "LogViewerState",
+      "unit_kind": "protocol",
+      "findings": [
+        {
+          "id": "isp-001",
+          "severity": "MINOR",
+          "metric": "ISP-1",
+          "line_start": 21,
+          "line_end": 30,
+          "title": "LogViewerState protocol width at upper boundary (8 requirements)",
+          "issue": "LogViewerState declares 8 requirements (7 properties + 1 method), placing it at the top of the MINOR band (6-8). With only one conformer (LogViewerViewModel) \u2014 which achieves 100% coverage \u2014 ISP-2 and ISP-3 cannot be fully verified per Exception 3. The protocol mixes at least two distinct conceptual groups: observable view data (messages, displayedMessages, isLoading, taskList, toolResultLookup, pendingPrompt) and navigation/formatting concerns (fileURL, roleLabel). If a second conformer ever needs only the data properties, it would be forced to also implement fileURL and roleLabel, producing low coverage. The width of 8 is also one step away from triggering the SEVERE threshold.",
+          "impact": "If additional conformers (e.g., test doubles or alternative view-model types) are introduced, the mixed concerns will force stub/empty implementations and create an ISP-2 violation. The current single-conformer situation masks this fragility.",
+          "rule_source": "ISP-1: Protocol width 6-8 with single conformer \u2192 MINOR; ISP Exception 3: single conformer noted"
+        }
+      ],
+      "suggestions": []
+    },
+    {
+      "agent": "ocp",
+      "principle": "Open/Closed Principle",
+      "severity": "SEVERE",
+      "unit_name": "LogParserAdapter",
+      "unit_kind": "struct",
+      "findings": [
+        {
+          "id": "ocp-001",
+          "severity": "SEVERE",
+          "metric": "OCP-1",
+          "line_start": 56,
+          "line_end": 60,
+          "title": "LogParserAdapter hardcodes a call to project-owned static enum LogParser",
+          "issue": "LogParserAdapter.parseMessages(at:) calls LogParser.parseMessages(at:) directly (line 58). LogParser is a project-owned enum with only static members. Adding a new parser implementation or swapping parsing behaviour requires modifying LogParserAdapter, not extending it. The Boundary Adapter exception does not apply because the rule requires 'API is not owned by dev', and LogParser is defined in Sources/LogMessage.swift.",
+          "impact": "Any change to how JSONL files are parsed \u2014 e.g., switching from LogParser to a streaming alternative \u2014 forces modification of LogParserAdapter itself. The adapter cannot be extended without edit.",
+          "rule_source": "references/principles/OCP/rule.md \u2014 OCP-1, Boundary Adapter Recognition Conditions"
+        }
+      ],
+      "suggestions": []
+    },
+    {
+      "agent": "ocp",
+      "principle": "Open/Closed Principle",
+      "severity": "SEVERE",
+      "unit_name": "LogViewerViewModel",
+      "unit_kind": "class",
+      "findings": [
+        {
+          "id": "ocp-002",
+          "severity": "SEVERE",
+          "metric": "OCP-2",
+          "line_start": 85,
+          "line_end": 99,
+          "title": "Default LogParserAdapter is untestable due to its sealed dependency on LogParser",
+          "issue": "LogViewerViewModel injects LogParserAdapter as its default parser (line 88). LogParserAdapter is a struct (cannot be subclassed) and contains a sealed NON-INJECTED call to LogParser.parseMessages(at:) (a project-owned static enum). As a result, tests that receive the default wiring cannot substitute the parsing behaviour without modifying source code.",
+          "impact": "LogViewerViewModel's loadMessages() cannot be tested in isolation with a controlled parser when using the default wiring. Any test must supply an alternate LogMessageParsing conformer via the designated initializer \u2014 which works \u2014 but the default path is permanently sealed to the concrete LogParser implementation.",
+          "rule_source": "references/principles/OCP/rule.md \u2014 OCP-2, Testability Score"
+        },
+        {
+          "id": "ocp-003",
+          "severity": "SEVERE",
+          "metric": "OCP-2",
+          "line_start": 85,
+          "line_end": 99,
+          "title": "Default LogURLResolver is untestable due to sealed internal instantiations",
+          "issue": "LogViewerViewModel injects LogURLResolver as its default URL resolver (line 91). LogURLResolver is a struct (cannot be subclassed) and internally instantiates CodexPaths, CodexRolloutStore, and calls SessionScanner.findSubagentDirs statically \u2014 none of which are injected. Tests receiving the default wiring cannot replace these collaborators.",
+          "impact": "LogViewerViewModel.fileURL and the Codex-path branch of resolveURL() cannot be tested with fakes. The resolver is permanently bound to real filesystem paths and Codex storage structures unless the caller explicitly provides a substitute LogURLResolving conformer.",
+          "rule_source": "references/principles/OCP/rule.md \u2014 OCP-2, Testability Score"
+        }
+      ],
+      "suggestions": []
+    },
+    {
+      "agent": "ocp",
+      "principle": "Open/Closed Principle",
+      "severity": "SEVERE",
+      "unit_name": "LogViewerView",
+      "unit_kind": "struct",
+      "findings": [
+        {
+          "id": "ocp-004",
+          "severity": "SEVERE",
+          "metric": "OCP-2",
+          "line_start": 217,
+          "line_end": 217,
+          "title": "AppSettings is an untestable final class dependency injected into LogViewerView",
+          "issue": "LogViewerView accepts AppSettings as a concrete final class (line 217). AppSettings.displayMode, .maxVisibleLogMessages, .expandThinking, and .expandTools are accessed throughout the view. AppSettings is final (cannot be subclassed) and internally references UserDefaults.standard as a NON-INJECTED singleton in every property's didSet. Swapping the settings source \u2014 e.g., in tests or previews \u2014 requires either providing a live AppSettings object backed by real UserDefaults or modifying the source.",
+          "impact": "LogViewerView cannot be previewed or tested with an in-memory or stub settings object. Any change to how display settings are stored (e.g., moving to a cloud-synced store) requires modifying AppSettings and all callers.",
+          "rule_source": "references/principles/OCP/rule.md \u2014 OCP-2, Testability Score"
+        },
+        {
+          "id": "ocp-005",
+          "severity": "SEVERE",
+          "metric": "OCP-2",
+          "line_start": 218,
+          "line_end": 218,
+          "title": "SessionManager is an untestable final class dependency injected into LogViewerView",
+          "issue": "LogViewerView accepts SessionManager as a concrete final class (line 218). SessionManager is final (cannot be subclassed) and instantiates TTYBridge directly inside spawn() without injection (line 19 of SessionManager.swift). The bridge creation strategy cannot be substituted without modifying SessionManager's source.",
+          "impact": "LogViewerView's PTY-interactive paths (canSendInput, bridge callbacks, permissionPrompt, askUserQuestionPrompt, planApprovalPrompt) cannot be exercised in tests or previews without a live PTY environment. Adding a different terminal backend requires modifying SessionManager.",
+          "rule_source": "references/principles/OCP/rule.md \u2014 OCP-2, Testability Score"
+        }
+      ],
+      "suggestions": []
+    },
+    {
+      "agent": "srp",
+      "principle": "Single Responsibility Principle",
+      "severity": "SEVERE",
+      "unit_name": "LogViewerViewModel",
+      "unit_kind": "class",
+      "findings": [
+        {
+          "id": "srp-001",
+          "severity": "SEVERE",
+          "metric": "SRP-2",
+          "line_start": 69,
+          "line_end": 192,
+          "title": "LogViewerViewModel has 4 disjoint cohesion groups",
+          "issue": "After applying the Bridge Method Rule (loadMessages is the bridge), four structurally disjoint groups remain: (A) model resolution via modelResolver/roleLabel, (B) file-loading state via lastMtime/parser/fileSystem/isLoading, (C) derived display state via displayedMessages/taskList/toolResultLookup/pendingPrompt in rebuildDerivedState, and (D) URL resolution via urlResolver/agent/target in fileURL. These groups share no instance variables with each other.",
+          "impact": "Four unrelated reasons to change exist in one class: display name formatting changes, file I/O strategy changes, task-list business rule changes, and URL resolution changes each require modifying this class independently.",
+          "rule_source": "references/principles/SRP/rule.md \u2014 SRP-2: 2+ cohesion groups \u2192 SEVERE"
+        },
+        {
+          "id": "srp-002",
+          "severity": "SEVERE",
+          "metric": "SRP-1",
+          "line_start": 69,
+          "line_end": 192,
+          "title": "LogViewerViewModel performs 9 distinct actions across 4 stakeholder domains",
+          "issue": "The class performs 9 distinct verbs: resolves (model display name), loads (file), parses (messages), caches (mtime), polls (on interval), filters (displayed messages), reconstructs (task list), builds (tool result lookup), detects (pending prompt). These span 4 stakeholder domains: UX display formatting, file I/O infrastructure, polling infrastructure, and business state derivation.",
+          "impact": "A UX designer, a backend engineer, and a product owner could all independently request changes to this class \u2014 a direct SRP violation. Testing any single concern requires instantiating all dependencies.",
+          "rule_source": "references/principles/SRP/rule.md \u2014 SRP-1: 3+ verbs + 2+ stakeholders \u2192 SEVERE"
+        }
+      ],
+      "suggestions": []
+    },
+    {
+      "agent": "srp",
+      "principle": "Single Responsibility Principle",
+      "severity": "SEVERE",
+      "unit_name": "LogViewerView",
+      "unit_kind": "struct",
+      "findings": [
+        {
+          "id": "srp-003",
+          "severity": "SEVERE",
+          "metric": "SRP-2",
+          "line_start": 214,
+          "line_end": 1284,
+          "title": "LogViewerView has 2 disjoint cohesion groups",
+          "issue": "Group A (TTY interaction): inputText, selectedOptionIdx, promptToolID \u2014 used exclusively by inputField, sendInput, permissionPrompt, askUserQuestionPrompt, planApprovalPrompt. Group B (display/rendering): agent, target, settings, stickyHeader, vm, showTaskPanel, sessionManager \u2014 used by all layout and rendering methods. The two groups share no variables except sessionManager (which is used in logHeader for the stop button and in Group A prompt methods for bridge access), but the concerns are structurally and functionally disjoint.",
+          "impact": "A change in PTY/session interaction behavior (e.g., different key-code protocol, new prompt type) forces modification of the same struct that owns all display rendering. The struct spans 1070 lines and mixes two independently changeable concerns.",
+          "rule_source": "references/principles/SRP/rule.md \u2014 SRP-2: 2+ cohesion groups \u2192 SEVERE"
+        },
+        {
+          "id": "srp-004",
+          "severity": "SEVERE",
+          "metric": "SRP-1",
+          "line_start": 214,
+          "line_end": 1284,
+          "title": "LogViewerView performs 9+ distinct actions across 3 stakeholder domains",
+          "issue": "The struct performs: resolves (bridge), evaluates (send eligibility), classifies (target type), formats (title/fonts), calculates (scroll height), renders (all message/tool/task UI), maps (role/tool/status to colors/icons), wires (task lifecycle), dispatches (prompt type), sends (TTY raw bytes). These span UX design (layout, colors), session interaction (PTY send, prompt handling), and tool-specific rendering (15+ tool type cases in toolExpandedContent at line 622).",
+          "impact": "A UX designer, a session protocol engineer, and a tool-feature developer can independently require changes to the same struct. The 15-case toolExpandedContent dispatch (lines 622\u2013708) grows with every new tool type, giving each tool team a reason to change this view.",
+          "rule_source": "references/principles/SRP/rule.md \u2014 SRP-1: 3+ verbs + 2+ stakeholders \u2192 SEVERE"
+        }
+      ],
+      "suggestions": []
+    }
+  ]
+}

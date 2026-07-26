@@ -1,0 +1,100 @@
+{
+  "source_type": "file",
+  "metadata": {
+    "branch": null,
+    "base_branch": null,
+    "timestamp": "2026-04-25T14:18:45.361292+00:00"
+  },
+  "files": [
+    {
+      "file_path": "Sources/LogViewerView.swift",
+      "changed_ranges": null,
+      "units": [
+        {
+          "name": "TaskListItem",
+          "kind": "struct",
+          "line_start": 9,
+          "line_end": 20,
+          "has_changes": true
+        },
+        {
+          "name": "LogViewerState",
+          "kind": "protocol",
+          "line_start": 21,
+          "line_end": 36,
+          "has_changes": true
+        },
+        {
+          "name": "LogViewerActions",
+          "kind": "protocol",
+          "line_start": 37,
+          "line_end": 46,
+          "has_changes": true
+        },
+        {
+          "name": "LogMessageParsing",
+          "kind": "protocol",
+          "line_start": 47,
+          "line_end": 55,
+          "has_changes": true
+        },
+        {
+          "name": "LogParserAdapter",
+          "kind": "struct",
+          "line_start": 56,
+          "line_end": 68,
+          "has_changes": true
+        },
+        {
+          "name": "LogViewerViewModel",
+          "kind": "class",
+          "line_start": 69,
+          "line_end": 198,
+          "has_changes": true
+        },
+        {
+          "name": "StatusDot",
+          "kind": "struct",
+          "line_start": 199,
+          "line_end": 213,
+          "has_changes": true
+        },
+        {
+          "name": "LogViewerView",
+          "kind": "struct",
+          "line_start": 214,
+          "line_end": 1286,
+          "has_changes": true
+        },
+        {
+          "name": "ExpandableSection",
+          "kind": "struct",
+          "line_start": 1287,
+          "line_end": 1311,
+          "has_changes": true
+        },
+        {
+          "name": "ToolResultView",
+          "kind": "struct",
+          "line_start": 1312,
+          "line_end": 1361,
+          "has_changes": true
+        }
+      ]
+    }
+  ],
+  "buffer": null,
+  "detected_imports": [
+    "AppKit",
+    "SwiftUI"
+  ],
+  "matched_tags": [
+    "structured-concurrency",
+    "swiftui"
+  ],
+  "summary": {
+    "total_files": 1,
+    "total_units": 10,
+    "changed_units": 10
+  }
+}

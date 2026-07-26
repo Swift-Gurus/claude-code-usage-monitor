@@ -1,0 +1,469 @@
+{
+  "agent": "swiftui",
+  "principle": "SwiftUI Best Practices",
+  "timestamp": "2026-04-27T01:01:33Z",
+  "documentation_sources": [
+    "/Users/crowea/.codex/plugins/cache/solid-coder-local/solid-coder/1.3.0/references/coding/apple/SwiftUI/rule.md",
+    "/Users/crowea/.codex/plugins/cache/solid-coder-local/solid-coder/1.3.0/references/coding/apple/SwiftUI/review/instructions.md",
+    "/Users/crowea/.codex/plugins/cache/solid-coder-local/solid-coder/1.3.0/references/coding/apple/SwiftUI/review/output.schema.json"
+  ],
+  "files": [
+    {
+      "file_path": "/Users/crowea/Developer/Swift-Gurus/claude-code-usage-monitor/Sources/LogViewerView.swift",
+      "units": [
+        {
+          "unit_name": "TaskListItem",
+          "unit_kind": "struct",
+          "metrics": {
+            "body_complexity": { "max_nesting_depth": 0, "view_expression_count": 0 },
+            "view_purity": { "impure_count": 0, "has_data_fetch": false, "table": [] },
+            "modifier_chain": { "max_nested_chain": 0, "flagged_views": [] },
+            "vm_injection": { "has_vm": false, "injection_style": "n/a" },
+            "preview_containment": { "preview_only_types": [] },
+            "preview_coverage": { "views_without_preview": [] },
+            "container_accessibility": { "flagged_containers": [] },
+            "adaptive_sizing": { "fixed_frame_count": 0, "flagged_frames": [] },
+            "actor_isolation": { "over_isolated_count": 0, "nonisolated_escape_count": 0, "flagged_types": [] }
+          },
+          "scoring": {
+            "body_severity": "COMPLIANT",
+            "purity_severity": "COMPLIANT",
+            "modifier_chain_severity": "COMPLIANT",
+            "vm_injection_severity": "COMPLIANT",
+            "preview_containment_severity": "COMPLIANT",
+            "preview_coverage_severity": "COMPLIANT",
+            "container_accessibility_severity": "COMPLIANT",
+            "adaptive_sizing_severity": "COMPLIANT",
+            "actor_isolation_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogViewerState",
+          "unit_kind": "protocol",
+          "metrics": {
+            "body_complexity": { "max_nesting_depth": 0, "view_expression_count": 0 },
+            "view_purity": { "impure_count": 0, "has_data_fetch": false, "table": [] },
+            "modifier_chain": { "max_nested_chain": 0, "flagged_views": [] },
+            "vm_injection": { "has_vm": false, "injection_style": "n/a" },
+            "preview_containment": { "preview_only_types": [] },
+            "preview_coverage": { "views_without_preview": [] },
+            "container_accessibility": { "flagged_containers": [] },
+            "adaptive_sizing": { "fixed_frame_count": 0, "flagged_frames": [] },
+            "actor_isolation": { "over_isolated_count": 0, "nonisolated_escape_count": 0, "flagged_types": [] }
+          },
+          "scoring": {
+            "body_severity": "COMPLIANT",
+            "purity_severity": "COMPLIANT",
+            "modifier_chain_severity": "COMPLIANT",
+            "vm_injection_severity": "COMPLIANT",
+            "preview_containment_severity": "COMPLIANT",
+            "preview_coverage_severity": "COMPLIANT",
+            "container_accessibility_severity": "COMPLIANT",
+            "adaptive_sizing_severity": "COMPLIANT",
+            "actor_isolation_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogViewerActions",
+          "unit_kind": "protocol",
+          "metrics": {
+            "body_complexity": { "max_nesting_depth": 0, "view_expression_count": 0 },
+            "view_purity": { "impure_count": 0, "has_data_fetch": false, "table": [] },
+            "modifier_chain": { "max_nested_chain": 0, "flagged_views": [] },
+            "vm_injection": { "has_vm": false, "injection_style": "n/a" },
+            "preview_containment": { "preview_only_types": [] },
+            "preview_coverage": { "views_without_preview": [] },
+            "container_accessibility": { "flagged_containers": [] },
+            "adaptive_sizing": { "fixed_frame_count": 0, "flagged_frames": [] },
+            "actor_isolation": { "over_isolated_count": 0, "nonisolated_escape_count": 0, "flagged_types": [] }
+          },
+          "scoring": {
+            "body_severity": "COMPLIANT",
+            "purity_severity": "COMPLIANT",
+            "modifier_chain_severity": "COMPLIANT",
+            "vm_injection_severity": "COMPLIANT",
+            "preview_containment_severity": "COMPLIANT",
+            "preview_coverage_severity": "COMPLIANT",
+            "container_accessibility_severity": "COMPLIANT",
+            "adaptive_sizing_severity": "COMPLIANT",
+            "actor_isolation_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogMessageParsing",
+          "unit_kind": "protocol",
+          "metrics": {
+            "body_complexity": { "max_nesting_depth": 0, "view_expression_count": 0 },
+            "view_purity": { "impure_count": 0, "has_data_fetch": false, "table": [] },
+            "modifier_chain": { "max_nested_chain": 0, "flagged_views": [] },
+            "vm_injection": { "has_vm": false, "injection_style": "n/a" },
+            "preview_containment": { "preview_only_types": [] },
+            "preview_coverage": { "views_without_preview": [] },
+            "container_accessibility": { "flagged_containers": [] },
+            "adaptive_sizing": { "fixed_frame_count": 0, "flagged_frames": [] },
+            "actor_isolation": { "over_isolated_count": 0, "nonisolated_escape_count": 0, "flagged_types": [] }
+          },
+          "scoring": {
+            "body_severity": "COMPLIANT",
+            "purity_severity": "COMPLIANT",
+            "modifier_chain_severity": "COMPLIANT",
+            "vm_injection_severity": "COMPLIANT",
+            "preview_containment_severity": "COMPLIANT",
+            "preview_coverage_severity": "COMPLIANT",
+            "container_accessibility_severity": "COMPLIANT",
+            "adaptive_sizing_severity": "COMPLIANT",
+            "actor_isolation_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogParserAdapter",
+          "unit_kind": "struct",
+          "metrics": {
+            "body_complexity": { "max_nesting_depth": 0, "view_expression_count": 0 },
+            "view_purity": { "impure_count": 0, "has_data_fetch": false, "table": [] },
+            "modifier_chain": { "max_nested_chain": 0, "flagged_views": [] },
+            "vm_injection": { "has_vm": false, "injection_style": "n/a" },
+            "preview_containment": { "preview_only_types": [] },
+            "preview_coverage": { "views_without_preview": [] },
+            "container_accessibility": { "flagged_containers": [] },
+            "adaptive_sizing": { "fixed_frame_count": 0, "flagged_frames": [] },
+            "actor_isolation": { "over_isolated_count": 0, "nonisolated_escape_count": 0, "flagged_types": [] }
+          },
+          "scoring": {
+            "body_severity": "COMPLIANT",
+            "purity_severity": "COMPLIANT",
+            "modifier_chain_severity": "COMPLIANT",
+            "vm_injection_severity": "COMPLIANT",
+            "preview_containment_severity": "COMPLIANT",
+            "preview_coverage_severity": "COMPLIANT",
+            "container_accessibility_severity": "COMPLIANT",
+            "adaptive_sizing_severity": "COMPLIANT",
+            "actor_isolation_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogViewerViewModel",
+          "unit_kind": "class",
+          "metrics": {
+            "body_complexity": { "max_nesting_depth": 0, "view_expression_count": 0 },
+            "view_purity": { "impure_count": 0, "has_data_fetch": false, "table": [] },
+            "modifier_chain": { "max_nested_chain": 0, "flagged_views": [] },
+            "vm_injection": { "has_vm": false, "injection_style": "n/a" },
+            "preview_containment": { "preview_only_types": [] },
+            "preview_coverage": { "views_without_preview": [] },
+            "container_accessibility": { "flagged_containers": [] },
+            "adaptive_sizing": { "fixed_frame_count": 0, "flagged_frames": [] },
+            "actor_isolation": { "over_isolated_count": 0, "nonisolated_escape_count": 0, "flagged_types": [] }
+          },
+          "scoring": {
+            "body_severity": "COMPLIANT",
+            "purity_severity": "COMPLIANT",
+            "modifier_chain_severity": "COMPLIANT",
+            "vm_injection_severity": "COMPLIANT",
+            "preview_containment_severity": "COMPLIANT",
+            "preview_coverage_severity": "COMPLIANT",
+            "container_accessibility_severity": "COMPLIANT",
+            "adaptive_sizing_severity": "COMPLIANT",
+            "actor_isolation_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "StatusDot",
+          "unit_kind": "struct",
+          "metrics": {
+            "body_complexity": { "max_nesting_depth": 0, "view_expression_count": 1 },
+            "view_purity": { "impure_count": 0, "has_data_fetch": false, "table": [] },
+            "modifier_chain": { "max_nested_chain": 0, "flagged_views": [] },
+            "vm_injection": { "has_vm": false, "injection_style": "n/a" },
+            "preview_containment": { "preview_only_types": [] },
+            "preview_coverage": {
+              "views_without_preview": [
+                { "name": "StatusDot", "file": "/Users/crowea/Developer/Swift-Gurus/claude-code-usage-monitor/Sources/LogViewerView.swift" }
+              ]
+            },
+            "container_accessibility": { "flagged_containers": [] },
+            "adaptive_sizing": {
+              "fixed_frame_count": 1,
+              "flagged_frames": [
+                { "view_expression": "Circle()", "location": "body line 204", "fixed_dimension": "width and height" }
+              ]
+            },
+            "actor_isolation": { "over_isolated_count": 0, "nonisolated_escape_count": 0, "flagged_types": [] }
+          },
+          "scoring": {
+            "body_severity": "COMPLIANT",
+            "purity_severity": "COMPLIANT",
+            "modifier_chain_severity": "COMPLIANT",
+            "vm_injection_severity": "COMPLIANT",
+            "preview_containment_severity": "COMPLIANT",
+            "preview_coverage_severity": "SEVERE",
+            "container_accessibility_severity": "COMPLIANT",
+            "adaptive_sizing_severity": "SEVERE",
+            "actor_isolation_severity": "COMPLIANT",
+            "final_severity": "SEVERE"
+          },
+          "findings": [
+            {
+              "id": "sui-001",
+              "severity": "SEVERE",
+              "metric": "SUI-6",
+              "line_start": 199,
+              "line_end": 199,
+              "title": "View has no preview instantiation",
+              "issue": "StatusDot is a file-scope View struct, but no #Preview or PreviewProvider instantiates it anywhere in the module.",
+              "impact": "The component cannot be visually validated in Xcode previews.",
+              "rule_source": "SwiftUI SUI-6 Preview Coverage"
+            },
+            {
+              "id": "sui-002",
+              "severity": "SEVERE",
+              "metric": "SUI-8",
+              "line_start": 204,
+              "line_end": 204,
+              "title": "Literal fixed frame",
+              "issue": "StatusDot hardcodes both width and height with .frame(width: 6, height: 6).",
+              "impact": "Literal fixed dimensions bypass adaptive SwiftUI layout.",
+              "rule_source": "SwiftUI SUI-8 Adaptive Sizing"
+            }
+          ]
+        },
+        {
+          "unit_name": "LogViewerView",
+          "unit_kind": "struct",
+          "metrics": {
+            "body_complexity": { "max_nesting_depth": 6, "view_expression_count": 24 },
+            "view_purity": {
+              "impure_count": 2,
+              "has_data_fetch": false,
+              "table": [
+                { "method": "logHeader", "classification": "PURE_VIEW", "reason": "View-returning composition property." },
+                { "method": "logContent", "classification": "PURE_VIEW", "reason": "View-returning composition property." },
+                { "method": "messageBubble(_:)", "classification": "PURE_VIEW", "reason": "View-returning composition method." },
+                { "method": "sendInput()", "classification": "VALIDATE", "reason": "Trims and validates user input before sending through the bridge." },
+                { "method": "taskPanelView", "classification": "TRANSFORM", "reason": "Filters task state to compute the completed task count in the view." }
+              ]
+            },
+            "modifier_chain": {
+              "max_nested_chain": 7,
+              "flagged_views": [
+                { "view_expression": "Text(thinking)", "location": "messageBubble(_:), lines 461-467", "modifier_count": 6 },
+                { "view_expression": "Text(\"- \\(line)\")", "location": "editDiffView(_:), lines 743-749", "modifier_count": 6 },
+                { "view_expression": "Text(\"+ \\(line)\")", "location": "writeDiffView(_:), lines 897-903", "modifier_count": 6 },
+                { "view_expression": "Text(option.description)", "location": "askUserQuestionPrompt(_:toolID:), lines 1063-1066", "modifier_count": 3 }
+              ]
+            },
+            "vm_injection": { "has_vm": true, "injection_style": "protocol", "vm_property": "vm", "vm_type": "VM: LogViewerState & LogViewerActions" },
+            "preview_containment": { "preview_only_types": [] },
+            "preview_coverage": {
+              "views_without_preview": [
+                { "name": "LogViewerView", "file": "/Users/crowea/Developer/Swift-Gurus/claude-code-usage-monitor/Sources/LogViewerView.swift" }
+              ]
+            },
+            "container_accessibility": { "flagged_containers": [] },
+            "adaptive_sizing": {
+              "fixed_frame_count": 1,
+              "flagged_frames": [
+                { "view_expression": "GeometryReader progress bar", "location": "taskPanelView line 1243", "fixed_dimension": "height" }
+              ]
+            },
+            "actor_isolation": { "over_isolated_count": 0, "nonisolated_escape_count": 0, "flagged_types": [] }
+          },
+          "scoring": {
+            "body_severity": "SEVERE",
+            "purity_severity": "SEVERE",
+            "modifier_chain_severity": "SEVERE",
+            "vm_injection_severity": "COMPLIANT",
+            "preview_containment_severity": "COMPLIANT",
+            "preview_coverage_severity": "SEVERE",
+            "container_accessibility_severity": "COMPLIANT",
+            "adaptive_sizing_severity": "SEVERE",
+            "actor_isolation_severity": "COMPLIANT",
+            "final_severity": "SEVERE"
+          },
+          "findings": [
+            {
+              "id": "sui-003",
+              "severity": "SEVERE",
+              "metric": "SUI-1",
+              "line_start": 345,
+              "line_end": 430,
+              "title": "View-returning property exceeds complexity thresholds",
+              "issue": "logContent contains nested conditional view builders and many child expressions; measured max nesting is 6 and expression count is 24, exceeding SUI-1 thresholds.",
+              "impact": "The view hierarchy is difficult to scan and should be decomposed into smaller SwiftUI views.",
+              "rule_source": "SwiftUI SUI-1 Body Complexity"
+            },
+            {
+              "id": "sui-004",
+              "severity": "SEVERE",
+              "metric": "SUI-2",
+              "line_start": 1214,
+              "line_end": 1216,
+              "title": "View performs state transformation",
+              "issue": "taskPanelView filters vm.taskList to compute the completed count inside the SwiftUI view.",
+              "impact": "Business or derived state computation in the view makes the view less purely a function of already-prepared state.",
+              "rule_source": "SwiftUI SUI-2 View Purity"
+            },
+            {
+              "id": "sui-005",
+              "severity": "SEVERE",
+              "metric": "SUI-3",
+              "line_start": 461,
+              "line_end": 467,
+              "title": "Nested child view has a long modifier chain",
+              "issue": "The nested Text(thinking) child chains six modifiers inside the ExpandableSection content closure.",
+              "impact": "Long nested modifier chains make view-builder closures harder to read and should be extracted.",
+              "rule_source": "SwiftUI SUI-3 Modifier Chain Length"
+            },
+            {
+              "id": "sui-006",
+              "severity": "SEVERE",
+              "metric": "SUI-6",
+              "line_start": 214,
+              "line_end": 214,
+              "title": "View has no preview instantiation",
+              "issue": "LogViewerView is a file-scope View struct, but no #Preview or PreviewProvider instantiates it anywhere in the module.",
+              "impact": "The full log viewer cannot be visually validated in Xcode previews.",
+              "rule_source": "SwiftUI SUI-6 Preview Coverage"
+            },
+            {
+              "id": "sui-007",
+              "severity": "SEVERE",
+              "metric": "SUI-8",
+              "line_start": 1243,
+              "line_end": 1243,
+              "title": "Literal fixed frame",
+              "issue": "taskPanelView applies .frame(height: 4) with a literal numeric height to the progress bar GeometryReader.",
+              "impact": "Literal fixed dimensions bypass adaptive SwiftUI layout.",
+              "rule_source": "SwiftUI SUI-8 Adaptive Sizing"
+            }
+          ]
+        },
+        {
+          "unit_name": "ExpandableSection",
+          "unit_kind": "struct",
+          "metrics": {
+            "body_complexity": { "max_nesting_depth": 1, "view_expression_count": 3 },
+            "view_purity": { "impure_count": 0, "has_data_fetch": false, "table": [] },
+            "modifier_chain": { "max_nested_chain": 0, "flagged_views": [] },
+            "vm_injection": { "has_vm": false, "injection_style": "n/a" },
+            "preview_containment": { "preview_only_types": [] },
+            "preview_coverage": {
+              "views_without_preview": [
+                { "name": "ExpandableSection", "file": "/Users/crowea/Developer/Swift-Gurus/claude-code-usage-monitor/Sources/LogViewerView.swift" }
+              ]
+            },
+            "container_accessibility": { "flagged_containers": [] },
+            "adaptive_sizing": { "fixed_frame_count": 0, "flagged_frames": [] },
+            "actor_isolation": { "over_isolated_count": 0, "nonisolated_escape_count": 0, "flagged_types": [] }
+          },
+          "scoring": {
+            "body_severity": "COMPLIANT",
+            "purity_severity": "COMPLIANT",
+            "modifier_chain_severity": "COMPLIANT",
+            "vm_injection_severity": "COMPLIANT",
+            "preview_containment_severity": "COMPLIANT",
+            "preview_coverage_severity": "SEVERE",
+            "container_accessibility_severity": "COMPLIANT",
+            "adaptive_sizing_severity": "COMPLIANT",
+            "actor_isolation_severity": "COMPLIANT",
+            "final_severity": "SEVERE"
+          },
+          "findings": [
+            {
+              "id": "sui-008",
+              "severity": "SEVERE",
+              "metric": "SUI-6",
+              "line_start": 1289,
+              "line_end": 1289,
+              "title": "View has no preview instantiation",
+              "issue": "ExpandableSection is a file-scope View struct, but no #Preview or PreviewProvider instantiates it anywhere in the module.",
+              "impact": "The reusable disclosure component cannot be visually validated in Xcode previews.",
+              "rule_source": "SwiftUI SUI-6 Preview Coverage"
+            }
+          ]
+        },
+        {
+          "unit_name": "ToolResultView",
+          "unit_kind": "struct",
+          "metrics": {
+            "body_complexity": { "max_nesting_depth": 1, "view_expression_count": 4 },
+            "view_purity": {
+              "impure_count": 1,
+              "has_data_fetch": false,
+              "table": [
+                { "method": "resultLabel", "classification": "PURE_VIEW", "reason": "View-returning composition property." },
+                { "method": "resultText", "classification": "PURE_VIEW", "reason": "View-returning composition property." },
+                { "method": "init(content:)", "classification": "TRANSFORM", "reason": "Splits and truncates content into preview lines inside the view." }
+              ]
+            },
+            "modifier_chain": {
+              "max_nested_chain": 3,
+              "flagged_views": [
+                { "view_expression": "Text(\"Result\")", "location": "resultLabel lines 1340-1342", "modifier_count": 2 },
+                { "view_expression": "Text(showFull ? \"collapse\" : \"\\(lines.count) lines\")", "location": "resultLabel lines 1345-1347", "modifier_count": 2 }
+              ]
+            },
+            "vm_injection": { "has_vm": false, "injection_style": "n/a" },
+            "preview_containment": { "preview_only_types": [] },
+            "preview_coverage": {
+              "views_without_preview": [
+                { "name": "ToolResultView", "file": "/Users/crowea/Developer/Swift-Gurus/claude-code-usage-monitor/Sources/LogViewerView.swift" }
+              ]
+            },
+            "container_accessibility": { "flagged_containers": [] },
+            "adaptive_sizing": { "fixed_frame_count": 0, "flagged_frames": [] },
+            "actor_isolation": { "over_isolated_count": 0, "nonisolated_escape_count": 0, "flagged_types": [] }
+          },
+          "scoring": {
+            "body_severity": "COMPLIANT",
+            "purity_severity": "SEVERE",
+            "modifier_chain_severity": "SEVERE",
+            "vm_injection_severity": "COMPLIANT",
+            "preview_containment_severity": "COMPLIANT",
+            "preview_coverage_severity": "SEVERE",
+            "container_accessibility_severity": "COMPLIANT",
+            "adaptive_sizing_severity": "COMPLIANT",
+            "actor_isolation_severity": "COMPLIANT",
+            "final_severity": "SEVERE"
+          },
+          "findings": [
+            {
+              "id": "sui-009",
+              "severity": "SEVERE",
+              "metric": "SUI-2",
+              "line_start": 1323,
+              "line_end": 1328,
+              "title": "View transforms content into derived display state",
+              "issue": "ToolResultView splits content into lines and computes a truncated preview in init(content:).",
+              "impact": "Transformation logic in the view weakens view purity and makes the component responsible for preparing data.",
+              "rule_source": "SwiftUI SUI-2 View Purity"
+            },
+            {
+              "id": "sui-010",
+              "severity": "SEVERE",
+              "metric": "SUI-6",
+              "line_start": 1314,
+              "line_end": 1314,
+              "title": "View has no preview instantiation",
+              "issue": "ToolResultView is a file-scope View struct, but no #Preview or PreviewProvider instantiates it anywhere in the module.",
+              "impact": "The tool-result renderer cannot be visually validated in Xcode previews.",
+              "rule_source": "SwiftUI SUI-6 Preview Coverage"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

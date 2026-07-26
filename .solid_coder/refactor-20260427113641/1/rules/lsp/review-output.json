@@ -1,0 +1,396 @@
+{
+  "agent": "lsp",
+  "principle": "Liskov Substitution Principle",
+  "timestamp": "2026-04-27T11:36:41Z",
+  "documentation_sources": [
+    "references/principles/LSP/rule.md",
+    "references/principles/LSP/review/instructions.md"
+  ],
+  "files": [
+    {
+      "file_path": "/Users/crowea/Developer/Swift-Gurus/claude-code-usage-monitor/Sources/LogViewerView.swift",
+      "units": [
+        {
+          "unit_name": "TaskListItem",
+          "unit_kind": "struct",
+          "metrics": {
+            "type_checking": {
+              "total_count": 0,
+              "excepted_count": 0,
+              "net_count": 0,
+              "instances": []
+            },
+            "contract_compliance": {
+              "has_inheritance": false,
+              "total_violations": 0
+            },
+            "empty_methods": {
+              "interface_name": "none",
+              "total_interface_members": 0,
+              "empty_count": 0,
+              "fatal_error_count": 0,
+              "is_noop_exception": false,
+              "empty_percentage": 0.0,
+              "instances": []
+            }
+          },
+          "scoring": {
+            "net_type_checks": 0,
+            "type_check_severity": "COMPLIANT",
+            "has_inheritance": false,
+            "contract_violations": 0,
+            "contract_severity": "COMPLIANT",
+            "empty_percentage": 0.0,
+            "fatal_error_count": 0,
+            "empty_method_severity": "COMPLIANT",
+            "noop_exception_applied": false,
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogViewerState",
+          "unit_kind": "protocol",
+          "metrics": {
+            "type_checking": {
+              "total_count": 0,
+              "excepted_count": 0,
+              "net_count": 0,
+              "instances": []
+            },
+            "contract_compliance": {
+              "has_inheritance": false,
+              "total_violations": 0
+            },
+            "empty_methods": {
+              "interface_name": "none",
+              "total_interface_members": 0,
+              "empty_count": 0,
+              "fatal_error_count": 0,
+              "is_noop_exception": false,
+              "empty_percentage": 0.0,
+              "instances": []
+            }
+          },
+          "scoring": {
+            "net_type_checks": 0,
+            "type_check_severity": "COMPLIANT",
+            "has_inheritance": false,
+            "contract_violations": 0,
+            "contract_severity": "COMPLIANT",
+            "empty_percentage": 0.0,
+            "fatal_error_count": 0,
+            "empty_method_severity": "COMPLIANT",
+            "noop_exception_applied": false,
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogViewerActions",
+          "unit_kind": "protocol",
+          "metrics": {
+            "type_checking": {
+              "total_count": 0,
+              "excepted_count": 0,
+              "net_count": 0,
+              "instances": []
+            },
+            "contract_compliance": {
+              "has_inheritance": false,
+              "total_violations": 0
+            },
+            "empty_methods": {
+              "interface_name": "none",
+              "total_interface_members": 0,
+              "empty_count": 0,
+              "fatal_error_count": 0,
+              "is_noop_exception": false,
+              "empty_percentage": 0.0,
+              "instances": []
+            }
+          },
+          "scoring": {
+            "net_type_checks": 0,
+            "type_check_severity": "COMPLIANT",
+            "has_inheritance": false,
+            "contract_violations": 0,
+            "contract_severity": "COMPLIANT",
+            "empty_percentage": 0.0,
+            "fatal_error_count": 0,
+            "empty_method_severity": "COMPLIANT",
+            "noop_exception_applied": false,
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogMessageParsing",
+          "unit_kind": "protocol",
+          "metrics": {
+            "type_checking": {
+              "total_count": 0,
+              "excepted_count": 0,
+              "net_count": 0,
+              "instances": []
+            },
+            "contract_compliance": {
+              "has_inheritance": false,
+              "total_violations": 0
+            },
+            "empty_methods": {
+              "interface_name": "none",
+              "total_interface_members": 0,
+              "empty_count": 0,
+              "fatal_error_count": 0,
+              "is_noop_exception": false,
+              "empty_percentage": 0.0,
+              "instances": []
+            }
+          },
+          "scoring": {
+            "net_type_checks": 0,
+            "type_check_severity": "COMPLIANT",
+            "has_inheritance": false,
+            "contract_violations": 0,
+            "contract_severity": "COMPLIANT",
+            "empty_percentage": 0.0,
+            "fatal_error_count": 0,
+            "empty_method_severity": "COMPLIANT",
+            "noop_exception_applied": false,
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogParserAdapter",
+          "unit_kind": "struct",
+          "metrics": {
+            "type_checking": {
+              "total_count": 0,
+              "excepted_count": 0,
+              "net_count": 0,
+              "instances": []
+            },
+            "contract_compliance": {
+              "has_inheritance": false,
+              "total_violations": 0
+            },
+            "empty_methods": {
+              "interface_name": "LogMessageParsing",
+              "total_interface_members": 1,
+              "empty_count": 0,
+              "fatal_error_count": 0,
+              "is_noop_exception": false,
+              "empty_percentage": 0.0,
+              "instances": []
+            }
+          },
+          "scoring": {
+            "net_type_checks": 0,
+            "type_check_severity": "COMPLIANT",
+            "has_inheritance": false,
+            "contract_violations": 0,
+            "contract_severity": "COMPLIANT",
+            "empty_percentage": 0.0,
+            "fatal_error_count": 0,
+            "empty_method_severity": "COMPLIANT",
+            "noop_exception_applied": false,
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogViewerViewModel",
+          "unit_kind": "class",
+          "metrics": {
+            "type_checking": {
+              "total_count": 0,
+              "excepted_count": 0,
+              "net_count": 0,
+              "instances": []
+            },
+            "contract_compliance": {
+              "has_inheritance": false,
+              "total_violations": 0
+            },
+            "empty_methods": {
+              "interface_name": "LogViewerState, LogViewerActions",
+              "total_interface_members": 10,
+              "empty_count": 0,
+              "fatal_error_count": 0,
+              "is_noop_exception": false,
+              "empty_percentage": 0.0,
+              "instances": []
+            }
+          },
+          "scoring": {
+            "net_type_checks": 0,
+            "type_check_severity": "COMPLIANT",
+            "has_inheritance": false,
+            "contract_violations": 0,
+            "contract_severity": "COMPLIANT",
+            "empty_percentage": 0.0,
+            "fatal_error_count": 0,
+            "empty_method_severity": "COMPLIANT",
+            "noop_exception_applied": false,
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "StatusDot",
+          "unit_kind": "struct",
+          "metrics": {
+            "type_checking": {
+              "total_count": 0,
+              "excepted_count": 0,
+              "net_count": 0,
+              "instances": []
+            },
+            "contract_compliance": {
+              "has_inheritance": false,
+              "total_violations": 0
+            },
+            "empty_methods": {
+              "interface_name": "View (external)",
+              "total_interface_members": 1,
+              "empty_count": 0,
+              "fatal_error_count": 0,
+              "is_noop_exception": false,
+              "empty_percentage": 0.0,
+              "instances": []
+            }
+          },
+          "scoring": {
+            "net_type_checks": 0,
+            "type_check_severity": "COMPLIANT",
+            "has_inheritance": false,
+            "contract_violations": 0,
+            "contract_severity": "COMPLIANT",
+            "empty_percentage": 0.0,
+            "fatal_error_count": 0,
+            "empty_method_severity": "COMPLIANT",
+            "noop_exception_applied": false,
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogViewerView",
+          "unit_kind": "struct",
+          "metrics": {
+            "type_checking": {
+              "total_count": 0,
+              "excepted_count": 0,
+              "net_count": 0,
+              "instances": []
+            },
+            "contract_compliance": {
+              "has_inheritance": false,
+              "total_violations": 0
+            },
+            "empty_methods": {
+              "interface_name": "View (external)",
+              "total_interface_members": 1,
+              "empty_count": 0,
+              "fatal_error_count": 0,
+              "is_noop_exception": false,
+              "empty_percentage": 0.0,
+              "instances": []
+            }
+          },
+          "scoring": {
+            "net_type_checks": 0,
+            "type_check_severity": "COMPLIANT",
+            "has_inheritance": false,
+            "contract_violations": 0,
+            "contract_severity": "COMPLIANT",
+            "empty_percentage": 0.0,
+            "fatal_error_count": 0,
+            "empty_method_severity": "COMPLIANT",
+            "noop_exception_applied": false,
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "ExpandableSection",
+          "unit_kind": "struct",
+          "metrics": {
+            "type_checking": {
+              "total_count": 0,
+              "excepted_count": 0,
+              "net_count": 0,
+              "instances": []
+            },
+            "contract_compliance": {
+              "has_inheritance": false,
+              "total_violations": 0
+            },
+            "empty_methods": {
+              "interface_name": "View (external)",
+              "total_interface_members": 1,
+              "empty_count": 0,
+              "fatal_error_count": 0,
+              "is_noop_exception": false,
+              "empty_percentage": 0.0,
+              "instances": []
+            }
+          },
+          "scoring": {
+            "net_type_checks": 0,
+            "type_check_severity": "COMPLIANT",
+            "has_inheritance": false,
+            "contract_violations": 0,
+            "contract_severity": "COMPLIANT",
+            "empty_percentage": 0.0,
+            "fatal_error_count": 0,
+            "empty_method_severity": "COMPLIANT",
+            "noop_exception_applied": false,
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "ToolResultView",
+          "unit_kind": "struct",
+          "metrics": {
+            "type_checking": {
+              "total_count": 0,
+              "excepted_count": 0,
+              "net_count": 0,
+              "instances": []
+            },
+            "contract_compliance": {
+              "has_inheritance": false,
+              "total_violations": 0
+            },
+            "empty_methods": {
+              "interface_name": "View (external)",
+              "total_interface_members": 1,
+              "empty_count": 0,
+              "fatal_error_count": 0,
+              "is_noop_exception": false,
+              "empty_percentage": 0.0,
+              "instances": []
+            }
+          },
+          "scoring": {
+            "net_type_checks": 0,
+            "type_check_severity": "COMPLIANT",
+            "has_inheritance": false,
+            "contract_violations": 0,
+            "contract_severity": "COMPLIANT",
+            "empty_percentage": 0.0,
+            "fatal_error_count": 0,
+            "empty_method_severity": "COMPLIANT",
+            "noop_exception_applied": false,
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,345 @@
+{
+  "agent": "isp",
+  "principle": "Interface Segregation Principle",
+  "timestamp": "2026-04-25T13:54:29Z",
+  "documentation_sources": [
+    "/Users/crowea/Developer/Swift-Gurus/solid-coder/references/principles/ISP/rule.md",
+    "/Users/crowea/Developer/Swift-Gurus/solid-coder/references/principles/ISP/review/instructions.md"
+  ],
+  "files": [
+    {
+      "file_path": "Sources/LogViewerView.swift",
+      "units": [
+        {
+          "unit_name": "TaskListItem",
+          "unit_kind": "struct",
+          "metrics": {
+            "protocol_width": { "total_requirements": 0, "requirements_table": [] },
+            "conformer_coverage": { "conformer_count": 0, "minimum_coverage": 100, "conformers": [] },
+            "protocol_cohesion": { "group_count": 0, "groups": [] }
+          },
+          "scoring": {
+            "protocol_width": 0,
+            "width_severity": "COMPLIANT",
+            "minimum_coverage_percent": 100,
+            "coverage_severity": "COMPLIANT",
+            "cohesion_group_count": 0,
+            "cohesion_severity": "COMPLIANT",
+            "worst_conformer_empty_stub_count": 0,
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogViewerState",
+          "unit_kind": "protocol",
+          "metrics": {
+            "protocol_width": {
+              "total_requirements": 8,
+              "requirements_table": [
+                { "requirement": "messages", "kind": "property" },
+                { "requirement": "displayedMessages", "kind": "property" },
+                { "requirement": "isLoading", "kind": "property" },
+                { "requirement": "taskList", "kind": "property" },
+                { "requirement": "toolResultLookup", "kind": "property" },
+                { "requirement": "pendingPrompt", "kind": "property" },
+                { "requirement": "fileURL", "kind": "property" },
+                { "requirement": "roleLabel(_:)", "kind": "method" }
+              ]
+            },
+            "conformer_coverage": {
+              "conformer_count": 1,
+              "minimum_coverage": 100,
+              "conformers": [
+                {
+                  "name": "LogViewerViewModel",
+                  "meaningful_count": 8,
+                  "empty_count": 0,
+                  "stub_count": 0,
+                  "total": 8,
+                  "coverage_percent": 100,
+                  "method_classifications": [
+                    { "method": "messages", "classification": "MEANINGFUL" },
+                    { "method": "displayedMessages", "classification": "MEANINGFUL" },
+                    { "method": "isLoading", "classification": "MEANINGFUL" },
+                    { "method": "taskList", "classification": "MEANINGFUL" },
+                    { "method": "toolResultLookup", "classification": "MEANINGFUL" },
+                    { "method": "pendingPrompt", "classification": "MEANINGFUL" },
+                    { "method": "fileURL", "classification": "MEANINGFUL" },
+                    { "method": "roleLabel(_:)", "classification": "MEANINGFUL" }
+                  ]
+                }
+              ]
+            },
+            "protocol_cohesion": {
+              "group_count": 1,
+              "groups": [
+                {
+                  "name": "view-state",
+                  "methods": ["messages", "displayedMessages", "isLoading", "taskList", "toolResultLookup", "pendingPrompt", "fileURL", "roleLabel(_:)"],
+                  "used_by": ["LogViewerViewModel"]
+                }
+              ]
+            }
+          },
+          "scoring": {
+            "protocol_width": 8,
+            "width_severity": "MINOR",
+            "minimum_coverage_percent": 100,
+            "coverage_severity": "COMPLIANT",
+            "cohesion_group_count": 1,
+            "cohesion_severity": "COMPLIANT",
+            "worst_conformer_empty_stub_count": 0,
+            "final_severity": "MINOR"
+          },
+          "findings": [
+            {
+              "id": "isp-001",
+              "severity": "MINOR",
+              "metric": "ISP-1",
+              "line_start": 21,
+              "line_end": 30,
+              "title": "LogViewerState protocol width at upper MINOR threshold (8 requirements)",
+              "issue": "Protocol declares 8 requirements (7 properties + 1 method): messages, displayedMessages, isLoading, taskList, toolResultLookup, pendingPrompt, fileURL, roleLabel(_:). The protocol has only one conformer (LogViewerViewModel) so coverage is trivially 100% — the single-conformer exception applies to ISP-2 but not to ISP-1 width. Width 6-8 with coverage >= 60% scores MINOR.",
+              "impact": "Wide view-state protocols make it costly to introduce alternative or test conformers (each new mock must implement all 8 members) and conflate distinct concerns (raw message stream vs derived display state vs file metadata vs role formatting). One more property would push this into SEVERE (>8).",
+              "rule_source": "ISP-1: Protocol Width"
+            }
+          ]
+        },
+        {
+          "unit_name": "LogViewerActions",
+          "unit_kind": "protocol",
+          "metrics": {
+            "protocol_width": {
+              "total_requirements": 2,
+              "requirements_table": [
+                { "requirement": "loadMessages()", "kind": "method" },
+                { "requirement": "startPolling()", "kind": "method" }
+              ]
+            },
+            "conformer_coverage": {
+              "conformer_count": 1,
+              "minimum_coverage": 100,
+              "conformers": [
+                {
+                  "name": "LogViewerViewModel",
+                  "meaningful_count": 2,
+                  "empty_count": 0,
+                  "stub_count": 0,
+                  "total": 2,
+                  "coverage_percent": 100,
+                  "method_classifications": [
+                    { "method": "loadMessages()", "classification": "MEANINGFUL" },
+                    { "method": "startPolling()", "classification": "MEANINGFUL" }
+                  ]
+                }
+              ]
+            },
+            "protocol_cohesion": {
+              "group_count": 1,
+              "groups": [
+                {
+                  "name": "lifecycle",
+                  "methods": ["loadMessages()", "startPolling()"],
+                  "used_by": ["LogViewerViewModel"]
+                }
+              ]
+            }
+          },
+          "scoring": {
+            "protocol_width": 2,
+            "width_severity": "COMPLIANT",
+            "minimum_coverage_percent": 100,
+            "coverage_severity": "COMPLIANT",
+            "cohesion_group_count": 1,
+            "cohesion_severity": "COMPLIANT",
+            "worst_conformer_empty_stub_count": 0,
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogMessageParsing",
+          "unit_kind": "protocol",
+          "metrics": {
+            "protocol_width": {
+              "total_requirements": 1,
+              "requirements_table": [
+                { "requirement": "parseMessages(at:)", "kind": "method" }
+              ]
+            },
+            "conformer_coverage": {
+              "conformer_count": 2,
+              "minimum_coverage": 100,
+              "conformers": [
+                {
+                  "name": "LogParserAdapter",
+                  "meaningful_count": 1,
+                  "empty_count": 0,
+                  "stub_count": 0,
+                  "total": 1,
+                  "coverage_percent": 100,
+                  "method_classifications": [
+                    { "method": "parseMessages(at:)", "classification": "DELEGATED" }
+                  ]
+                },
+                {
+                  "name": "CodexLogParser",
+                  "meaningful_count": 1,
+                  "empty_count": 0,
+                  "stub_count": 0,
+                  "total": 1,
+                  "coverage_percent": 100,
+                  "method_classifications": [
+                    { "method": "parseMessages(at:)", "classification": "MEANINGFUL" }
+                  ]
+                }
+              ]
+            },
+            "protocol_cohesion": {
+              "group_count": 1,
+              "groups": [
+                {
+                  "name": "parsing",
+                  "methods": ["parseMessages(at:)"],
+                  "used_by": ["LogParserAdapter", "CodexLogParser"]
+                }
+              ]
+            }
+          },
+          "scoring": {
+            "protocol_width": 1,
+            "width_severity": "COMPLIANT",
+            "minimum_coverage_percent": 100,
+            "coverage_severity": "COMPLIANT",
+            "cohesion_group_count": 1,
+            "cohesion_severity": "COMPLIANT",
+            "worst_conformer_empty_stub_count": 0,
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogParserAdapter",
+          "unit_kind": "struct",
+          "metrics": {
+            "protocol_width": { "total_requirements": 0, "requirements_table": [] },
+            "conformer_coverage": { "conformer_count": 0, "minimum_coverage": 100, "conformers": [] },
+            "protocol_cohesion": { "group_count": 0, "groups": [] }
+          },
+          "scoring": {
+            "protocol_width": 0,
+            "width_severity": "COMPLIANT",
+            "minimum_coverage_percent": 100,
+            "coverage_severity": "COMPLIANT",
+            "cohesion_group_count": 0,
+            "cohesion_severity": "COMPLIANT",
+            "worst_conformer_empty_stub_count": 0,
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogViewerViewModel",
+          "unit_kind": "class",
+          "metrics": {
+            "protocol_width": { "total_requirements": 0, "requirements_table": [] },
+            "conformer_coverage": { "conformer_count": 0, "minimum_coverage": 100, "conformers": [] },
+            "protocol_cohesion": { "group_count": 0, "groups": [] }
+          },
+          "scoring": {
+            "protocol_width": 0,
+            "width_severity": "COMPLIANT",
+            "minimum_coverage_percent": 100,
+            "coverage_severity": "COMPLIANT",
+            "cohesion_group_count": 0,
+            "cohesion_severity": "COMPLIANT",
+            "worst_conformer_empty_stub_count": 0,
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "StatusDot",
+          "unit_kind": "struct",
+          "metrics": {
+            "protocol_width": { "total_requirements": 0, "requirements_table": [] },
+            "conformer_coverage": { "conformer_count": 0, "minimum_coverage": 100, "conformers": [] },
+            "protocol_cohesion": { "group_count": 0, "groups": [] }
+          },
+          "scoring": {
+            "protocol_width": 0,
+            "width_severity": "COMPLIANT",
+            "minimum_coverage_percent": 100,
+            "coverage_severity": "COMPLIANT",
+            "cohesion_group_count": 0,
+            "cohesion_severity": "COMPLIANT",
+            "worst_conformer_empty_stub_count": 0,
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogViewerView",
+          "unit_kind": "struct",
+          "metrics": {
+            "protocol_width": { "total_requirements": 0, "requirements_table": [] },
+            "conformer_coverage": { "conformer_count": 0, "minimum_coverage": 100, "conformers": [] },
+            "protocol_cohesion": { "group_count": 0, "groups": [] }
+          },
+          "scoring": {
+            "protocol_width": 0,
+            "width_severity": "COMPLIANT",
+            "minimum_coverage_percent": 100,
+            "coverage_severity": "COMPLIANT",
+            "cohesion_group_count": 0,
+            "cohesion_severity": "COMPLIANT",
+            "worst_conformer_empty_stub_count": 0,
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "ExpandableSection",
+          "unit_kind": "struct",
+          "metrics": {
+            "protocol_width": { "total_requirements": 0, "requirements_table": [] },
+            "conformer_coverage": { "conformer_count": 0, "minimum_coverage": 100, "conformers": [] },
+            "protocol_cohesion": { "group_count": 0, "groups": [] }
+          },
+          "scoring": {
+            "protocol_width": 0,
+            "width_severity": "COMPLIANT",
+            "minimum_coverage_percent": 100,
+            "coverage_severity": "COMPLIANT",
+            "cohesion_group_count": 0,
+            "cohesion_severity": "COMPLIANT",
+            "worst_conformer_empty_stub_count": 0,
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "ToolResultView",
+          "unit_kind": "struct",
+          "metrics": {
+            "protocol_width": { "total_requirements": 0, "requirements_table": [] },
+            "conformer_coverage": { "conformer_count": 0, "minimum_coverage": 100, "conformers": [] },
+            "protocol_cohesion": { "group_count": 0, "groups": [] }
+          },
+          "scoring": {
+            "protocol_width": 0,
+            "width_severity": "COMPLIANT",
+            "minimum_coverage_percent": 100,
+            "coverage_severity": "COMPLIANT",
+            "cohesion_group_count": 0,
+            "cohesion_severity": "COMPLIANT",
+            "worst_conformer_empty_stub_count": 0,
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        }
+      ]
+    }
+  ]
+}

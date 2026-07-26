@@ -76,8 +76,18 @@ public struct PopoverView: View {
         } else if let agent = selectedAgent {
             // Use live data from AgentTracker if available, fall back to initial synthetic AgentInfo
             let liveAgent = agentTracker.activeAgents.first(where: { $0.pid == agent.pid }) ?? agent
-            SubagentDetailView(agent: liveAgent, agentTracker: agentTracker, settings: settings, sessionManager: sessionManager, vm: SubagentDetailViewModel(agent: liveAgent, settings: settings)) { selectedAgent = nil }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            SubagentDetailView(
+                agent: liveAgent,
+                agentTracker: agentTracker,
+                settings: settings,
+                sessionManager: sessionManager,
+                vm: SubagentDetailViewModel(
+                    agent: liveAgent,
+                    settings: settings,
+                    codexSessions: agentTracker.codexSessions
+                )
+            ) { selectedAgent = nil }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let label = selectedPeriod {
             if settings.displayMode == .window {
                 ScrollView {
@@ -340,13 +350,18 @@ public struct PopoverView: View {
         let knownIDs = Set(settings.accounts.map(\.id))
         let unknownActive = workingAgents.filter { !knownIDs.contains($0.accountID) }
         let unknownIdle = idleAgents.filter { !knownIDs.contains($0.accountID) }
-        if !unknownActive.isEmpty || !unknownIdle.isEmpty {
+        let unknownIDs = Set(unknownActive.map(\.accountID) + unknownIdle.map(\.accountID))
+        for accountID in unknownIDs {
+            let active = unknownActive.filter { $0.accountID == accountID }
+            let idle = unknownIdle.filter { $0.accountID == accountID }
+            guard let sample = (active + idle).first else { continue }
+            let inferredType: AccountType = (active + idle).contains { $0.rateLimits?.hasData == true } ? .proPlan : .enterprise
             result.append(AccountGroup(
-                accountID: UUID(),
-                accountName: "Claude",
-                accountType: .enterprise,
-                active: unknownActive,
-                idle: unknownIdle
+                accountID: accountID,
+                accountName: sample.accountName,
+                accountType: inferredType,
+                active: active,
+                idle: idle
             ))
         }
         return result
@@ -390,6 +405,8 @@ public struct PopoverView: View {
 
         if showPlanCard, let account {
             planUsageCard(account: account, agentCount: group.totalCount)
+        } else if showPlanCard {
+            planUsageCardForGroup(group)
         } else {
             simpleAccountHeader(group)
         }
@@ -450,10 +467,17 @@ public struct PopoverView: View {
                         .font(.caption2)
                         .foregroundStyle(idleColor)
                 }
-                Text(String(format: "$%.2f", agent.cost))
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.orange)
+                if let tokensUsed = agent.tokensUsed, agent.source == .codex {
+                    Text("\(tokensUsed.formatted(.number.notation(.compactName))) tok")
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.orange)
+                } else {
+                    Text(String(format: "$%.2f", agent.cost))
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.orange)
+                }
             }
 
             // Row 2: context bar + duration
@@ -513,6 +537,7 @@ public struct PopoverView: View {
         case .cli: ("CLI", .blue)
         case .commander: ("Commander", .secondary)
         case .desktop: ("Desktop", .purple)
+        case .codex: ("Codex", .teal)
         }
         Text(label)
             .font(.system(size: 9))
@@ -637,6 +662,13 @@ public struct PopoverView: View {
             .first?.rateLimits
     }
 
+    private func liveRateLimits(for group: AccountGroup) -> RateLimits? {
+        (group.active + group.idle)
+            .filter { $0.rateLimits?.hasData == true }
+            .sorted { $0.updatedAt > $1.updatedAt }
+            .first?.rateLimits
+    }
+
     private func planUsageCard(account: Account, agentCount: Int = 0) -> some View {
         let acctStats = data.byAccount[account.id]
         let rateLimitEvent = rateLimitEvents[account.id]
@@ -712,6 +744,46 @@ public struct PopoverView: View {
                 // Token usage from stats-cache
                 if let stats = statsCache {
                     planUsageTokens(stats: stats)
+                }
+            }
+            .padding(8)
+            .background(Color.orange.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(Color.orange.opacity(0.15), lineWidth: 1)
+            )
+        )
+    }
+
+    private func planUsageCardForGroup(_ group: AccountGroup) -> some View {
+        let live = liveRateLimits(for: group)
+
+        return AnyView(
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Image(systemName: "person.circle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(displayName(for: group))
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    let planLabel = group.accountType.hasRateLimits ? group.accountType.label : "Pro/Max"
+                    Text(planLabel)
+                        .font(.system(size: 9))
+                        .foregroundStyle(.orange)
+                        .padding(.horizontal, 3)
+                        .padding(.vertical, 1)
+                        .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 3))
+                    Spacer()
+                    if group.totalCount > 0 {
+                        Text("\(group.totalCount)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if let rl = live {
+                    rateLimitBars(rl)
                 }
             }
             .padding(8)

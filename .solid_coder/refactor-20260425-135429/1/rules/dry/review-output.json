@@ -1,0 +1,330 @@
+{
+  "agent": "dry",
+  "principle": "Don't Repeat Yourself",
+  "timestamp": "2026-04-25T13:54:29Z",
+  "documentation_sources": [
+    "/Users/crowea/Developer/Swift-Gurus/solid-coder/references/principles/DRY/rule.md",
+    "/Users/crowea/Developer/Swift-Gurus/solid-coder/references/principles/DRY/review/instructions.md"
+  ],
+  "files": [
+    {
+      "file_path": "Sources/LogViewerView.swift",
+      "units": [
+        {
+          "unit_name": "TaskListItem",
+          "unit_kind": "struct",
+          "metrics": {
+            "reuse_misses": { "count": 0, "table": [] },
+            "inlined_duplications": { "count": 0, "table": [] },
+            "missing_abstractions": { "count": 0, "table": [] }
+          },
+          "scoring": {
+            "reuse_severity": "COMPLIANT",
+            "duplication_severity": "COMPLIANT",
+            "infrastructure_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogViewerState",
+          "unit_kind": "protocol",
+          "metrics": {
+            "reuse_misses": { "count": 0, "table": [] },
+            "inlined_duplications": { "count": 0, "table": [] },
+            "missing_abstractions": { "count": 0, "table": [] }
+          },
+          "scoring": {
+            "reuse_severity": "COMPLIANT",
+            "duplication_severity": "COMPLIANT",
+            "infrastructure_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogViewerActions",
+          "unit_kind": "protocol",
+          "metrics": {
+            "reuse_misses": { "count": 0, "table": [] },
+            "inlined_duplications": { "count": 0, "table": [] },
+            "missing_abstractions": { "count": 0, "table": [] }
+          },
+          "scoring": {
+            "reuse_severity": "COMPLIANT",
+            "duplication_severity": "COMPLIANT",
+            "infrastructure_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogMessageParsing",
+          "unit_kind": "protocol",
+          "metrics": {
+            "reuse_misses": { "count": 0, "table": [] },
+            "inlined_duplications": { "count": 0, "table": [] },
+            "missing_abstractions": { "count": 0, "table": [] }
+          },
+          "scoring": {
+            "reuse_severity": "COMPLIANT",
+            "duplication_severity": "COMPLIANT",
+            "infrastructure_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogParserAdapter",
+          "unit_kind": "struct",
+          "metrics": {
+            "reuse_misses": { "count": 0, "table": [] },
+            "inlined_duplications": {
+              "count": 1,
+              "table": [
+                {
+                  "method_a": "LogParserAdapter.parseMessages(at:)",
+                  "location_a": "Sources/LogViewerView.swift:57",
+                  "method_b": "DefaultSubagentParser.parseSubagentMeta / parseSubagentDetails",
+                  "location_b": "Sources/SubagentDetailView.swift:72",
+                  "classification": "STRUCTURAL",
+                  "reasoning": "Both adapters trivially forward to a static parser API solely to satisfy a protocol for DI. Same algorithm — wrap a static type behind an instance protocol — repeated for two different parsers. A generic `StaticParserAdapter<T>` or a single shared pattern (e.g., closure-based protocol implementation) would remove the duplication."
+                }
+              ]
+            },
+            "missing_abstractions": { "count": 0, "table": [] }
+          },
+          "scoring": {
+            "reuse_severity": "COMPLIANT",
+            "duplication_severity": "SEVERE",
+            "infrastructure_severity": "COMPLIANT",
+            "final_severity": "SEVERE"
+          },
+          "findings": [
+            {
+              "id": "dry-001",
+              "severity": "SEVERE",
+              "metric": "DRY-2",
+              "line_start": 56,
+              "line_end": 60,
+              "title": "Static-API adapter pattern duplicated across files",
+              "issue": "LogParserAdapter (LogViewerView.swift:56) and DefaultSubagentParser (SubagentDetailView.swift:72) both exist solely to forward instance-protocol method calls to a static type's static methods. The wrapping pattern is identical in structure.",
+              "impact": "Each new parser dependency forces a new boilerplate adapter type. A reusable adapter abstraction or closure-based protocol injection would centralize the pattern.",
+              "rule_source": "DRY-2: Inlined Duplication"
+            }
+          ]
+        },
+        {
+          "unit_name": "LogViewerViewModel",
+          "unit_kind": "class",
+          "metrics": {
+            "reuse_misses": { "count": 0, "table": [] },
+            "inlined_duplications": { "count": 0, "table": [] },
+            "missing_abstractions": { "count": 0, "table": [] }
+          },
+          "scoring": {
+            "reuse_severity": "COMPLIANT",
+            "duplication_severity": "COMPLIANT",
+            "infrastructure_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "StatusDot",
+          "unit_kind": "struct",
+          "metrics": {
+            "reuse_misses": { "count": 0, "table": [] },
+            "inlined_duplications": { "count": 0, "table": [] },
+            "missing_abstractions": { "count": 0, "table": [] }
+          },
+          "scoring": {
+            "reuse_severity": "COMPLIANT",
+            "duplication_severity": "COMPLIANT",
+            "infrastructure_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogViewerView",
+          "unit_kind": "struct",
+          "metrics": {
+            "reuse_misses": {
+              "count": 1,
+              "table": [
+                {
+                  "new_type": "LogViewerView.todoChecklist(_:)",
+                  "existing_type": "LogViewerView.taskPanelView (task row rendering)",
+                  "existing_file": "Sources/LogViewerView.swift",
+                  "confidence": "high",
+                  "responsibility_fit": "Both render a list of {status, content} items with status-driven SF symbol icon, strikethrough on completed, and identical typography. todoChecklist works on TodoWriteToolData.TodoItem; taskPanelView's inner ForEach (lines 1246-1257) does the same thing for TaskListItem.",
+                  "interface_differences": [
+                    "Item types differ (TodoItem vs TaskListItem) but both expose `content: String` and `status: String`",
+                    "taskPanelView adds an extra 'deleted' status case"
+                  ],
+                  "classification": "EXTENSIBLE"
+                }
+              ]
+            },
+            "inlined_duplications": {
+              "count": 3,
+              "table": [
+                {
+                  "method_a": "todoIcon(_:)",
+                  "location_a": "Sources/LogViewerView.swift:930",
+                  "method_b": "taskIcon(_:)",
+                  "location_b": "Sources/LogViewerView.swift:1265",
+                  "classification": "STRUCTURAL",
+                  "reasoning": "Both methods are status-string → SF symbol name switches with identical control flow and overlapping cases ('completed' → checkmark.circle.fill, 'in_progress' → circle.dotted.circle, default → circle). taskIcon adds a 'deleted' case. The mapping is the same domain concept (task/todo status presentation)."
+                },
+                {
+                  "method_a": "todoColor(_:)",
+                  "location_a": "Sources/LogViewerView.swift:938",
+                  "method_b": "taskColor(_:)",
+                  "location_b": "Sources/LogViewerView.swift:1274",
+                  "classification": "STRUCTURAL",
+                  "reasoning": "Both methods are status-string → Color switches with identical control flow and overlapping cases ('completed' → green, 'in_progress' → orange, default → secondary). taskColor adds 'deleted' → red. Same mapping concern duplicated."
+                },
+                {
+                  "method_a": "editDiffView(_:)",
+                  "location_a": "Sources/LogViewerView.swift:710",
+                  "method_b": "writeDiffView(_:)",
+                  "location_b": "Sources/LogViewerView.swift:871",
+                  "classification": "STRUCTURAL",
+                  "reasoning": "Both follow the same algorithm: split content into lines, branch on a line-count threshold to fall back to ToolResultView, otherwise render filePath header + ForEach over lines as monospaced/colored/padded/background-tinted rows wrapped in AnyView. editDiffView produces two stripes (- red, + green); writeDiffView produces one stripe (+ green). The per-line row rendering is identical save for the prefix character, color, and tint."
+                }
+              ]
+            },
+            "missing_abstractions": {
+              "count": 3,
+              "table": [
+                {
+                  "type": "LogViewerView",
+                  "pattern": "Task/todo status → (icon, color) mapping",
+                  "reuse_potential": "Both `todoIcon`/`todoColor` and `taskIcon`/`taskColor` (and the SubagentDetailView could need it too) implement the same status-presentation knowledge inline. Extracting a single TaskStatusStyle abstraction (e.g., `enum TaskStatus { … } { var icon: String; var color: Color }`) would centralize the mapping and remove four parallel switches."
+                },
+                {
+                  "type": "LogViewerView",
+                  "pattern": "Line-by-line diff stripe row (monospaced text + leading prefix + tinted foreground/background + small padding)",
+                  "reuse_potential": "editDiffView and writeDiffView both render this row inline. A reusable `DiffLineRow(prefix:, line:, tint:)` view would let any future tool detail render diff stripes without copying the styling."
+                },
+                {
+                  "type": "LogViewerView",
+                  "pattern": "Permission button row sending raw escape sequences via bridge (Allow/Always/Deny / Approve/Reject)",
+                  "reuse_potential": "permissionPrompt (966) and planApprovalPrompt (1095) both compose an HStack of borderedProminent tinted buttons that call `bridge?.sendRaw(...)` with control codes. A reusable `PromptButtonRow(buttons: [PromptButton])` component would absorb both prompt variants and any future prompt type."
+                }
+              ]
+            }
+          },
+          "scoring": {
+            "reuse_severity": "SEVERE",
+            "duplication_severity": "SEVERE",
+            "infrastructure_severity": "SEVERE",
+            "final_severity": "SEVERE"
+          },
+          "findings": [
+            {
+              "id": "dry-002",
+              "severity": "SEVERE",
+              "metric": "DRY-1",
+              "line_start": 911,
+              "line_end": 1263,
+              "title": "todoChecklist and taskPanelView render the same checklist independently",
+              "issue": "todoChecklist (lines 911-928) and the per-row block inside taskPanelView (lines 1246-1259) render the same UI: status-icon + content text with strikethrough on completed. Item types differ but both expose `content` and `status`. The first implementation could be reused for the second via a small protocol or an explicit row view.",
+              "impact": "Visual drift — taskPanelView already diverges by adding a 'deleted' status. Future status changes must be repeated in two places.",
+              "rule_source": "DRY-1: Reuse Miss"
+            },
+            {
+              "id": "dry-003",
+              "severity": "SEVERE",
+              "metric": "DRY-2",
+              "line_start": 930,
+              "line_end": 1281,
+              "title": "Status→icon and status→color switches duplicated for todos and tasks",
+              "issue": "todoIcon/taskIcon (930, 1265) and todoColor/taskColor (938, 1274) are four parallel switches over the same status-string vocabulary. Three of four cases are identical pairwise; only 'deleted' is unique to task*.",
+              "impact": "Any change to task status presentation (new status, color tweak) requires synchronized edits in four locations and risks divergence.",
+              "rule_source": "DRY-2: Inlined Duplication"
+            },
+            {
+              "id": "dry-004",
+              "severity": "SEVERE",
+              "metric": "DRY-2",
+              "line_start": 710,
+              "line_end": 909,
+              "title": "editDiffView and writeDiffView duplicate diff row rendering",
+              "issue": "Both methods follow the identical algorithm: line-count threshold → fall back to ToolResultView; otherwise emit file path header + ForEach over lines styled as monospaced colored rows with tinted background, wrapped in AnyView. Only the prefix/colour and number of stripes differ.",
+              "impact": "Styling tweaks (font size, row padding, threshold) must be applied to both methods; future diff-style renderers will likely copy a third time.",
+              "rule_source": "DRY-2: Inlined Duplication"
+            },
+            {
+              "id": "dry-005",
+              "severity": "SEVERE",
+              "metric": "DRY-3",
+              "line_start": 911,
+              "line_end": 1281,
+              "title": "Missing abstraction: task/todo status presentation",
+              "issue": "Status→(icon, color) is a domain-agnostic mapping repeated four times inline (`todoIcon`, `todoColor`, `taskIcon`, `taskColor`). No standalone type captures this knowledge even though both LogViewerView and a hypothetical task panel elsewhere need the same behaviour.",
+              "impact": "The view holds presentation logic that other modules cannot share; any consumer of task status outside LogViewerView would have to re-implement the same switches.",
+              "rule_source": "DRY-3: Missing Abstraction"
+            },
+            {
+              "id": "dry-006",
+              "severity": "SEVERE",
+              "metric": "DRY-3",
+              "line_start": 710,
+              "line_end": 909,
+              "title": "Missing abstraction: diff stripe line row",
+              "issue": "The per-line monospaced + prefix + tinted-foreground + tinted-background row used in both editDiffView and writeDiffView is a generic UI pattern (a coloured-stripe diff line) but is implemented inline both times.",
+              "impact": "Other future tool renderers (patch tool, replace_all preview, etc.) will likely re-implement the same row instead of reusing a `DiffLineRow` component.",
+              "rule_source": "DRY-3: Missing Abstraction"
+            },
+            {
+              "id": "dry-007",
+              "severity": "SEVERE",
+              "metric": "DRY-3",
+              "line_start": 966,
+              "line_end": 1138,
+              "title": "Missing abstraction: prompt button row",
+              "issue": "permissionPrompt (966) and planApprovalPrompt (1095) both compose an HStack of `.borderedProminent` tinted buttons that send raw escape sequences via `bridge?.sendRaw(...)`. The 'a row of styled action buttons that fire bridge writes' pattern is generic and not specific to either prompt's domain, but is duplicated inline.",
+              "impact": "Each new prompt type forces another bespoke HStack of buttons with copy-pasted padding/tint/controlSize code; styling is at risk of drifting.",
+              "rule_source": "DRY-3: Missing Abstraction"
+            }
+          ]
+        },
+        {
+          "unit_name": "ExpandableSection",
+          "unit_kind": "struct",
+          "metrics": {
+            "reuse_misses": { "count": 0, "table": [] },
+            "inlined_duplications": { "count": 0, "table": [] },
+            "missing_abstractions": { "count": 0, "table": [] }
+          },
+          "scoring": {
+            "reuse_severity": "COMPLIANT",
+            "duplication_severity": "COMPLIANT",
+            "infrastructure_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "ToolResultView",
+          "unit_kind": "struct",
+          "metrics": {
+            "reuse_misses": { "count": 0, "table": [] },
+            "inlined_duplications": { "count": 0, "table": [] },
+            "missing_abstractions": { "count": 0, "table": [] }
+          },
+          "scoring": {
+            "reuse_severity": "COMPLIANT",
+            "duplication_severity": "COMPLIANT",
+            "infrastructure_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        }
+      ]
+    }
+  ]
+}

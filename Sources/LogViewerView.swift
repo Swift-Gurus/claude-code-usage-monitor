@@ -20,6 +20,7 @@ struct TaskListItem: Identifiable {
  */
 protocol LogViewerState: Observable {
     var messages: [LogMessage] { get }
+    var displayedMessages: [LogMessage] { get }
     var isLoading: Bool { get }
     var taskList: [TaskListItem] { get }
     var toolResultLookup: [String: String] { get }
@@ -67,7 +68,11 @@ struct LogParserAdapter: LogMessageParsing {
 @Observable
 final class LogViewerViewModel: LogViewerState, LogViewerActions {
     private(set) var messages: [LogMessage] = []
+    private(set) var displayedMessages: [LogMessage] = []
     private(set) var isLoading = true
+    private(set) var taskList: [TaskListItem] = []
+    private(set) var toolResultLookup: [String: String] = [:]
+    private(set) var pendingPrompt: LogToolCall?
     private var lastMtime: Date?
 
     private let agent: AgentInfo
@@ -97,57 +102,6 @@ final class LogViewerViewModel: LogViewerState, LogViewerActions {
         urlResolver.resolveURL(agent: agent, target: target)
     }
 
-    var taskList: [TaskListItem] {
-        var tasks: [TaskListItem] = []
-        var nextId = 1
-
-        for msg in messages {
-            for tc in msg.toolCalls {
-                switch tc.data {
-                case .todoWrite(let d):
-                    tasks = d.todos.enumerated().map { idx, item in
-                        TaskListItem(id: "todo-\(idx)", content: item.content, status: item.status, activeForm: "")
-                    }
-                case .taskCreate(let d):
-                    let id = "\(nextId)"
-                    nextId += 1
-                    tasks.append(TaskListItem(id: id, content: d.subject, status: "pending", activeForm: d.activeForm))
-                case .taskUpdate(let d):
-                    if let idx = tasks.firstIndex(where: { $0.id == d.taskId }) {
-                        if !d.status.isEmpty {
-                            tasks[idx].status = d.status
-                        }
-                    }
-                default:
-                    break
-                }
-            }
-        }
-        return tasks
-    }
-
-    var toolResultLookup: [String: String] {
-        var lookup: [String: String] = [:]
-        for msg in messages {
-            for (tid, content) in msg.toolResultContents {
-                lookup[tid] = content
-            }
-        }
-        return lookup
-    }
-
-    var pendingPrompt: LogToolCall? {
-        let resolvedIDs = Set(messages.flatMap(\.toolResultIDs))
-        for msg in messages.reversed() where msg.role == .assistant {
-            for tc in msg.toolCalls.reversed() {
-                if !resolvedIDs.contains(tc.id) && tc.data.needsPrompt {
-                    return tc
-                }
-            }
-        }
-        return nil
-    }
-
     func roleLabel(_ msg: LogMessage) -> String {
         switch msg.role {
         case .user: return "User"
@@ -175,7 +129,10 @@ final class LogViewerViewModel: LogViewerState, LogViewerActions {
         }.value
 
         if let mtime { lastMtime = mtime }
-        if !msgs.isEmpty { messages = msgs }
+        if !msgs.isEmpty {
+            messages = msgs
+            rebuildDerivedState(from: msgs)
+        }
         isLoading = false
     }
 
@@ -183,6 +140,54 @@ final class LogViewerViewModel: LogViewerState, LogViewerActions {
         await poll(interval: .seconds(2)) { [weak self] in
             await self?.loadMessages()
         }
+    }
+
+    private func rebuildDerivedState(from messages: [LogMessage]) {
+        displayedMessages = messages.filter { !$0.textContent.isEmpty || !$0.toolCalls.isEmpty || $0.thinking != nil }
+
+        var tasks: [TaskListItem] = []
+        var nextId = 1
+        var lookup: [String: String] = [:]
+        var resolvedIDs: Set<String> = []
+
+        for msg in messages {
+            resolvedIDs.formUnion(msg.toolResultIDs)
+
+            for (tid, content) in msg.toolResultContents {
+                lookup[tid] = content
+            }
+
+            for tc in msg.toolCalls {
+                switch tc.data {
+                case .todoWrite(let d):
+                    tasks = d.todos.enumerated().map { idx, item in
+                        TaskListItem(id: "todo-\(idx)", content: item.content, status: item.status, activeForm: "")
+                    }
+                case .taskCreate(let d):
+                    let id = "\(nextId)"
+                    nextId += 1
+                    tasks.append(TaskListItem(id: id, content: d.subject, status: "pending", activeForm: d.activeForm))
+                case .taskUpdate(let d):
+                    if let idx = tasks.firstIndex(where: { $0.id == d.taskId }), !d.status.isEmpty {
+                        tasks[idx].status = d.status
+                    }
+                default:
+                    break
+                }
+            }
+        }
+
+        var prompt: LogToolCall?
+        for msg in messages.reversed() where msg.role == .assistant {
+            if let unresolved = msg.toolCalls.reversed().first(where: { !resolvedIDs.contains($0.id) && $0.data.needsPrompt }) {
+                prompt = unresolved
+                break
+            }
+        }
+
+        taskList = tasks
+        toolResultLookup = lookup
+        pendingPrompt = prompt
     }
 }
 
@@ -240,6 +245,7 @@ struct LogViewerView<VM: LogViewerState & LogViewerActions>: View {
         switch target {
         case .parent: return agent.displayName
         case .subagent(let sub): return sub.model
+        case .codexSession(let session): return session.title.isEmpty ? session.model : session.title
         }
     }
 
@@ -369,7 +375,7 @@ struct LogViewerView<VM: LogViewerState & LogViewerActions>: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         VStack(alignment: .leading, spacing: rowSpacing) {
-                            ForEach(vm.messages.filter { !$0.textContent.isEmpty || !$0.toolCalls.isEmpty || $0.thinking != nil }) { msg in
+                            ForEach(vm.displayedMessages) { msg in
                                 messageBubble(msg)
                                     .id(msg.id)
                             }
@@ -377,15 +383,15 @@ struct LogViewerView<VM: LogViewerState & LogViewerActions>: View {
                     }
                     .scrollIndicators(.visible)
                     .frame(height: scrollHeight, alignment: .top)
-                    .onChange(of: vm.messages.count) { _, _ in
-                        if let last = vm.messages.last {
+                    .onChange(of: vm.displayedMessages.count) { _, _ in
+                        if let last = vm.displayedMessages.last {
                             withAnimation(.easeOut(duration: 0.2)) {
                                 proxy.scrollTo(last.id, anchor: .bottom)
                             }
                         }
                     }
                     .onAppear {
-                        if let last = vm.messages.last {
+                        if let last = vm.displayedMessages.last {
                             proxy.scrollTo(last.id, anchor: .bottom)
                         }
                     }
@@ -539,9 +545,11 @@ struct LogViewerView<VM: LogViewerState & LogViewerActions>: View {
     // MARK: - Tool Chip Label
 
     private func toolChipLabel(_ tc: LogToolCall) -> some View {
-        HStack(spacing: 4) {
+        let chipColor = toolChipColor(for: tc.data)
+        return HStack(spacing: 4) {
             Text(tc.name)
                 .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(chipColor)
             let summary = tc.data.summary
             if !summary.isEmpty {
                 Text(summary)
@@ -558,20 +566,22 @@ struct LogViewerView<VM: LogViewerState & LogViewerActions>: View {
     @ViewBuilder
     private func toolCallChip(_ tc: LogToolCall) -> some View {
         let resultContent = vm.toolResultLookup[tc.id]
+        let chipColor = toolChipColor(for: tc.data)
+        let chipBackground = chipColor.opacity(0.10)
         if !tc.data.hasDetail && resultContent == nil {
             HStack(spacing: 4) {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(.blue.opacity(0.7))
+                    .foregroundStyle(chipColor.opacity(0.8))
                 toolChipLabel(tc)
             }
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
-            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 4))
+            .background(chipBackground, in: RoundedRectangle(cornerRadius: 4))
         } else {
             ExpandableSection(
                 expanded: settings.expandTools,
-                tintColor: .blue.opacity(0.7)
+                tintColor: chipColor.opacity(0.8)
             ) {
                 toolExpandedContent(tc.data, resultContent: resultContent)
             } label: {
@@ -579,7 +589,32 @@ struct LogViewerView<VM: LogViewerState & LogViewerActions>: View {
             }
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
-            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 4))
+            .background(chipBackground, in: RoundedRectangle(cornerRadius: 4))
+        }
+    }
+
+    private func toolChipColor(for data: ToolData) -> Color {
+        switch data {
+        case .bash:
+            return .orange
+        case .edit, .write:
+            return .green
+        case .read, .grep, .glob:
+            return .blue
+        case .agent:
+            return .purple
+        case .taskCreate, .taskUpdate, .todoWrite:
+            return .mint
+        case .skill, .webSearch, .webFetch:
+            return .indigo
+        case .askUserQuestion, .exitPlanMode:
+            return .pink
+        case .hook:
+            return .orange
+        case .mcp:
+            return .cyan
+        case .other:
+            return .secondary
         }
     }
 
@@ -662,8 +697,11 @@ struct LogViewerView<VM: LogViewerState & LogViewerActions>: View {
             monoText(String(d.plan.prefix(500)))
         case .hook(let d):
             hookDetailView(d)
+        case .mcp(let d):
+            mcpDetailView(d, resultContent: resultContent)
         case .other(let raw):
-            monoText(raw.sorted(by: { $0.key < $1.key }).map { "\($0.key): \($0.value)" }.joined(separator: "\n"))
+            let inputText = raw.sorted(by: { $0.key < $1.key }).map { "\($0.key): \($0.value)" }.joined(separator: "\n")
+            toolInputAndResult(inputText, resultContent: resultContent)
         default:
             EmptyView()
         }
@@ -672,6 +710,27 @@ struct LogViewerView<VM: LogViewerState & LogViewerActions>: View {
     // MARK: - Custom Tool Renderers
 
     private func editDiffView(_ d: EditToolData) -> some View {
+        let oldLines = d.oldString.components(separatedBy: "\n")
+        let newLines = d.newString.components(separatedBy: "\n")
+        if oldLines.count + newLines.count > 120 {
+            return AnyView(
+                VStack(alignment: .leading, spacing: 4) {
+                    if !d.filePath.isEmpty {
+                        Text(d.filePath)
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundStyle(.tertiary)
+                    }
+                    if !d.oldString.isEmpty {
+                        ToolResultView(content: d.oldString)
+                    }
+                    if !d.newString.isEmpty {
+                        ToolResultView(content: d.newString)
+                    }
+                }
+            )
+        }
+
+        return AnyView(
         VStack(alignment: .leading, spacing: 0) {
             if !d.filePath.isEmpty {
                 Text(d.filePath)
@@ -680,7 +739,7 @@ struct LogViewerView<VM: LogViewerState & LogViewerActions>: View {
                     .padding(.bottom, 4)
             }
             if !d.oldString.isEmpty {
-                ForEach(Array(d.oldString.components(separatedBy: "\n").enumerated()), id: \.offset) { _, line in
+                ForEach(Array(oldLines.enumerated()), id: \.offset) { _, line in
                     Text("- \(line)")
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundStyle(.red.opacity(0.9))
@@ -691,7 +750,7 @@ struct LogViewerView<VM: LogViewerState & LogViewerActions>: View {
                 }
             }
             if !d.newString.isEmpty {
-                ForEach(Array(d.newString.components(separatedBy: "\n").enumerated()), id: \.offset) { _, line in
+                ForEach(Array(newLines.enumerated()), id: \.offset) { _, line in
                     Text("+ \(line)")
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundStyle(.green.opacity(0.9))
@@ -706,6 +765,35 @@ struct LogViewerView<VM: LogViewerState & LogViewerActions>: View {
         .padding(4)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 4))
+        )
+    }
+
+    private func mcpDetailView(_ d: MCPToolData, resultContent: String?) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 4) {
+                Text(d.serverName)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.cyan)
+                Text("·")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+                Text(d.toolName)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+            if !d.input.isEmpty {
+                let inputText = d.input.sorted(by: { $0.key < $1.key })
+                    .map { "\($0.key): \($0.value)" }
+                    .joined(separator: "\n")
+                monoText(inputText)
+            }
+            if let result = resultContent, !result.isEmpty {
+                ToolResultView(content: result)
+            }
+        }
+        .padding(6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.cyan.opacity(0.06), in: RoundedRectangle(cornerRadius: 4))
     }
 
     private func hookDetailView(_ d: HookToolData) -> some View {
@@ -783,6 +871,21 @@ struct LogViewerView<VM: LogViewerState & LogViewerActions>: View {
     }
 
     private func writeDiffView(_ d: WriteToolData) -> some View {
+        let lines = d.content.components(separatedBy: "\n")
+        if lines.count > 160 {
+            return AnyView(
+                VStack(alignment: .leading, spacing: 4) {
+                    if !d.filePath.isEmpty {
+                        Text(d.filePath)
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundStyle(.tertiary)
+                    }
+                    ToolResultView(content: d.content)
+                }
+            )
+        }
+
+        return AnyView(
         VStack(alignment: .leading, spacing: 0) {
             if !d.filePath.isEmpty {
                 Text(d.filePath)
@@ -790,7 +893,7 @@ struct LogViewerView<VM: LogViewerState & LogViewerActions>: View {
                     .foregroundStyle(.tertiary)
                     .padding(.bottom, 4)
             }
-            ForEach(Array(d.content.components(separatedBy: "\n").enumerated()), id: \.offset) { _, line in
+            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
                 Text("+ \(line)")
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(.green.opacity(0.9))
@@ -804,6 +907,7 @@ struct LogViewerView<VM: LogViewerState & LogViewerActions>: View {
         .padding(4)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 4))
+        )
     }
 
     private func todoChecklist(_ todos: [TodoWriteToolData.TodoItem]) -> some View {
@@ -1210,12 +1314,19 @@ private struct ExpandableSection<Content: View, Label: View>: View {
 private struct ToolResultView: View {
     let content: String
     private let previewLineCount = 20
-
-    private var lines: [String] { content.components(separatedBy: "\n") }
-    private var isTruncated: Bool { lines.count > previewLineCount }
-    private var preview: String { lines.prefix(previewLineCount).joined(separator: "\n") }
+    private let lines: [String]
+    private let isTruncated: Bool
+    private let preview: String
 
     @State private var showFull = false
+
+    init(content: String) {
+        self.content = content
+        let lines = content.components(separatedBy: "\n")
+        self.lines = lines
+        self.isTruncated = lines.count > previewLineCount
+        self.preview = lines.prefix(previewLineCount).joined(separator: "\n")
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {

@@ -1,0 +1,337 @@
+{
+  "file_path": "/Users/crowea/Developer/Swift-Gurus/claude-code-usage-monitor/Sources/LogViewerView.swift",
+  "timestamp": "2026-04-27T01:18:00Z",
+  "actions": [
+    {
+      "suggestion_id": "holistic-fix-001",
+      "principle": "Structured Concurrency",
+      "resolves": [
+        "SC-2-LogViewerViewModel-001",
+        "sui-004",
+        "srp-001"
+      ],
+      "todo_items": [
+        "Add a stored task handle to LogViewerViewModel for the detached file parsing task.",
+        "Cancel the stored parsing task in deinit before the view model is released.",
+        "Move task completion counting out of LogViewerView.taskPanelView by exposing completedTaskCount and taskProgress on LogViewerState.",
+        "Update rebuildDerivedState(from:) to assign completedTaskCount and taskProgress when taskList is rebuilt.",
+        "Keep roleLabel(_:) and fileURL on LogViewerState for public API compatibility, but document that the expanded state protocol is still a single-conformer presentation-state surface."
+      ],
+      "suggested_fix": "Search result: no existing task-count/progress state provider was found in Sources, so extend the existing LogViewerState/ViewModel instead of creating a duplicate helper.\n\n```swift\nprotocol LogViewerState: Observable {\n    var messages: [LogMessage] { get }\n    var displayedMessages: [LogMessage] { get }\n    var isLoading: Bool { get }\n    var taskList: [TaskListItem] { get }\n    var completedTaskCount: Int { get }\n    var taskProgress: Double { get }\n    var toolResultLookup: [String: String] { get }\n    var pendingPrompt: LogToolCall? { get }\n    var fileURL: URL { get }\n    func roleLabel(_ msg: LogMessage) -> String\n}\n\n@Observable\nfinal class LogViewerViewModel: LogViewerState, LogViewerActions {\n    private(set) var completedTaskCount = 0\n    private(set) var taskProgress = 0.0\n    private var parseTask: Task<([LogMessage], Date?), Never>?\n\n    deinit {\n        parseTask?.cancel()\n    }\n\n    func loadMessages() async {\n        parseTask?.cancel()\n        let url = fileURL\n        let cached = lastMtime\n        let fs = fileSystem\n        let parser = parser\n\n        let task = Task(priority: .utility) {\n            let attrs = try? fs.attributesOfItem(atPath: url.path)\n            let mtime = attrs?[.modificationDate] as? Date\n            if let cached, let mtime, cached == mtime {\n                return ([], mtime)\n            }\n            if Task.isCancelled { return ([], mtime) }\n            return (parser.parseMessages(at: url), mtime)\n        }\n        parseTask = task\n\n        let (msgs, mtime) = await task.value\n        guard !task.isCancelled else { return }\n        parseTask = nil\n        if let mtime { lastMtime = mtime }\n        if !msgs.isEmpty {\n            messages = msgs\n            rebuildDerivedState(from: msgs)\n        }\n        isLoading = false\n    }\n\n    private func rebuildDerivedState(from messages: [LogMessage]) {\n        // existing task reconstruction remains here\n        taskList = tasks\n        completedTaskCount = tasks.filter { $0.status == \"completed\" }.count\n        taskProgress = tasks.isEmpty ? 0 : Double(completedTaskCount) / Double(tasks.count)\n        toolResultLookup = lookup\n        pendingPrompt = prompt\n    }\n}\n```\n\nThen use the prepared values in the view:\n\n```swift\nText(\"\\(vm.completedTaskCount)/\\(vm.taskList.count)\")\nTaskProgressBar(progress: vm.taskProgress)\n```",
+      "depends_on": [],
+      "cross_check_results": [
+        {
+          "principle": "DRY",
+          "passed": true,
+          "detail": "No existing task progress abstraction was found; the derived count/progress becomes a single authoritative representation in LogViewerViewModel."
+        },
+        {
+          "principle": "ISP",
+          "passed": true,
+          "detail": "LogViewerState grows from 8 to 10 requirements, which would normally increase width, but it remains a single-conformer Observable state protocol. The existing minor ISP finding is not claimed here because splitting is not warranted by the ISP instructions for MINOR severity."
+        },
+        {
+          "principle": "OCP",
+          "passed": true,
+          "detail": "The change uses existing injected parser/file-system dependencies and adds no direct non-injected concrete dependency."
+        },
+        {
+          "principle": "SRP",
+          "passed": true,
+          "detail": "The added derived state stays in the ViewModel's existing presentation-state cohesion group and removes transformation logic from the SwiftUI view."
+        },
+        {
+          "principle": "SwiftUI",
+          "passed": true,
+          "detail": "The view reads prepared state instead of filtering taskList in a View body, resolving SUI-2 without adding view complexity."
+        }
+      ],
+      "note": "This action handles the highest-risk lifecycle issue first and folds the SwiftUI purity issue into the same state-preparation boundary. It intentionally leaves isp-001 unresolved because the ISP fix instructions say MINOR protocol width should not be split."
+    },
+    {
+      "suggestion_id": "holistic-fix-002",
+      "principle": "SRP",
+      "resolves": [
+        "srp-002",
+        "srp-003",
+        "sui-003",
+        "sui-005",
+        "sui-007",
+        "dry-001"
+      ],
+      "todo_items": [
+        "Extract LogContentView as a private generic subview that receives state, settings, rowSpacing, scrollHeight, canSendInput, bridge, and message-rendering closures.",
+        "Extract MessageBubbleView for role header, thinking section, content bubble, and tool-call listing.",
+        "Extract PromptOverlayView for permission, question, and plan approval prompts, preserving the existing bridge send behavior.",
+        "Extract TaskPanelView and TaskProgressBar so task display changes no longer modify LogViewerView.",
+        "Add TaskPresentation with iconName(for:) and color(for:) and replace both todoIcon/todoColor and taskIcon/taskColor call sites.",
+        "Replace the fixed progress-bar height with a scalable capsule style using controlSize or minHeight/maxHeight constraints.",
+        "Extract the thinking Text modifier chain into a named ThinkingText subview."
+      ],
+      "suggested_fix": "Search result: no existing task-status presentation mapper or reusable log-content subviews were found in Sources.\n\n```swift\nprivate enum TaskPresentation {\n    static func iconName(for status: String) -> String {\n        switch status {\n        case \"completed\": return \"checkmark.circle.fill\"\n        case \"in_progress\": return \"circle.dotted.circle\"\n        case \"deleted\": return \"xmark.circle\"\n        default: return \"circle\"\n        }\n    }\n\n    static func color(for status: String) -> Color {\n        switch status {\n        case \"completed\": return .green\n        case \"in_progress\": return .orange\n        case \"deleted\": return .red\n        default: return .secondary\n        }\n    }\n}\n\nprivate struct ThinkingText: View {\n    let text: String\n\n    var body: some View {\n        Text(text)\n            .font(.system(size: 10))\n            .foregroundStyle(.secondary)\n            .textSelection(.enabled)\n            .padding(6)\n            .frame(maxWidth: .infinity, alignment: .leading)\n            .background(Color.purple.opacity(0.05), in: RoundedRectangle(cornerRadius: 6))\n    }\n}\n\nprivate struct TaskProgressBar: View {\n    let progress: Double\n\n    var body: some View {\n        ProgressView(value: progress)\n            .progressViewStyle(.linear)\n            .controlSize(.small)\n            .tint(.green)\n            .frame(minHeight: 4, maxHeight: 8)\n    }\n}\n\nprivate struct TaskPanelView: View {\n    let tasks: [TaskListItem]\n    let completedCount: Int\n    let progress: Double\n\n    var body: some View {\n        VStack(alignment: .leading, spacing: 6) {\n            HStack {\n                Image(systemName: \"checklist\")\n                    .font(.caption)\n                    .foregroundStyle(.secondary)\n                Text(\"Tasks\")\n                    .font(.caption)\n                    .fontWeight(.medium)\n                Spacer()\n                Text(\"\\(completedCount)/\\(tasks.count)\")\n                    .font(.caption2)\n                    .foregroundStyle(.secondary)\n            }\n\n            if !tasks.isEmpty {\n                TaskProgressBar(progress: progress)\n            }\n\n            ScrollView {\n                VStack(alignment: .leading, spacing: 3) {\n                    ForEach(tasks) { item in\n                        HStack(alignment: .top, spacing: 6) {\n                            Image(systemName: TaskPresentation.iconName(for: item.status))\n                                .font(.system(size: 10))\n                                .foregroundStyle(TaskPresentation.color(for: item.status))\n                                .imageScale(.small)\n                            Text(item.content)\n                                .font(.system(size: 10))\n                                .foregroundStyle(item.status == \"completed\" ? .secondary : .primary)\n                                .strikethrough(item.status == \"completed\")\n                                .lineLimit(2)\n                        }\n                    }\n                }\n            }\n        }\n        .padding(10)\n    }\n}\n\n// Existing call sites become:\nprivate var taskPanelView: some View {\n    TaskPanelView(\n        tasks: vm.taskList,\n        completedCount: vm.completedTaskCount,\n        progress: vm.taskProgress\n    )\n}\n\n// todoChecklist uses the same mapper:\nImage(systemName: TaskPresentation.iconName(for: item.status))\n    .foregroundStyle(TaskPresentation.color(for: item.status))\n\n// thinking block uses the extracted modifier chain:\nExpandableSection(expanded: settings.expandThinking, tintColor: .purple.opacity(0.8)) {\n    ThinkingText(text: thinking)\n} label: {\n    // existing label\n}\n```\n\nThe broader extraction should leave LogViewerView as composition and routing only:\n\n```swift\nstruct LogViewerView<VM: LogViewerState & LogViewerActions>: View {\n    var body: some View {\n        LogViewerScreenLayout(\n            stickyHeader: stickyHeader,\n            logHeader: { logHeader },\n            logContent: { logContent },\n            taskPanel: { taskPanelView }\n        )\n    }\n}\n```\n\nPredicted metrics: LogViewerView drops from multiple cohesion groups to a screen coordinator plus injected closures; logContent nesting drops below the SUI-1 threshold because loading, empty, scroll, prompt overlay, and task-panel sections live in focused subviews; duplicate task/todo status mapping drops to one mapper.",
+      "depends_on": [
+        "holistic-fix-001"
+      ],
+      "cross_check_results": [
+        {
+          "principle": "Structured Concurrency",
+          "passed": true,
+          "detail": "The extracted views create no Task and no new async lifecycle."
+        },
+        {
+          "principle": "DRY",
+          "passed": true,
+          "detail": "TaskPresentation removes the duplicate todo/task status mapping instead of relocating it. Search found no existing mapper to reuse."
+        },
+        {
+          "principle": "ISP",
+          "passed": true,
+          "detail": "No new protocols are introduced by this extraction."
+        },
+        {
+          "principle": "OCP",
+          "passed": true,
+          "detail": "The new subviews are pure SwiftUI values and depend on value inputs/closures rather than constructing concrete services."
+        },
+        {
+          "principle": "SRP",
+          "passed": true,
+          "detail": "The extracted types split prompt interaction, task display, message display, and layout into separate cohesion groups."
+        },
+        {
+          "principle": "SwiftUI",
+          "passed": true,
+          "detail": "ThinkingText resolves the nested modifier-chain issue; TaskProgressBar removes the fixed literal frame; extracted subviews reduce logContent complexity."
+        }
+      ],
+      "note": "This merges SRP, SwiftUI, and DRY findings because the same extraction boundary resolves them together. The patch avoids creating protocols for every subview because SwiftUI value components are sufficient and narrower."
+    },
+    {
+      "suggestion_id": "holistic-fix-003",
+      "principle": "DRY",
+      "resolves": [
+        "dry-002"
+      ],
+      "todo_items": [
+        "Create a private DiffLine model with text, prefix, and color fields.",
+        "Create a private DiffContentView that accepts filePath, line groups, a large-output fallback, and a large-output threshold.",
+        "Replace editDiffView(_:) with a call that supplies removed and inserted line groups.",
+        "Replace writeDiffView(_:) with a call that supplies inserted line groups.",
+        "Keep ToolResultView as the large-output fallback to preserve current behavior."
+      ],
+      "suggested_fix": "Search result: no shared diff renderer was found in Sources.\n\n```swift\nprivate struct DiffLine: Identifiable {\n    let id = UUID()\n    let prefix: String\n    let text: String\n    let color: Color\n}\n\nprivate struct DiffContentView: View {\n    let filePath: String\n    let lines: [DiffLine]\n    let fallbackContents: [String]\n    let threshold: Int\n\n    private var isLarge: Bool { lines.count > threshold }\n\n    var body: some View {\n        VStack(alignment: .leading, spacing: isLarge ? 4 : 0) {\n            if !filePath.isEmpty {\n                Text(filePath)\n                    .font(.system(size: 9, design: .monospaced))\n                    .foregroundStyle(.tertiary)\n                    .padding(.bottom, isLarge ? 0 : 4)\n            }\n\n            if isLarge {\n                ForEach(Array(fallbackContents.enumerated()), id: \\.offset) { _, content in\n                    if !content.isEmpty { ToolResultView(content: content) }\n                }\n            } else {\n                ForEach(lines) { line in\n                    Text(\"\\(line.prefix) \\(line.text)\")\n                        .font(.system(size: 10, design: .monospaced))\n                        .foregroundStyle(line.color.opacity(0.9))\n                        .frame(maxWidth: .infinity, alignment: .leading)\n                        .padding(.horizontal, 4)\n                        .padding(.vertical, 1)\n                        .background(line.color.opacity(0.1))\n                }\n            }\n        }\n        .textSelection(.enabled)\n        .padding(4)\n        .frame(maxWidth: .infinity, alignment: .leading)\n        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 4))\n    }\n}\n\nprivate func editDiffView(_ d: EditToolData) -> some View {\n    let removed = d.oldString.components(separatedBy: \"\\n\").map {\n        DiffLine(prefix: \"-\", text: $0, color: .red)\n    }\n    let inserted = d.newString.components(separatedBy: \"\\n\").map {\n        DiffLine(prefix: \"+\", text: $0, color: .green)\n    }\n    return DiffContentView(\n        filePath: d.filePath,\n        lines: removed + inserted,\n        fallbackContents: [d.oldString, d.newString],\n        threshold: 120\n    )\n}\n\nprivate func writeDiffView(_ d: WriteToolData) -> some View {\n    let inserted = d.content.components(separatedBy: \"\\n\").map {\n        DiffLine(prefix: \"+\", text: $0, color: .green)\n    }\n    return DiffContentView(\n        filePath: d.filePath,\n        lines: inserted,\n        fallbackContents: [d.content],\n        threshold: 160\n    )\n}\n```\n\nPredicted DRY metrics: edit/write diff rendering share one rendering flow; threshold differences remain configuration, not duplicated logic.",
+      "depends_on": [],
+      "cross_check_results": [
+        {
+          "principle": "Structured Concurrency",
+          "passed": true,
+          "detail": "The diff renderer is synchronous view composition only."
+        },
+        {
+          "principle": "ISP",
+          "passed": true,
+          "detail": "No protocols are added."
+        },
+        {
+          "principle": "OCP",
+          "passed": true,
+          "detail": "The renderer is configured by values and has no service dependencies."
+        },
+        {
+          "principle": "SRP",
+          "passed": true,
+          "detail": "DiffContentView has one display responsibility; line construction remains at the existing tool-data boundary."
+        },
+        {
+          "principle": "SwiftUI",
+          "passed": true,
+          "detail": "The reusable view reduces repeated view-builder complexity and keeps modifier chains on a focused component."
+        }
+      ],
+      "note": "The action is kept separate from the larger LogViewerView extraction because it can be implemented independently and directly resolves the duplicated diff rendering flow."
+    },
+    {
+      "suggestion_id": "holistic-fix-004",
+      "principle": "SwiftUI",
+      "resolves": [
+        "sui-009",
+        "srp-004"
+      ],
+      "todo_items": [
+        "Create ToolResultDisplayState as a small value type that prepares line count, truncation status, and preview text from content.",
+        "Change ToolResultView to receive ToolResultDisplayState or build it through a static factory outside the View init.",
+        "Keep ToolResultView responsible only for rendering and toggling expansion state.",
+        "Update all ToolResultView(content:) call sites through a compatibility initializer that delegates to ToolResultDisplayState.make(content:previewLineCount:)."
+      ],
+      "suggested_fix": "```swift\nprivate struct ToolResultDisplayState {\n    let content: String\n    let previewLineCount: Int\n    let lineCount: Int\n    let isTruncated: Bool\n    let preview: String\n\n    static func make(content: String, previewLineCount: Int = 20) -> ToolResultDisplayState {\n        let lines = content.components(separatedBy: \"\\n\")\n        return ToolResultDisplayState(\n            content: content,\n            previewLineCount: previewLineCount,\n            lineCount: lines.count,\n            isTruncated: lines.count > previewLineCount,\n            preview: lines.prefix(previewLineCount).joined(separator: \"\\n\")\n        )\n    }\n}\n\nprivate struct ToolResultView: View {\n    let state: ToolResultDisplayState\n    @State private var showFull = false\n\n    init(content: String) {\n        self.state = ToolResultDisplayState.make(content: content)\n    }\n\n    var body: some View {\n        VStack(alignment: .leading, spacing: 2) {\n            resultLabel\n            resultText\n        }\n    }\n\n    private var resultLabel: some View {\n        HStack(spacing: 4) {\n            Text(\"Result\")\n                .font(.system(size: 9, weight: .medium))\n                .foregroundStyle(.tertiary)\n            if state.isTruncated {\n                Button { showFull.toggle() } label: {\n                    Text(showFull ? \"collapse\" : \"\\(state.lineCount) lines\")\n                        .font(.system(size: 9))\n                        .foregroundStyle(.blue.opacity(0.7))\n                }\n                .buttonStyle(.plain)\n            }\n        }\n    }\n\n    private var resultText: some View {\n        Text(showFull || !state.isTruncated ? state.content : state.preview + \"\\n...\")\n            .font(.system(size: 10, design: .monospaced))\n            .foregroundStyle(.tertiary)\n            .textSelection(.enabled)\n            .padding(6)\n            .frame(maxWidth: .infinity, alignment: .leading)\n            .background(Color.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: 4))\n    }\n}\n```\n\nPredicted metrics: ToolResultView no longer splits/transforms content in view initialization and retains only rendering plus local disclosure state.",
+      "depends_on": [],
+      "cross_check_results": [
+        {
+          "principle": "Structured Concurrency",
+          "passed": true,
+          "detail": "No concurrency is introduced."
+        },
+        {
+          "principle": "DRY",
+          "passed": true,
+          "detail": "The content truncation algorithm has one representation in ToolResultDisplayState.make."
+        },
+        {
+          "principle": "ISP",
+          "passed": true,
+          "detail": "No protocols are added."
+        },
+        {
+          "principle": "OCP",
+          "passed": true,
+          "detail": "The display state is pure data and does not add sealed dependencies."
+        },
+        {
+          "principle": "SRP",
+          "passed": true,
+          "detail": "Preparation and rendering are separated, resolving the minor display-action pressure."
+        },
+        {
+          "principle": "SwiftUI",
+          "passed": true,
+          "detail": "ToolResultView receives prepared display state and remains a pure SwiftUI renderer."
+        }
+      ],
+      "note": "This action merges the ToolResultView SwiftUI purity finding with its minor SRP finding because both point to the same display-state preparation boundary."
+    },
+    {
+      "suggestion_id": "holistic-fix-005",
+      "principle": "OCP",
+      "resolves": [
+        "ocp-001"
+      ],
+      "todo_items": [
+        "Create a narrow LogViewerSessionControlling protocol exposing bridge(for:) and detach/remove session behavior needed by LogViewerView.",
+        "Add an extension that makes SessionManager conform to LogViewerSessionControlling.",
+        "Change LogViewerView.sessionManager from SessionManager? to (any LogViewerSessionControlling)? while preserving the existing initializer/call-site defaults if present.",
+        "Replace direct sessions.removeValue(forKey:) usage with a protocol method such as detachSession(for:)."
+      ],
+      "suggested_fix": "Search result: no existing session-control protocol covers bridge lookup plus detach/remove behavior.\n\n```swift\nprotocol LogViewerSessionControlling {\n    func bridge(for pid: Int) -> TTYBridge?\n    func detachSession(for pid: Int)\n}\n\nextension SessionManager: LogViewerSessionControlling {\n    func detachSession(for pid: Int) {\n        bridge(for: pid)?.detach()\n        sessions.removeValue(forKey: pid)\n    }\n}\n\nstruct LogViewerView<VM: LogViewerState & LogViewerActions>: View {\n    var sessionManager: (any LogViewerSessionControlling)?\n\n    private var bridge: TTYBridge? {\n        sessionManager?.bridge(for: agent.pid)\n    }\n\n    private var logHeader: some View {\n        // Stop button action becomes:\n        Button {\n            sessionManager?.detachSession(for: agent.pid)\n            onStop?()\n        } label: {\n            Image(systemName: \"stop.circle.fill\")\n                .font(navFont)\n        }\n    }\n}\n```\n\nPredicted OCP metrics: the concrete injected SessionManager dependency is replaced with a narrow injected abstraction; sealed points remain 0 and the injected dependency becomes substitutable in tests.",
+      "depends_on": [],
+      "cross_check_results": [
+        {
+          "principle": "Structured Concurrency",
+          "passed": true,
+          "detail": "No Task or async boundary is changed."
+        },
+        {
+          "principle": "DRY",
+          "passed": true,
+          "detail": "Search found no existing equivalent protocol; the new protocol is the narrowest known abstraction."
+        },
+        {
+          "principle": "ISP",
+          "passed": true,
+          "detail": "The new protocol has only two requirements used by LogViewerView, so conformers are not forced to implement unrelated session-management behavior."
+        },
+        {
+          "principle": "SRP",
+          "passed": true,
+          "detail": "The view delegates session detach behavior through an abstraction and removes direct mutation of SessionManager.sessions."
+        },
+        {
+          "principle": "SwiftUI",
+          "passed": true,
+          "detail": "The view still receives an injected dependency; no ViewModel observation boundary is affected."
+        }
+      ],
+      "note": "This resolves the minor OCP finding with a light-touch protocol and extension conformance, matching the OCP instruction to avoid over-engineering minor cases."
+    },
+    {
+      "suggestion_id": "holistic-fix-006",
+      "principle": "SwiftUI",
+      "resolves": [
+        "sui-001",
+        "sui-006",
+        "sui-008",
+        "sui-010"
+      ],
+      "todo_items": [
+        "Add #Preview blocks for StatusDot covering green, orange, and gray states.",
+        "Add #Preview blocks for ExpandableSection covering expanded and collapsed states.",
+        "Add #Preview blocks for ToolResultView covering short and truncated result content.",
+        "Add a LogViewerView preview with a lightweight @Observable preview view model conforming to LogViewerState and LogViewerActions.",
+        "Keep preview helper types inside #Preview blocks or PreviewProvider scope so they do not ship as production-only helpers."
+      ],
+      "suggested_fix": "```swift\n#Preview(\"Status dots\") {\n    HStack {\n        StatusDot(color: .green)\n        StatusDot(color: .orange)\n        StatusDot(color: .gray)\n    }\n    .padding()\n}\n\n#Preview(\"Expandable section\") {\n    ExpandableSection(expanded: true, tintColor: .blue) {\n        Text(\"Expanded content\")\n            .padding(6)\n    } label: {\n        Text(\"Details\")\n    }\n    .padding()\n}\n\n#Preview(\"Tool result\") {\n    VStack(alignment: .leading) {\n        ToolResultView(content: \"short output\")\n        ToolResultView(content: (1...30).map { \"line \\($0)\" }.joined(separator: \"\\n\"))\n    }\n    .padding()\n}\n\n#Preview(\"Log viewer\") {\n    @Observable\n    final class PreviewLogViewerViewModel: LogViewerState, LogViewerActions {\n        var messages: [LogMessage] = []\n        var displayedMessages: [LogMessage] = []\n        var isLoading = false\n        var taskList: [TaskListItem] = [\n            TaskListItem(id: \"1\", content: \"Review synthesized plan\", status: \"completed\", activeForm: \"\"),\n            TaskListItem(id: \"2\", content: \"Apply selected fixes\", status: \"in_progress\", activeForm: \"Applying fixes\")\n        ]\n        var completedTaskCount = 1\n        var taskProgress = 0.5\n        var toolResultLookup: [String: String] = [:]\n        var pendingPrompt: LogToolCall?\n        var fileURL = URL(filePath: \"/tmp/preview.jsonl\")\n        func roleLabel(_ msg: LogMessage) -> String { \"Assistant\" }\n        func loadMessages() async {}\n        func startPolling() async {}\n    }\n\n    LogViewerView(\n        agent: AgentInfo(pid: 1, displayName: \"Preview\", model: \"Claude\", cwd: \"/tmp\"),\n        target: .parent,\n        settings: AppSettings(),\n        sessionManager: nil,\n        stickyHeader: true,\n        vm: PreviewLogViewerViewModel(),\n        onDismiss: {}\n    )\n}\n```\n\nIf the project prefers dedicated preview files, place these in `Sources/Previews/LogViewerViewPreviews.swift`; otherwise keep them at the bottom of LogViewerView.swift. Predicted SUI-6 metrics: StatusDot, LogViewerView, ExpandableSection, and ToolResultView each have at least one preview instantiation.",
+      "depends_on": [
+        "holistic-fix-001",
+        "holistic-fix-004"
+      ],
+      "cross_check_results": [
+        {
+          "principle": "Structured Concurrency",
+          "passed": true,
+          "detail": "Preview async methods are empty and no unstructured tasks are created."
+        },
+        {
+          "principle": "DRY",
+          "passed": true,
+          "detail": "Preview data is intentionally sample configuration; no production abstraction is duplicated."
+        },
+        {
+          "principle": "ISP",
+          "passed": true,
+          "detail": "The preview model implements the existing preview-facing state/actions protocols; test/preview doubles are exempt from low-coverage concerns."
+        },
+        {
+          "principle": "OCP",
+          "passed": true,
+          "detail": "Preview-only concrete sample data is exempt from OCP production dependency concerns."
+        },
+        {
+          "principle": "SRP",
+          "passed": true,
+          "detail": "Preview helper code is isolated to preview scope and does not add production responsibilities."
+        },
+        {
+          "principle": "SwiftUI",
+          "passed": true,
+          "detail": "The targeted file-scope views now have preview instantiations; helper types are scoped to preview code to avoid SUI-5."
+        }
+      ],
+      "note": "This action depends on the state additions and ToolResultDisplayState change so the LogViewerView and ToolResultView previews match the planned public surface."
+    }
+  ],
+  "unresolved": [
+    {
+      "finding_id": "isp-001",
+      "reason": "The ISP finding is MINOR width only, with one production conformer and full meaningful coverage. The ISP fix instructions explicitly say MINOR should receive no protocol splitting; splitting LogViewerState now would create unnecessary abstraction churn and could conflict with SwiftUI Observable generic constraints."
+    },
+    {
+      "finding_id": "sui-002",
+      "reason": "StatusDot intentionally represents a tiny indicator dot. Removing its exact 6x6 frame without a design-system token or caller-owned size would change the component's visual contract; this should be revisited with a UI sizing token or explicit design instruction rather than synthesized blindly."
+    }
+  ],
+  "conflicts_detected": [
+    {
+      "finding": "isp-001",
+      "claimed_by": [
+        "holistic-fix-001",
+        "ISP"
+      ],
+      "resolution": "Principle Authority applied: because isp-001 belongs to ISP and the ISP fix instructions prohibit splitting MINOR findings, the finding remains unresolved instead of being claimed by the ViewModel state expansion."
+    },
+    {
+      "finding": "sui-004",
+      "claimed_by": [
+        "holistic-fix-001",
+        "holistic-fix-002"
+      ],
+      "resolution": "Principle Authority applied: SUI-2 purity is resolved by moving derived state into LogViewerViewModel in holistic-fix-001. The later task-panel extraction consumes the prepared value but does not claim the finding."
+    },
+    {
+      "finding": "dry-001",
+      "claimed_by": [
+        "holistic-fix-002",
+        "TaskPresentation"
+      ],
+      "resolution": "Merged into the SRP extraction because the same task display component owns the shared status presentation mapping."
+    }
+  ]
+}

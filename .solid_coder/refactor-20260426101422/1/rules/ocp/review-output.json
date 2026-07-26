@@ -1,0 +1,688 @@
+{
+  "agent": "ocp",
+  "principle": "Open/Closed Principle",
+  "timestamp": "2026-04-26T14:22:45Z",
+  "documentation_sources": [
+    "references/principles/OCP/rule.md",
+    "references/principles/OCP/review/instructions.md",
+    "references/design_patterns/structural/adapter.md",
+    "references/design_patterns/creational/factory.md",
+    "references/design_patterns/creational/factory-method.md",
+    "references/design_patterns/creational/builder.md"
+  ],
+  "files": [
+    {
+      "file_path": "/Users/crowea/Developer/Swift-Gurus/claude-code-usage-monitor/Sources/LogViewerView.swift",
+      "units": [
+        {
+          "unit_name": "TaskListItem",
+          "unit_kind": "struct",
+          "metrics": {
+            "sealed_variation_points": {
+              "count": 0,
+              "dependency_table": [
+                {
+                  "dependency": "String",
+                  "type": "Swift value type",
+                  "classification": "exception",
+                  "reason": "Pure data structure fields only; no behavior dependencies or side effects."
+                }
+              ],
+              "direct_classification": [],
+              "indirect_types": []
+            },
+            "testability": {
+              "direct_untestable_count": 0,
+              "direct_testable_count": 0,
+              "indirect_untestable_count": 0,
+              "indirect_testable_count": 0,
+              "direct_dependency_analyses": [],
+              "indirect_dependency_analyses": []
+            }
+          },
+          "scoring": {
+            "sealed_points_count": 0,
+            "sealed_points_severity": "COMPLIANT",
+            "direct_untestable_count": 0,
+            "direct_untestable_severity": "COMPLIANT",
+            "testable_direct_count": 0,
+            "indirect_untestable_count": 0,
+            "indirect_untestable_severity": "COMPLIANT",
+            "testable_indirect_count": 0,
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogViewerState",
+          "unit_kind": "protocol",
+          "metrics": {
+            "sealed_variation_points": {
+              "count": 0,
+              "dependency_table": [
+                {
+                  "dependency": "Observable",
+                  "type": "SwiftUI protocol",
+                  "classification": "abstract",
+                  "reason": "Protocol inheritance is an abstraction, not a concrete implementation dependency."
+                },
+                {
+                  "dependency": "LogMessage, TaskListItem, LogToolCall, URL",
+                  "type": "data/value types",
+                  "classification": "exception",
+                  "reason": "Protocol exposes state contracts and pure data values only."
+                }
+              ],
+              "direct_classification": [],
+              "indirect_types": []
+            },
+            "testability": {
+              "direct_untestable_count": 0,
+              "direct_testable_count": 0,
+              "indirect_untestable_count": 0,
+              "indirect_testable_count": 0,
+              "direct_dependency_analyses": [],
+              "indirect_dependency_analyses": []
+            }
+          },
+          "scoring": {
+            "sealed_points_count": 0,
+            "sealed_points_severity": "COMPLIANT",
+            "direct_untestable_count": 0,
+            "direct_untestable_severity": "COMPLIANT",
+            "testable_direct_count": 0,
+            "indirect_untestable_count": 0,
+            "indirect_untestable_severity": "COMPLIANT",
+            "testable_indirect_count": 0,
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogViewerActions",
+          "unit_kind": "protocol",
+          "metrics": {
+            "sealed_variation_points": {
+              "count": 0,
+              "dependency_table": [],
+              "direct_classification": [],
+              "indirect_types": []
+            },
+            "testability": {
+              "direct_untestable_count": 0,
+              "direct_testable_count": 0,
+              "indirect_untestable_count": 0,
+              "indirect_testable_count": 0,
+              "direct_dependency_analyses": [],
+              "indirect_dependency_analyses": []
+            }
+          },
+          "scoring": {
+            "sealed_points_count": 0,
+            "sealed_points_severity": "COMPLIANT",
+            "direct_untestable_count": 0,
+            "direct_untestable_severity": "COMPLIANT",
+            "testable_direct_count": 0,
+            "indirect_untestable_count": 0,
+            "indirect_untestable_severity": "COMPLIANT",
+            "testable_indirect_count": 0,
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogMessageParsing",
+          "unit_kind": "protocol",
+          "metrics": {
+            "sealed_variation_points": {
+              "count": 0,
+              "dependency_table": [
+                {
+                  "dependency": "URL, LogMessage",
+                  "type": "data/value types",
+                  "classification": "exception",
+                  "reason": "Protocol defines an abstraction over parsing and only references data values."
+                }
+              ],
+              "direct_classification": [],
+              "indirect_types": []
+            },
+            "testability": {
+              "direct_untestable_count": 0,
+              "direct_testable_count": 0,
+              "indirect_untestable_count": 0,
+              "indirect_testable_count": 0,
+              "direct_dependency_analyses": [],
+              "indirect_dependency_analyses": []
+            }
+          },
+          "scoring": {
+            "sealed_points_count": 0,
+            "sealed_points_severity": "COMPLIANT",
+            "direct_untestable_count": 0,
+            "direct_untestable_severity": "COMPLIANT",
+            "testable_direct_count": 0,
+            "indirect_untestable_count": 0,
+            "indirect_untestable_severity": "COMPLIANT",
+            "testable_indirect_count": 0,
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogParserAdapter",
+          "unit_kind": "struct",
+          "metrics": {
+            "sealed_variation_points": {
+              "count": 1,
+              "dependency_table": [
+                {
+                  "dependency": "LogParser.parseMessages",
+                  "type": "project-owned enum static API",
+                  "classification": "direct",
+                  "reason": "The adapter calls a concrete project-owned static parser directly; boundary-adapter exception applies only to unowned static-only APIs."
+                }
+              ],
+              "direct_classification": [
+                {
+                  "dependency": "LogParser",
+                  "injection_type": "NON-INJECTED"
+                }
+              ],
+              "indirect_types": []
+            },
+            "testability": {
+              "direct_untestable_count": 0,
+              "direct_testable_count": 0,
+              "indirect_untestable_count": 0,
+              "indirect_testable_count": 0,
+              "direct_dependency_analyses": [],
+              "indirect_dependency_analyses": []
+            }
+          },
+          "scoring": {
+            "sealed_points_count": 1,
+            "sealed_points_severity": "SEVERE",
+            "direct_untestable_count": 0,
+            "direct_untestable_severity": "COMPLIANT",
+            "testable_direct_count": 0,
+            "indirect_untestable_count": 0,
+            "indirect_untestable_severity": "COMPLIANT",
+            "testable_indirect_count": 0,
+            "final_severity": "SEVERE"
+          },
+          "findings": [
+            {
+              "id": "ocp-001",
+              "severity": "SEVERE",
+              "metric": "OCP-1",
+              "line_start": 58,
+              "line_end": 58,
+              "title": "Project-owned static parser seals parsing behavior",
+              "issue": "LogParserAdapter hardcodes LogParser.parseMessages directly. The boundary adapter exception is limited to unowned static-only APIs, but LogParser is project-owned, so changing the parsing implementation requires modifying this adapter instead of extending through injection.",
+              "impact": "Alternative parsing strategies remain coupled to this concrete static parser and cannot be swapped without editing production code.",
+              "rule_source": "OCP-1 Sealed Variation Points; Boundary Adapter Recognition Conditions"
+            }
+          ]
+        },
+        {
+          "unit_name": "LogViewerViewModel",
+          "unit_kind": "class",
+          "metrics": {
+            "sealed_variation_points": {
+              "count": 0,
+              "dependency_table": [
+                {
+                  "dependency": "LogMessageParsing",
+                  "type": "protocol",
+                  "classification": "abstract",
+                  "reason": "Parser is stored behind a protocol and injected through init."
+                },
+                {
+                  "dependency": "ModelResolving",
+                  "type": "protocol",
+                  "classification": "abstract",
+                  "reason": "Model resolver is stored behind a protocol and injected through init."
+                },
+                {
+                  "dependency": "LogURLResolving",
+                  "type": "protocol",
+                  "classification": "abstract",
+                  "reason": "URL resolver is stored behind a protocol and injected through init."
+                },
+                {
+                  "dependency": "FileSystemProviding",
+                  "type": "protocol",
+                  "classification": "abstract",
+                  "reason": "File system is stored behind a protocol and injected through init."
+                },
+                {
+                  "dependency": "LogParserAdapter",
+                  "type": "concrete default argument",
+                  "classification": "direct",
+                  "reason": "Default init argument is an injected concrete dependency under the rule."
+                },
+                {
+                  "dependency": "ClaudeModelAdapter",
+                  "type": "concrete default argument",
+                  "classification": "direct",
+                  "reason": "Default init argument is an injected concrete dependency under the rule."
+                },
+                {
+                  "dependency": "LogURLResolver",
+                  "type": "concrete default argument",
+                  "classification": "direct",
+                  "reason": "Default init argument is an injected concrete dependency under the rule."
+                },
+                {
+                  "dependency": "FileManager.default",
+                  "type": "concrete default argument",
+                  "classification": "direct",
+                  "reason": "Default init argument is injected as FileSystemProviding; callers can provide a substitute."
+                }
+              ],
+              "direct_classification": [
+                {
+                  "dependency": "LogParserAdapter",
+                  "injection_type": "INJECTED"
+                },
+                {
+                  "dependency": "ClaudeModelAdapter",
+                  "injection_type": "INJECTED"
+                },
+                {
+                  "dependency": "LogURLResolver",
+                  "injection_type": "INJECTED"
+                },
+                {
+                  "dependency": "FileManager.default",
+                  "injection_type": "INJECTED"
+                }
+              ],
+              "indirect_types": []
+            },
+            "testability": {
+              "direct_untestable_count": 3,
+              "direct_testable_count": 1,
+              "indirect_untestable_count": 0,
+              "indirect_testable_count": 0,
+              "direct_dependency_analyses": [
+                {
+                  "dependency": "LogParserAdapter",
+                  "testable": false,
+                  "sealed_point_count": 1,
+                  "dependency_table": [
+                    {
+                      "dependency": "LogParser.parseMessages",
+                      "type": "project-owned enum static API",
+                      "classification": "direct",
+                      "reason": "Concrete static parser is used directly by the injected default adapter."
+                    }
+                  ],
+                  "direct_classification": [
+                    {
+                      "dependency": "LogParser",
+                      "injection_type": "NON-INJECTED"
+                    }
+                  ]
+                },
+                {
+                  "dependency": "ClaudeModelAdapter",
+                  "testable": false,
+                  "sealed_point_count": 1,
+                  "dependency_table": [
+                    {
+                      "dependency": "ClaudeModel.from",
+                      "type": "project-owned enum static API",
+                      "classification": "direct",
+                      "reason": "Concrete static model resolver is used directly by the injected default adapter."
+                    }
+                  ],
+                  "direct_classification": [
+                    {
+                      "dependency": "ClaudeModel",
+                      "injection_type": "NON-INJECTED"
+                    }
+                  ]
+                },
+                {
+                  "dependency": "LogURLResolver",
+                  "testable": false,
+                  "sealed_point_count": 3,
+                  "dependency_table": [
+                    {
+                      "dependency": "CodexPaths",
+                      "type": "concrete struct",
+                      "classification": "direct",
+                      "reason": "Constructed directly inside resolveURL."
+                    },
+                    {
+                      "dependency": "CodexRolloutStore",
+                      "type": "concrete struct",
+                      "classification": "direct",
+                      "reason": "Constructed directly inside resolveURL."
+                    },
+                    {
+                      "dependency": "SessionScanner.findSubagentDirs",
+                      "type": "project-owned enum static API",
+                      "classification": "direct",
+                      "reason": "Static scanner is called directly inside resolveURL."
+                    }
+                  ],
+                  "direct_classification": [
+                    {
+                      "dependency": "CodexPaths",
+                      "injection_type": "NON-INJECTED"
+                    },
+                    {
+                      "dependency": "CodexRolloutStore",
+                      "injection_type": "NON-INJECTED"
+                    },
+                    {
+                      "dependency": "SessionScanner",
+                      "injection_type": "NON-INJECTED"
+                    }
+                  ]
+                },
+                {
+                  "dependency": "FileManager.default",
+                  "testable": true,
+                  "sealed_point_count": 0,
+                  "dependency_table": [
+                    {
+                      "dependency": "FileSystemProviding",
+                      "type": "protocol",
+                      "classification": "abstract",
+                      "reason": "The concrete default is assigned to a protocol-typed dependency and can be replaced by callers."
+                    }
+                  ],
+                  "direct_classification": []
+                }
+              ],
+              "indirect_dependency_analyses": []
+            }
+          },
+          "scoring": {
+            "sealed_points_count": 0,
+            "sealed_points_severity": "COMPLIANT",
+            "direct_untestable_count": 3,
+            "direct_untestable_severity": "SEVERE",
+            "testable_direct_count": 1,
+            "indirect_untestable_count": 0,
+            "indirect_untestable_severity": "COMPLIANT",
+            "testable_indirect_count": 0,
+            "final_severity": "SEVERE"
+          },
+          "findings": [
+            {
+              "id": "ocp-002",
+              "severity": "SEVERE",
+              "metric": "OCP-2",
+              "line_start": 88,
+              "line_end": 90,
+              "title": "Default concrete collaborators are not OCP-testable",
+              "issue": "The view model's default injected collaborators include LogParserAdapter, ClaudeModelAdapter, and LogURLResolver. Each has non-injected concrete/static dependencies in its own implementation and is a struct, so it cannot be subclassed to vary those behaviors.",
+              "impact": "The view model is protocol-friendly at its stored-property boundary, but its default production wiring still depends on concrete collaborators whose behavior changes require modifying those collaborators rather than extending them.",
+              "rule_source": "OCP-2 Testability Score"
+            }
+          ]
+        },
+        {
+          "unit_name": "StatusDot",
+          "unit_kind": "struct",
+          "metrics": {
+            "sealed_variation_points": {
+              "count": 0,
+              "dependency_table": [
+                {
+                  "dependency": "Color, Circle",
+                  "type": "SwiftUI view/value types",
+                  "classification": "exception",
+                  "reason": "Pure view UI element with no business logic dependencies."
+                }
+              ],
+              "direct_classification": [],
+              "indirect_types": []
+            },
+            "testability": {
+              "direct_untestable_count": 0,
+              "direct_testable_count": 0,
+              "indirect_untestable_count": 0,
+              "indirect_testable_count": 0,
+              "direct_dependency_analyses": [],
+              "indirect_dependency_analyses": []
+            }
+          },
+          "scoring": {
+            "sealed_points_count": 0,
+            "sealed_points_severity": "COMPLIANT",
+            "direct_untestable_count": 0,
+            "direct_untestable_severity": "COMPLIANT",
+            "testable_direct_count": 0,
+            "indirect_untestable_count": 0,
+            "indirect_untestable_severity": "COMPLIANT",
+            "testable_indirect_count": 0,
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogViewerView",
+          "unit_kind": "struct",
+          "metrics": {
+            "sealed_variation_points": {
+              "count": 1,
+              "dependency_table": [
+                {
+                  "dependency": "VM",
+                  "type": "generic constrained to protocols",
+                  "classification": "abstract",
+                  "reason": "View state/actions are received through protocol constraints."
+                },
+                {
+                  "dependency": "SessionManager",
+                  "type": "concrete final class",
+                  "classification": "direct",
+                  "reason": "Concrete session registry is stored directly on the view."
+                },
+                {
+                  "dependency": "TTYBridge",
+                  "type": "concrete final class",
+                  "classification": "indirect",
+                  "reason": "Bridge is obtained through SessionManager and then used for detach/send operations."
+                },
+                {
+                  "dependency": "NSWorkspace.shared",
+                  "type": "AppKit singleton",
+                  "classification": "direct",
+                  "reason": "Default file opener closure hardcodes the singleton directly in the view."
+                },
+                {
+                  "dependency": "SwiftUI view primitives",
+                  "type": "framework UI",
+                  "classification": "exception",
+                  "reason": "Pure view UI elements are exceptions under OCP."
+                }
+              ],
+              "direct_classification": [
+                {
+                  "dependency": "SessionManager",
+                  "injection_type": "INJECTED"
+                },
+                {
+                  "dependency": "NSWorkspace.shared",
+                  "injection_type": "NON-INJECTED"
+                }
+              ],
+              "indirect_types": [
+                {
+                  "dependency": "TTYBridge",
+                  "source": "SessionManager.bridge(for:)"
+                }
+              ]
+            },
+            "testability": {
+              "direct_untestable_count": 1,
+              "direct_testable_count": 0,
+              "indirect_untestable_count": 1,
+              "indirect_testable_count": 0,
+              "direct_dependency_analyses": [
+                {
+                  "dependency": "SessionManager",
+                  "testable": false,
+                  "sealed_point_count": 1,
+                  "dependency_table": [
+                    {
+                      "dependency": "TTYBridge(logger:)",
+                      "type": "concrete final class",
+                      "classification": "direct",
+                      "reason": "SessionManager constructs a concrete TTYBridge internally in spawn."
+                    }
+                  ],
+                  "direct_classification": [
+                    {
+                      "dependency": "TTYBridge",
+                      "injection_type": "NON-INJECTED"
+                    }
+                  ]
+                }
+              ],
+              "indirect_dependency_analyses": [
+                {
+                  "dependency": "TTYBridge",
+                  "testable": false,
+                  "reason": "TTYBridge is a final class returned indirectly by SessionManager, so the view cannot substitute bridge behavior by subclassing the indirect dependency."
+                }
+              ]
+            }
+          },
+          "scoring": {
+            "sealed_points_count": 1,
+            "sealed_points_severity": "SEVERE",
+            "direct_untestable_count": 1,
+            "direct_untestable_severity": "SEVERE",
+            "testable_direct_count": 0,
+            "indirect_untestable_count": 1,
+            "indirect_untestable_severity": "SEVERE",
+            "testable_indirect_count": 0,
+            "final_severity": "SEVERE"
+          },
+          "findings": [
+            {
+              "id": "ocp-003",
+              "severity": "SEVERE",
+              "metric": "OCP-1",
+              "line_start": 221,
+              "line_end": 221,
+              "title": "Default file opener hardcodes AppKit singleton",
+              "issue": "The default onOpenFile closure calls NSWorkspace.shared.open directly. That singleton is a concrete non-injected dependency in the view, so changing file-opening behavior requires modifying this unit's default implementation.",
+              "impact": "Tests and alternate file-opening policies must override the closure everywhere instead of extending a file-opening abstraction.",
+              "rule_source": "OCP-1 Sealed Variation Points"
+            },
+            {
+              "id": "ocp-004",
+              "severity": "SEVERE",
+              "metric": "OCP-2",
+              "line_start": 218,
+              "line_end": 236,
+              "title": "Concrete session manager exposes untestable bridge behavior",
+              "issue": "LogViewerView stores SessionManager directly and obtains a TTYBridge from it. SessionManager is final and internally constructs TTYBridge, while TTYBridge is also final, so the view's session and input behaviors are not substitutable through an abstraction.",
+              "impact": "Adding an alternate session transport or test bridge requires modifying the concrete session stack instead of extending the view through injected contracts.",
+              "rule_source": "OCP-2 Testability Score"
+            }
+          ]
+        },
+        {
+          "unit_name": "ExpandableSection",
+          "unit_kind": "struct",
+          "metrics": {
+            "sealed_variation_points": {
+              "count": 0,
+              "dependency_table": [
+                {
+                  "dependency": "Content, Label",
+                  "type": "generic SwiftUI view parameters",
+                  "classification": "abstract",
+                  "reason": "Content and label are generic extension points supplied by callers."
+                },
+                {
+                  "dependency": "DisclosureGroup",
+                  "type": "SwiftUI view primitive",
+                  "classification": "exception",
+                  "reason": "Pure view UI element with no business logic dependencies."
+                }
+              ],
+              "direct_classification": [],
+              "indirect_types": []
+            },
+            "testability": {
+              "direct_untestable_count": 0,
+              "direct_testable_count": 0,
+              "indirect_untestable_count": 0,
+              "indirect_testable_count": 0,
+              "direct_dependency_analyses": [],
+              "indirect_dependency_analyses": []
+            }
+          },
+          "scoring": {
+            "sealed_points_count": 0,
+            "sealed_points_severity": "COMPLIANT",
+            "direct_untestable_count": 0,
+            "direct_untestable_severity": "COMPLIANT",
+            "testable_direct_count": 0,
+            "indirect_untestable_count": 0,
+            "indirect_untestable_severity": "COMPLIANT",
+            "testable_indirect_count": 0,
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "ToolResultView",
+          "unit_kind": "struct",
+          "metrics": {
+            "sealed_variation_points": {
+              "count": 0,
+              "dependency_table": [
+                {
+                  "dependency": "String, Array",
+                  "type": "Swift value types",
+                  "classification": "exception",
+                  "reason": "Local preview calculation uses pure data values only."
+                },
+                {
+                  "dependency": "SwiftUI view primitives",
+                  "type": "framework UI",
+                  "classification": "exception",
+                  "reason": "Pure view UI element with no business logic dependencies."
+                }
+              ],
+              "direct_classification": [],
+              "indirect_types": []
+            },
+            "testability": {
+              "direct_untestable_count": 0,
+              "direct_testable_count": 0,
+              "indirect_untestable_count": 0,
+              "indirect_testable_count": 0,
+              "direct_dependency_analyses": [],
+              "indirect_dependency_analyses": []
+            }
+          },
+          "scoring": {
+            "sealed_points_count": 0,
+            "sealed_points_severity": "COMPLIANT",
+            "direct_untestable_count": 0,
+            "direct_untestable_severity": "COMPLIANT",
+            "testable_direct_count": 0,
+            "indirect_untestable_count": 0,
+            "indirect_untestable_severity": "COMPLIANT",
+            "testable_indirect_count": 0,
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        }
+      ]
+    }
+  ]
+}

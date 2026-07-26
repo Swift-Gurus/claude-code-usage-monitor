@@ -19,6 +19,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        // Menu bar accessory apps have no visible menu bar. Removing the main menu
+        // prevents a macOS crash triggered when accessibility tools inspect the
+        // Apple menu's "Open Recent" item (nil deref in
+        // initkLSSharedFileListRecentApplicationItems, macOS 26.3 rdar://147282034).
+        // Deferred one run-loop tick so SwiftUI finishes its own menu setup first.
+        DispatchQueue.main.async { NSApp.mainMenu = nil }
         StatuslineInstaller.installAll(accounts: settings.accounts)
         setupStatusItem()
 
@@ -98,9 +104,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             CommanderSupport.refreshFiles(accounts: currentAccounts)
             DispatchQueue.main.async {
                 self.usageData.reload()
-                self.agentTracker.reload()
-                self.updateStatusItemTitle()
-                self.refreshInFlight = false
+                self.agentTracker.reload {
+                    self.updateStatusItemTitle()
+                    self.refreshInFlight = false
+                }
             }
         }
     }
@@ -200,9 +207,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 CommanderSupport.refreshFiles(accounts: currentAccounts)
                 DispatchQueue.main.async {
                     self.usageData.reload()
-                    self.agentTracker.reload()
-                    self.updateStatusItemTitle()
-                    self.settings.isLoading = false
+                    self.agentTracker.reload {
+                        self.updateStatusItemTitle()
+                        self.settings.isLoading = false
+                    }
                 }
             }
         }
@@ -221,9 +229,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 CommanderSupport.refreshFiles(accounts: currentAccounts)
                 DispatchQueue.main.async {
                     self.usageData.reload()
-                    self.agentTracker.reload()
-                    self.updateStatusItemTitle()
-                    self.settings.isLoading = false
+                    self.agentTracker.reload {
+                        self.updateStatusItemTitle()
+                        self.settings.isLoading = false
+                    }
                 }
             }
         }

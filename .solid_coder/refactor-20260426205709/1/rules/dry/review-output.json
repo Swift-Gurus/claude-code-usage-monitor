@@ -1,0 +1,306 @@
+{
+  "agent": "dry",
+  "principle": "Don't Repeat Yourself",
+  "timestamp": "2026-04-27T00:58:01Z",
+  "documentation_sources": [
+    "references/principles/DRY/rule.md",
+    "references/principles/DRY/review/instructions.md"
+  ],
+  "files": [
+    {
+      "file_path": "/Users/crowea/Developer/Swift-Gurus/claude-code-usage-monitor/Sources/LogViewerView.swift",
+      "units": [
+        {
+          "unit_name": "TaskListItem",
+          "unit_kind": "struct",
+          "metrics": {
+            "reuse_misses": {
+              "count": 0,
+              "table": []
+            },
+            "inlined_duplications": {
+              "count": 0,
+              "table": []
+            },
+            "missing_abstractions": {
+              "count": 0,
+              "table": []
+            }
+          },
+          "scoring": {
+            "reuse_severity": "COMPLIANT",
+            "duplication_severity": "COMPLIANT",
+            "infrastructure_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogViewerState",
+          "unit_kind": "protocol",
+          "metrics": {
+            "reuse_misses": {
+              "count": 0,
+              "table": []
+            },
+            "inlined_duplications": {
+              "count": 0,
+              "table": []
+            },
+            "missing_abstractions": {
+              "count": 0,
+              "table": []
+            }
+          },
+          "scoring": {
+            "reuse_severity": "COMPLIANT",
+            "duplication_severity": "COMPLIANT",
+            "infrastructure_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogViewerActions",
+          "unit_kind": "protocol",
+          "metrics": {
+            "reuse_misses": {
+              "count": 0,
+              "table": []
+            },
+            "inlined_duplications": {
+              "count": 0,
+              "table": []
+            },
+            "missing_abstractions": {
+              "count": 0,
+              "table": []
+            }
+          },
+          "scoring": {
+            "reuse_severity": "COMPLIANT",
+            "duplication_severity": "COMPLIANT",
+            "infrastructure_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogMessageParsing",
+          "unit_kind": "protocol",
+          "metrics": {
+            "reuse_misses": {
+              "count": 0,
+              "table": []
+            },
+            "inlined_duplications": {
+              "count": 0,
+              "table": []
+            },
+            "missing_abstractions": {
+              "count": 0,
+              "table": []
+            }
+          },
+          "scoring": {
+            "reuse_severity": "COMPLIANT",
+            "duplication_severity": "COMPLIANT",
+            "infrastructure_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogParserAdapter",
+          "unit_kind": "struct",
+          "metrics": {
+            "reuse_misses": {
+              "count": 0,
+              "table": []
+            },
+            "inlined_duplications": {
+              "count": 0,
+              "table": []
+            },
+            "missing_abstractions": {
+              "count": 0,
+              "table": []
+            }
+          },
+          "scoring": {
+            "reuse_severity": "COMPLIANT",
+            "duplication_severity": "COMPLIANT",
+            "infrastructure_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogViewerViewModel",
+          "unit_kind": "class",
+          "metrics": {
+            "reuse_misses": {
+              "count": 0,
+              "table": []
+            },
+            "inlined_duplications": {
+              "count": 0,
+              "table": []
+            },
+            "missing_abstractions": {
+              "count": 0,
+              "table": []
+            }
+          },
+          "scoring": {
+            "reuse_severity": "COMPLIANT",
+            "duplication_severity": "COMPLIANT",
+            "infrastructure_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "StatusDot",
+          "unit_kind": "struct",
+          "metrics": {
+            "reuse_misses": {
+              "count": 0,
+              "table": []
+            },
+            "inlined_duplications": {
+              "count": 0,
+              "table": []
+            },
+            "missing_abstractions": {
+              "count": 0,
+              "table": []
+            }
+          },
+          "scoring": {
+            "reuse_severity": "COMPLIANT",
+            "duplication_severity": "COMPLIANT",
+            "infrastructure_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogViewerView",
+          "unit_kind": "struct",
+          "metrics": {
+            "reuse_misses": {
+              "count": 0,
+              "table": []
+            },
+            "inlined_duplications": {
+              "count": 2,
+              "table": [
+                {
+                  "method_a": "todoIcon(_:) / todoColor(_:)",
+                  "location_a": "/Users/crowea/Developer/Swift-Gurus/claude-code-usage-monitor/Sources/LogViewerView.swift:932",
+                  "method_b": "taskIcon(_:) / taskColor(_:)",
+                  "location_b": "/Users/crowea/Developer/Swift-Gurus/claude-code-usage-monitor/Sources/LogViewerView.swift:1267",
+                  "classification": "STRUCTURAL",
+                  "reasoning": "Both helper pairs map the same task status strings through the same switch branches to UI icon and color values. The task helpers only add the deleted status, so the shared completed/in_progress/default status presentation logic is duplicated inline."
+                },
+                {
+                  "method_a": "editDiffView(_:)",
+                  "location_a": "/Users/crowea/Developer/Swift-Gurus/claude-code-usage-monitor/Sources/LogViewerView.swift:712",
+                  "method_b": "writeDiffView(_:)",
+                  "location_b": "/Users/crowea/Developer/Swift-Gurus/claude-code-usage-monitor/Sources/LogViewerView.swift:873",
+                  "classification": "STRUCTURAL",
+                  "reasoning": "Both methods split content into lines, branch to a compact ToolResultView for large payloads, optionally render the file path, then render monospaced diff lines with the same frame, padding, selection, and rounded background modifiers. The only material variation is whether old lines are also rendered with a red prefix."
+                }
+              ]
+            },
+            "missing_abstractions": {
+              "count": 0,
+              "table": []
+            }
+          },
+          "scoring": {
+            "reuse_severity": "COMPLIANT",
+            "duplication_severity": "SEVERE",
+            "infrastructure_severity": "COMPLIANT",
+            "final_severity": "SEVERE"
+          },
+          "findings": [
+            {
+              "id": "dry-001",
+              "severity": "SEVERE",
+              "metric": "DRY-2",
+              "line_start": 932,
+              "line_end": 945,
+              "title": "Duplicate task status mapping helpers",
+              "issue": "todoIcon(_:) and todoColor(_:) duplicate the same status-to-presentation mapping that taskIcon(_:) and taskColor(_:) implement later in the same changed unit.",
+              "impact": "Adding or renaming a task status now requires updating two separate helper pairs, and the mappings can drift between the inline checklist and the task panel.",
+              "rule_source": "DRY-2 Inlined Duplication"
+            },
+            {
+              "id": "dry-002",
+              "severity": "SEVERE",
+              "metric": "DRY-2",
+              "line_start": 712,
+              "line_end": 910,
+              "title": "Duplicate diff rendering flow",
+              "issue": "editDiffView(_:) and writeDiffView(_:) repeat the same split-lines, large-output fallback, file path label, monospaced line rendering, padding, text selection, and rounded background sequence.",
+              "impact": "Future changes to diff presentation, truncation thresholds, or styling must be made in both branches and can diverge for edit and write tool output.",
+              "rule_source": "DRY-2 Inlined Duplication"
+            }
+          ]
+        },
+        {
+          "unit_name": "ExpandableSection",
+          "unit_kind": "struct",
+          "metrics": {
+            "reuse_misses": {
+              "count": 0,
+              "table": []
+            },
+            "inlined_duplications": {
+              "count": 0,
+              "table": []
+            },
+            "missing_abstractions": {
+              "count": 0,
+              "table": []
+            }
+          },
+          "scoring": {
+            "reuse_severity": "COMPLIANT",
+            "duplication_severity": "COMPLIANT",
+            "infrastructure_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "ToolResultView",
+          "unit_kind": "struct",
+          "metrics": {
+            "reuse_misses": {
+              "count": 0,
+              "table": []
+            },
+            "inlined_duplications": {
+              "count": 0,
+              "table": []
+            },
+            "missing_abstractions": {
+              "count": 0,
+              "table": []
+            }
+          },
+          "scoring": {
+            "reuse_severity": "COMPLIANT",
+            "duplication_severity": "COMPLIANT",
+            "infrastructure_severity": "COMPLIANT",
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        }
+      ]
+    }
+  ]
+}

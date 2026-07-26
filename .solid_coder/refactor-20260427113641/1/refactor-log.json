@@ -1,0 +1,27 @@
+{
+  "iteration": "1",
+  "status": "review_only",
+  "verdict": "HAS_SEVERE",
+  "total_severe": 13,
+  "total_minor": 1,
+  "principles_summary": [
+    { "principle": "dry", "severity": "SEVERE", "findings": 4 },
+    { "principle": "isp", "severity": "MINOR",  "findings": 1 },
+    { "principle": "lsp", "severity": "COMPLIANT", "findings": 0 },
+    { "principle": "ocp", "severity": "SEVERE", "findings": 5 },
+    { "principle": "srp", "severity": "SEVERE", "findings": 4 }
+  ],
+  "synthesized_plans": [
+    "/Users/crowea/Developer/Swift-Gurus/claude-code-usage-monitor/.solid_coder/refactor-20260427113641/1/synthesized/LogViewerView.swift.plan.json"
+  ],
+  "by_file_findings": [
+    "/Users/crowea/Developer/Swift-Gurus/claude-code-usage-monitor/.solid_coder/refactor-20260427113641/1/by-file/LogViewerView.swift.output.json"
+  ],
+  "review_outputs": [
+    "/Users/crowea/Developer/Swift-Gurus/claude-code-usage-monitor/.solid_coder/refactor-20260427113641/1/rules/dry/review-output.json",
+    "/Users/crowea/Developer/Swift-Gurus/claude-code-usage-monitor/.solid_coder/refactor-20260427113641/1/rules/isp/review-output.json",
+    "/Users/crowea/Developer/Swift-Gurus/claude-code-usage-monitor/.solid_coder/refactor-20260427113641/1/rules/lsp/review-output.json",
+    "/Users/crowea/Developer/Swift-Gurus/claude-code-usage-monitor/.solid_coder/refactor-20260427113641/1/rules/ocp/review-output.json",
+    "/Users/crowea/Developer/Swift-Gurus/claude-code-usage-monitor/.solid_coder/refactor-20260427113641/1/rules/srp/review-output.json"
+  ]
+}

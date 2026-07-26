@@ -1,0 +1,53 @@
+warning: 'claude-code-usage-monitor': found 1 file(s) which are unhandled; explicitly declare them as resources or exclude from the target
+    /Users/crowea/Developer/Swift-Gurus/claude-code-usage-monitor/Sources/Resources/ClaudeUsageBar.entitlements
+[0/1] Planning build
+Building for debugging...
+[0/3] Write sources
+[2/3] Write swift-version--58304C5D6DBC2206.txt
+[4/44] Compiling ClaudeUsageBarLib TTYBridge.swift
+[5/44] Compiling ClaudeUsageBarLib ToolDataParser.swift
+[6/44] Compiling ClaudeUsageBarLib UsageData.swift
+[7/44] Compiling ClaudeUsageBarLib CodexSessionRepository.swift
+[8/44] Compiling ClaudeUsageBarLib CodexDateParser.swift
+[9/44] Compiling ClaudeUsageBarLib CodexJSONLFileDecoder.swift
+[10/47] Compiling ClaudeUsageBarLib SkillToolExpandedContent.swift
+[11/47] Compiling ClaudeUsageBarLib SkillToolParser.swift
+[12/47] Compiling ClaudeUsageBarLib SkillToolViewModel.swift
+[13/47] Compiling ClaudeUsageBarLib CodexLogParser.swift
+[14/47] Compiling ClaudeUsageBarLib CodexPaths.swift
+[15/47] Compiling ClaudeUsageBarLib CodexRolloutStore.swift
+[16/47] Emitting module ClaudeUsageBarLib
+[17/47] Compiling ClaudeUsageBarLib CodexSQLiteThreadStore.swift
+[18/47] Compiling ClaudeUsageBarLib CodexStorageModels.swift
+[19/47] Compiling ClaudeUsageBarLib CodexAgentFactory.swift
+[20/47] Compiling ClaudeUsageBarLib SessionScanner.swift
+[21/47] Compiling ClaudeUsageBarLib ContextProgressBar.swift
+[22/47] Compiling ClaudeUsageBarLib DebugLogger.swift
+[23/47] Compiling ClaudeUsageBarLib SessionManager.swift
+[24/47] Compiling ClaudeUsageBarLib SettingsView.swift
+[25/47] Compiling ClaudeUsageBarLib ShimmerModifier.swift
+[26/47] Compiling ClaudeUsageBarLib StatsCache.swift
+[27/47] Compiling ClaudeUsageBarLib StatuslineInstaller.swift
+[28/47] Compiling ClaudeUsageBarLib SubagentDetailView.swift
+[29/47] Compiling ClaudeUsageBarLib CommanderSupport.swift
+[30/47] Compiling ClaudeUsageBarLib JSONLParser.swift
+[31/47] Compiling ClaudeUsageBarLib PriceCalculator.swift
+[32/47] Compiling ClaudeUsageBarLib AgentFileData.swift
+[33/47] Compiling ClaudeUsageBarLib AgentTracker.swift
+[34/47] Compiling ClaudeUsageBarLib AppSettings.swift
+[35/47] Compiling ClaudeUsageBarLib CodexSession.swift
+[36/47] Compiling ClaudeUsageBarLib UsageEntryCollector.swift
+[37/47] Compiling ClaudeUsageBarLib UsageMonitor.swift
+[38/47] Compiling ClaudeUsageBarLib resource_bundle_accessor.swift
+[39/47] Compiling ClaudeUsageBarLib PopoverView.swift
+[40/47] Compiling ClaudeUsageBarLib SQLiteStore.swift
+[41/47] Compiling ClaudeUsageBarLib SessionDetailScaffold.swift
+[42/47] Compiling ClaudeUsageBarLib DesktopAppScanner.swift
+[43/47] Compiling ClaudeUsageBarLib FlowLayout.swift
+[44/47] Compiling ClaudeUsageBarLib LogMessage.swift
+[45/47] Compiling ClaudeUsageBarLib LogURLResolver.swift
+[46/47] Compiling ClaudeUsageBarLib LogViewerView.swift
+[47/47] Compiling ClaudeUsageBarLib Polling.swift
+[48/49] Compiling ClaudeUsageBar ClaudeUsageBarApp.swift
+[49/49] Emitting module ClaudeUsageBar
+Build of target: 'ClaudeUsageBar' complete! (9.36s)

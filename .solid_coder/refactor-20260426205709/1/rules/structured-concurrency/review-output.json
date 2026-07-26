@@ -1,0 +1,377 @@
+{
+  "agent": "structured-concurrency",
+  "principle": "Structured Concurrency",
+  "timestamp": "2026-04-27T00:58:01Z",
+  "documentation_sources": [
+    "references/coding/apple/StructuredConcurrency/rule.md",
+    "references/coding/apple/StructuredConcurrency/review/instructions.md"
+  ],
+  "files": [
+    {
+      "file_path": "/Users/crowea/Developer/Swift-Gurus/claude-code-usage-monitor/Sources/LogViewerView.swift",
+      "units": [
+        {
+          "unit_name": "TaskListItem",
+          "unit_kind": "struct",
+          "metrics": {
+            "model_mixing": {
+              "async_count": 0,
+              "gcd_count": 0,
+              "completion_handler_count": 0,
+              "mixed": false
+            },
+            "task_lifecycle": {
+              "orphaned_count": 0,
+              "leaked_count": 0
+            },
+            "safety_bypasses": {
+              "unchecked_sendable_count": 0,
+              "nonisolated_unsafe_count": 0
+            },
+            "sequential_await": {
+              "independent_sequential_count": 0
+            },
+            "sync_async_bridge": {
+              "blocking_count": 0,
+              "unnecessary_continuation_count": 0
+            },
+            "duration_api": {
+              "raw_nanosecond_count": 0
+            }
+          },
+          "scoring": {
+            "final_severity": "COMPLIANT",
+            "exceptions": []
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogViewerState",
+          "unit_kind": "protocol",
+          "metrics": {
+            "model_mixing": {
+              "async_count": 0,
+              "gcd_count": 0,
+              "completion_handler_count": 0,
+              "mixed": false
+            },
+            "task_lifecycle": {
+              "orphaned_count": 0,
+              "leaked_count": 0
+            },
+            "safety_bypasses": {
+              "unchecked_sendable_count": 0,
+              "nonisolated_unsafe_count": 0
+            },
+            "sequential_await": {
+              "independent_sequential_count": 0
+            },
+            "sync_async_bridge": {
+              "blocking_count": 0,
+              "unnecessary_continuation_count": 0
+            },
+            "duration_api": {
+              "raw_nanosecond_count": 0
+            }
+          },
+          "scoring": {
+            "final_severity": "COMPLIANT",
+            "exceptions": []
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogViewerActions",
+          "unit_kind": "protocol",
+          "metrics": {
+            "model_mixing": {
+              "async_count": 2,
+              "gcd_count": 0,
+              "completion_handler_count": 0,
+              "mixed": false
+            },
+            "task_lifecycle": {
+              "orphaned_count": 0,
+              "leaked_count": 0
+            },
+            "safety_bypasses": {
+              "unchecked_sendable_count": 0,
+              "nonisolated_unsafe_count": 0
+            },
+            "sequential_await": {
+              "independent_sequential_count": 0
+            },
+            "sync_async_bridge": {
+              "blocking_count": 0,
+              "unnecessary_continuation_count": 0
+            },
+            "duration_api": {
+              "raw_nanosecond_count": 0
+            }
+          },
+          "scoring": {
+            "final_severity": "COMPLIANT",
+            "exceptions": []
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogMessageParsing",
+          "unit_kind": "protocol",
+          "metrics": {
+            "model_mixing": {
+              "async_count": 0,
+              "gcd_count": 0,
+              "completion_handler_count": 0,
+              "mixed": false
+            },
+            "task_lifecycle": {
+              "orphaned_count": 0,
+              "leaked_count": 0
+            },
+            "safety_bypasses": {
+              "unchecked_sendable_count": 0,
+              "nonisolated_unsafe_count": 0
+            },
+            "sequential_await": {
+              "independent_sequential_count": 0
+            },
+            "sync_async_bridge": {
+              "blocking_count": 0,
+              "unnecessary_continuation_count": 0
+            },
+            "duration_api": {
+              "raw_nanosecond_count": 0
+            }
+          },
+          "scoring": {
+            "final_severity": "COMPLIANT",
+            "exceptions": []
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogParserAdapter",
+          "unit_kind": "struct",
+          "metrics": {
+            "model_mixing": {
+              "async_count": 0,
+              "gcd_count": 0,
+              "completion_handler_count": 0,
+              "mixed": false
+            },
+            "task_lifecycle": {
+              "orphaned_count": 0,
+              "leaked_count": 0
+            },
+            "safety_bypasses": {
+              "unchecked_sendable_count": 0,
+              "nonisolated_unsafe_count": 0
+            },
+            "sequential_await": {
+              "independent_sequential_count": 0
+            },
+            "sync_async_bridge": {
+              "blocking_count": 0,
+              "unnecessary_continuation_count": 0
+            },
+            "duration_api": {
+              "raw_nanosecond_count": 0
+            }
+          },
+          "scoring": {
+            "final_severity": "COMPLIANT",
+            "exceptions": []
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogViewerViewModel",
+          "unit_kind": "class",
+          "metrics": {
+            "model_mixing": {
+              "async_count": 2,
+              "gcd_count": 0,
+              "completion_handler_count": 0,
+              "mixed": false
+            },
+            "task_lifecycle": {
+              "orphaned_count": 1,
+              "leaked_count": 0
+            },
+            "safety_bypasses": {
+              "unchecked_sendable_count": 0,
+              "nonisolated_unsafe_count": 0
+            },
+            "sequential_await": {
+              "independent_sequential_count": 0
+            },
+            "sync_async_bridge": {
+              "blocking_count": 0,
+              "unnecessary_continuation_count": 0
+            },
+            "duration_api": {
+              "raw_nanosecond_count": 0
+            }
+          },
+          "scoring": {
+            "final_severity": "SEVERE",
+            "exceptions": []
+          },
+          "findings": [
+            {
+              "id": "SC-2-LogViewerViewModel-001",
+              "metric": "SC-2",
+              "severity": "SEVERE",
+              "description": "Task.detached is created outside a SwiftUI .task modifier without storing a task handle or providing a cancellation path. The loaded SC-2 rule requires every Task or Task.detached outside SwiftUI .task to be stored and cancellable.",
+              "line_start": 122,
+              "line_end": 129
+            }
+          ]
+        },
+        {
+          "unit_name": "StatusDot",
+          "unit_kind": "struct",
+          "metrics": {
+            "model_mixing": {
+              "async_count": 0,
+              "gcd_count": 0,
+              "completion_handler_count": 0,
+              "mixed": false
+            },
+            "task_lifecycle": {
+              "orphaned_count": 0,
+              "leaked_count": 0
+            },
+            "safety_bypasses": {
+              "unchecked_sendable_count": 0,
+              "nonisolated_unsafe_count": 0
+            },
+            "sequential_await": {
+              "independent_sequential_count": 0
+            },
+            "sync_async_bridge": {
+              "blocking_count": 0,
+              "unnecessary_continuation_count": 0
+            },
+            "duration_api": {
+              "raw_nanosecond_count": 0
+            }
+          },
+          "scoring": {
+            "final_severity": "COMPLIANT",
+            "exceptions": []
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogViewerView",
+          "unit_kind": "struct",
+          "metrics": {
+            "model_mixing": {
+              "async_count": 0,
+              "gcd_count": 0,
+              "completion_handler_count": 0,
+              "mixed": false
+            },
+            "task_lifecycle": {
+              "orphaned_count": 0,
+              "leaked_count": 0
+            },
+            "safety_bypasses": {
+              "unchecked_sendable_count": 0,
+              "nonisolated_unsafe_count": 0
+            },
+            "sequential_await": {
+              "independent_sequential_count": 0
+            },
+            "sync_async_bridge": {
+              "blocking_count": 0,
+              "unnecessary_continuation_count": 0
+            },
+            "duration_api": {
+              "raw_nanosecond_count": 0
+            }
+          },
+          "scoring": {
+            "final_severity": "COMPLIANT",
+            "exceptions": [
+              "Task created at line 424 is inside a SwiftUI .task modifier closure and is excluded by the SwiftUI .task modifier exception."
+            ]
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "ExpandableSection",
+          "unit_kind": "struct",
+          "metrics": {
+            "model_mixing": {
+              "async_count": 0,
+              "gcd_count": 0,
+              "completion_handler_count": 0,
+              "mixed": false
+            },
+            "task_lifecycle": {
+              "orphaned_count": 0,
+              "leaked_count": 0
+            },
+            "safety_bypasses": {
+              "unchecked_sendable_count": 0,
+              "nonisolated_unsafe_count": 0
+            },
+            "sequential_await": {
+              "independent_sequential_count": 0
+            },
+            "sync_async_bridge": {
+              "blocking_count": 0,
+              "unnecessary_continuation_count": 0
+            },
+            "duration_api": {
+              "raw_nanosecond_count": 0
+            }
+          },
+          "scoring": {
+            "final_severity": "COMPLIANT",
+            "exceptions": []
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "ToolResultView",
+          "unit_kind": "struct",
+          "metrics": {
+            "model_mixing": {
+              "async_count": 0,
+              "gcd_count": 0,
+              "completion_handler_count": 0,
+              "mixed": false
+            },
+            "task_lifecycle": {
+              "orphaned_count": 0,
+              "leaked_count": 0
+            },
+            "safety_bypasses": {
+              "unchecked_sendable_count": 0,
+              "nonisolated_unsafe_count": 0
+            },
+            "sequential_await": {
+              "independent_sequential_count": 0
+            },
+            "sync_async_bridge": {
+              "blocking_count": 0,
+              "unnecessary_continuation_count": 0
+            },
+            "duration_api": {
+              "raw_nanosecond_count": 0
+            }
+          },
+          "scoring": {
+            "final_severity": "COMPLIANT",
+            "exceptions": []
+          },
+          "findings": []
+        }
+      ]
+    }
+  ]
+}

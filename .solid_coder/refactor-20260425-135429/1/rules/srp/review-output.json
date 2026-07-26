@@ -1,0 +1,648 @@
+{
+  "agent": "srp",
+  "principle": "Single Responsibility Principle",
+  "timestamp": "2026-04-25T13:54:29Z",
+  "documentation_sources": [
+    "/Users/crowea/Developer/Swift-Gurus/solid-coder/references/principles/SRP/rule.md",
+    "/Users/crowea/Developer/Swift-Gurus/solid-coder/references/principles/SRP/review/instructions.md",
+    "/Users/crowea/Developer/Swift-Gurus/solid-coder/references/design_patterns/structural/facade.md"
+  ],
+  "files": [
+    {
+      "file_path": "Sources/LogViewerView.swift",
+      "units": [
+        {
+          "unit_name": "TaskListItem",
+          "unit_kind": "struct",
+          "metrics": {
+            "verbs": {
+              "count": 0,
+              "table": []
+            },
+            "cohesion_groups": {
+              "count": 1,
+              "method_variable_table": [],
+              "groups": [
+                {
+                  "name": "task-data",
+                  "variables": ["id", "content", "status", "activeForm"],
+                  "methods": []
+                }
+              ]
+            },
+            "stakeholders": {
+              "count": 1,
+              "table": []
+            },
+            "cross_reference": [
+              {
+                "group": "task-data",
+                "variables": ["id", "content", "status", "activeForm"],
+                "verbs": [],
+                "stakeholder": "UX (task display)"
+              }
+            ]
+          },
+          "scoring": {
+            "cohesion_severity": "COMPLIANT",
+            "verb_severity": "COMPLIANT",
+            "stakeholder_count": 1,
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogViewerState",
+          "unit_kind": "protocol",
+          "metrics": {
+            "verbs": {
+              "count": 1,
+              "table": [
+                { "method": "roleLabel", "verb": "formats" }
+              ]
+            },
+            "cohesion_groups": {
+              "count": 1,
+              "method_variable_table": [
+                { "method": "roleLabel", "variables": ["msg"] }
+              ],
+              "groups": [
+                {
+                  "name": "view-state-contract",
+                  "variables": ["messages", "displayedMessages", "isLoading", "taskList", "toolResultLookup", "pendingPrompt", "fileURL"],
+                  "methods": ["roleLabel"]
+                }
+              ]
+            },
+            "stakeholders": {
+              "count": 1,
+              "table": [
+                { "verb": "formats", "stakeholder": "UX (view contract)" }
+              ]
+            },
+            "cross_reference": [
+              {
+                "group": "view-state-contract",
+                "variables": ["messages", "displayedMessages", "isLoading", "taskList", "toolResultLookup", "pendingPrompt", "fileURL"],
+                "verbs": ["formats"],
+                "stakeholder": "UX (view contract)"
+              }
+            ]
+          },
+          "scoring": {
+            "cohesion_severity": "COMPLIANT",
+            "verb_severity": "COMPLIANT",
+            "stakeholder_count": 1,
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogViewerActions",
+          "unit_kind": "protocol",
+          "metrics": {
+            "verbs": {
+              "count": 2,
+              "table": [
+                { "method": "loadMessages", "verb": "loads" },
+                { "method": "startPolling", "verb": "polls" }
+              ]
+            },
+            "cohesion_groups": {
+              "count": 1,
+              "method_variable_table": [
+                { "method": "loadMessages", "variables": [] },
+                { "method": "startPolling", "variables": [] }
+              ],
+              "groups": [
+                {
+                  "name": "lifecycle-actions",
+                  "variables": [],
+                  "methods": ["loadMessages", "startPolling"]
+                }
+              ]
+            },
+            "stakeholders": {
+              "count": 1,
+              "table": [
+                { "verb": "loads", "stakeholder": "Domain (data refresh)" },
+                { "verb": "polls", "stakeholder": "Domain (data refresh)" }
+              ]
+            },
+            "cross_reference": [
+              {
+                "group": "lifecycle-actions",
+                "variables": [],
+                "verbs": ["loads", "polls"],
+                "stakeholder": "Domain (data refresh)"
+              }
+            ]
+          },
+          "scoring": {
+            "cohesion_severity": "COMPLIANT",
+            "verb_severity": "COMPLIANT",
+            "stakeholder_count": 1,
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogMessageParsing",
+          "unit_kind": "protocol",
+          "metrics": {
+            "verbs": {
+              "count": 1,
+              "table": [
+                { "method": "parseMessages", "verb": "parses" }
+              ]
+            },
+            "cohesion_groups": {
+              "count": 1,
+              "method_variable_table": [
+                { "method": "parseMessages", "variables": ["url"] }
+              ],
+              "groups": [
+                {
+                  "name": "parsing-contract",
+                  "variables": [],
+                  "methods": ["parseMessages"]
+                }
+              ]
+            },
+            "stakeholders": {
+              "count": 1,
+              "table": [
+                { "verb": "parses", "stakeholder": "Data (log file decoding)" }
+              ]
+            },
+            "cross_reference": [
+              {
+                "group": "parsing-contract",
+                "variables": [],
+                "verbs": ["parses"],
+                "stakeholder": "Data (log file decoding)"
+              }
+            ]
+          },
+          "scoring": {
+            "cohesion_severity": "COMPLIANT",
+            "verb_severity": "COMPLIANT",
+            "stakeholder_count": 1,
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogParserAdapter",
+          "unit_kind": "struct",
+          "metrics": {
+            "verbs": {
+              "count": 1,
+              "table": [
+                { "method": "parseMessages", "verb": "delegates" }
+              ]
+            },
+            "cohesion_groups": {
+              "count": 1,
+              "method_variable_table": [
+                { "method": "parseMessages", "variables": [] }
+              ],
+              "groups": [
+                {
+                  "name": "adapter",
+                  "variables": [],
+                  "methods": ["parseMessages"]
+                }
+              ]
+            },
+            "stakeholders": {
+              "count": 1,
+              "table": [
+                { "verb": "delegates", "stakeholder": "Architecture (DI seam)" }
+              ]
+            },
+            "cross_reference": [
+              {
+                "group": "adapter",
+                "variables": [],
+                "verbs": ["delegates"],
+                "stakeholder": "Architecture (DI seam)"
+              }
+            ]
+          },
+          "scoring": {
+            "cohesion_severity": "COMPLIANT",
+            "verb_severity": "COMPLIANT",
+            "stakeholder_count": 1,
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogViewerViewModel",
+          "unit_kind": "class",
+          "metrics": {
+            "verbs": {
+              "count": 8,
+              "table": [
+                { "method": "fileURL", "verb": "resolves" },
+                { "method": "roleLabel", "verb": "formats" },
+                { "method": "loadMessages", "verb": "loads" },
+                { "method": "loadMessages", "verb": "caches" },
+                { "method": "startPolling", "verb": "polls" },
+                { "method": "rebuildDerivedState", "verb": "filters" },
+                { "method": "rebuildDerivedState", "verb": "builds" },
+                { "method": "rebuildDerivedState", "verb": "finds" }
+              ]
+            },
+            "cohesion_groups": {
+              "count": 3,
+              "method_variable_table": [
+                { "method": "fileURL", "variables": ["agent", "target", "urlResolver"] },
+                { "method": "roleLabel", "variables": ["modelResolver"] },
+                { "method": "loadMessages", "variables": ["lastMtime", "fileSystem", "parser", "messages", "isLoading"] },
+                { "method": "startPolling", "variables": [] },
+                { "method": "rebuildDerivedState", "variables": ["messages", "displayedMessages", "taskList", "toolResultLookup", "pendingPrompt"] }
+              ],
+              "groups": [
+                {
+                  "name": "url-resolution",
+                  "variables": ["agent", "target", "urlResolver"],
+                  "methods": ["fileURL"]
+                },
+                {
+                  "name": "role-label-formatting",
+                  "variables": ["modelResolver"],
+                  "methods": ["roleLabel"]
+                },
+                {
+                  "name": "message-loading-and-derivation",
+                  "variables": ["lastMtime", "fileSystem", "parser", "messages", "isLoading", "displayedMessages", "taskList", "toolResultLookup", "pendingPrompt"],
+                  "methods": ["loadMessages", "startPolling", "rebuildDerivedState"]
+                }
+              ]
+            },
+            "stakeholders": {
+              "count": 3,
+              "table": [
+                { "verb": "resolves", "stakeholder": "Infrastructure (file path/URL resolution)" },
+                { "verb": "formats", "stakeholder": "UX (model display naming)" },
+                { "verb": "loads", "stakeholder": "Data (file polling/caching)" },
+                { "verb": "caches", "stakeholder": "Data (file polling/caching)" },
+                { "verb": "polls", "stakeholder": "Data (file polling/caching)" },
+                { "verb": "filters", "stakeholder": "Domain (display state derivation)" },
+                { "verb": "builds", "stakeholder": "Domain (task/result aggregation)" },
+                { "verb": "finds", "stakeholder": "Domain (pending-prompt detection)" }
+              ]
+            },
+            "cross_reference": [
+              {
+                "group": "url-resolution",
+                "variables": ["agent", "target", "urlResolver"],
+                "verbs": ["resolves"],
+                "stakeholder": "Infrastructure"
+              },
+              {
+                "group": "role-label-formatting",
+                "variables": ["modelResolver"],
+                "verbs": ["formats"],
+                "stakeholder": "UX"
+              },
+              {
+                "group": "message-loading-and-derivation",
+                "variables": ["lastMtime", "fileSystem", "parser", "messages", "isLoading", "displayedMessages", "taskList", "toolResultLookup", "pendingPrompt"],
+                "verbs": ["loads", "caches", "polls", "filters", "builds", "finds"],
+                "stakeholder": "Data + Domain"
+              }
+            ]
+          },
+          "scoring": {
+            "cohesion_severity": "SEVERE",
+            "verb_severity": "SEVERE",
+            "stakeholder_count": 3,
+            "final_severity": "SEVERE"
+          },
+          "findings": [
+            {
+              "id": "srp-001",
+              "severity": "SEVERE",
+              "metric": "SRP-2",
+              "line_start": 69,
+              "line_end": 198,
+              "title": "LogViewerViewModel has 3 disjoint cohesion groups",
+              "issue": "The class splits into three disjoint variable sets: (a) {agent, target, urlResolver} used only by fileURL, (b) {modelResolver} used only by roleLabel, (c) {lastMtime, fileSystem, parser, messages, isLoading, displayedMessages, taskList, toolResultLookup, pendingPrompt} used by loadMessages/startPolling/rebuildDerivedState. No method bridges all three sets, so they are structurally independent responsibilities living in one type.",
+              "impact": "Changes to URL resolution, model name formatting, and message loading/derivation each have an independent reason to modify the class. The view-model becomes a junction for unrelated concerns and is harder to test in isolation (each group requires unrelated mocks).",
+              "rule_source": "SRP-2 cohesion-group analysis (rule.md)"
+            },
+            {
+              "id": "srp-002",
+              "severity": "SEVERE",
+              "metric": "SRP-1",
+              "line_start": 145,
+              "line_end": 191,
+              "title": "rebuildDerivedState performs four distinct derivations in one method",
+              "issue": "rebuildDerivedState filters displayedMessages, reconstructs the task list from todoWrite/taskCreate/taskUpdate calls, builds toolResultLookup, and finds the pending prompt. Each derivation has its own input shape and output state field; they are mixed in a single 45-line loop.",
+              "impact": "A change to task reconstruction (e.g. new TodoWrite schema) forces a re-read of unrelated prompt-detection logic; the four sub-responsibilities cannot evolve independently and each touches different output state.",
+              "rule_source": "SRP-1 verb counting (rule.md)"
+            },
+            {
+              "id": "srp-003",
+              "severity": "SEVERE",
+              "metric": "SRP-3",
+              "line_start": 69,
+              "line_end": 198,
+              "title": "Three independent stakeholders can request changes",
+              "issue": "Stakeholder cross-check: Infrastructure (URL/path layout via urlResolver), UX (display-name formatting via modelResolver), and Data/Domain (file polling, caching, derivation) each independently request modifications to this class.",
+              "impact": "With 8 verbs across 3 stakeholders, the class triggers the SRP-1 SEVERE escalation (3+ verbs + 2+ stakeholders) on top of the structural SRP-2 finding.",
+              "rule_source": "SRP-3 stakeholder gate (rule.md)"
+            }
+          ]
+        },
+        {
+          "unit_name": "StatusDot",
+          "unit_kind": "struct",
+          "metrics": {
+            "verbs": {
+              "count": 1,
+              "table": [
+                { "method": "body", "verb": "renders" }
+              ]
+            },
+            "cohesion_groups": {
+              "count": 1,
+              "method_variable_table": [
+                { "method": "body", "variables": ["color"] }
+              ],
+              "groups": [
+                {
+                  "name": "dot-rendering",
+                  "variables": ["color"],
+                  "methods": ["body"]
+                }
+              ]
+            },
+            "stakeholders": {
+              "count": 1,
+              "table": [
+                { "verb": "renders", "stakeholder": "UX (status indicator)" }
+              ]
+            },
+            "cross_reference": [
+              {
+                "group": "dot-rendering",
+                "variables": ["color"],
+                "verbs": ["renders"],
+                "stakeholder": "UX (status indicator)"
+              }
+            ]
+          },
+          "scoring": {
+            "cohesion_severity": "COMPLIANT",
+            "verb_severity": "COMPLIANT",
+            "stakeholder_count": 1,
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "LogViewerView",
+          "unit_kind": "struct",
+          "metrics": {
+            "verbs": {
+              "count": 9,
+              "table": [
+                { "method": "bridge", "verb": "retrieves" },
+                { "method": "canSendInput", "verb": "checks" },
+                { "method": "isParentTarget", "verb": "checks" },
+                { "method": "title", "verb": "builds" },
+                { "method": "scrollHeight", "verb": "calculates" },
+                { "method": "logHeader/body/logContent/messageBubble/toolCallChip/toolChipLabel/toolExpandedContent/editDiffView/writeDiffView/mcpDetailView/hookDetailView/todoChecklist/inputField/monoText/toolInputAndResult/taskPanelView/promptView/permissionPrompt/askUserQuestionPrompt/planApprovalPrompt", "verb": "renders" },
+                { "method": "dotColor/bubbleColor/toolChipColor/todoIcon/todoColor/taskIcon/taskColor", "verb": "maps" },
+                { "method": "permissionPrompt/askUserQuestionPrompt/planApprovalPrompt/sendInput", "verb": "sends (TTY)" },
+                { "method": "toolExpandedContent/promptView", "verb": "dispatches" }
+              ]
+            },
+            "cohesion_groups": {
+              "count": 4,
+              "method_variable_table": [
+                { "method": "bridge", "variables": ["sessionManager", "agent"] },
+                { "method": "canSendInput", "variables": ["target", "sessionManager", "agent"] },
+                { "method": "isParentTarget", "variables": ["target"] },
+                { "method": "title", "variables": ["target", "agent"] },
+                { "method": "scrollHeight", "variables": ["settings"] },
+                { "method": "logHeader", "variables": ["onDismiss", "vm", "showTaskPanel", "sessionManager", "agent", "onStop", "onOpenFile", "target"] },
+                { "method": "logContent", "variables": ["stickyHeader", "vm", "settings", "showTaskPanel"] },
+                { "method": "messageBubble", "variables": ["vm", "settings"] },
+                { "method": "toolCallChip", "variables": ["vm", "settings"] },
+                { "method": "inputField", "variables": ["inputText"] },
+                { "method": "sendInput", "variables": ["inputText", "sessionManager", "agent"] },
+                { "method": "askUserQuestionPrompt", "variables": ["selectedOptionIdx", "promptToolID", "sessionManager", "agent"] },
+                { "method": "permissionPrompt", "variables": ["sessionManager", "agent"] },
+                { "method": "planApprovalPrompt", "variables": ["sessionManager", "agent"] },
+                { "method": "taskPanelView", "variables": ["vm"] }
+              ],
+              "groups": [
+                {
+                  "name": "screen-rendering",
+                  "variables": ["vm", "settings", "stickyHeader", "showTaskPanel", "agent", "target", "sessionManager", "onDismiss", "onStop", "onOpenFile"],
+                  "methods": ["logHeader", "body", "logContent", "messageBubble", "toolCallChip", "toolChipLabel", "toolExpandedContent", "editDiffView", "writeDiffView", "mcpDetailView", "hookDetailView", "todoChecklist", "monoText", "toolInputAndResult", "taskPanelView", "title", "scrollHeight", "bridge", "canSendInput", "isParentTarget", "dotColor", "bubbleColor", "toolChipColor", "todoIcon", "todoColor", "taskIcon", "taskColor"]
+                },
+                {
+                  "name": "text-input",
+                  "variables": ["inputText"],
+                  "methods": ["inputField", "sendInput"]
+                },
+                {
+                  "name": "ask-user-question-state",
+                  "variables": ["selectedOptionIdx", "promptToolID"],
+                  "methods": ["askUserQuestionPrompt"]
+                },
+                {
+                  "name": "tty-command-construction",
+                  "variables": [],
+                  "methods": ["permissionPrompt", "planApprovalPrompt", "askUserQuestionPrompt", "sendInput"]
+                }
+              ]
+            },
+            "stakeholders": {
+              "count": 4,
+              "table": [
+                { "verb": "renders", "stakeholder": "UX (chat UI, tool detail UI, task panel)" },
+                { "verb": "maps", "stakeholder": "UX (visual encoding of tool/role/status)" },
+                { "verb": "builds", "stakeholder": "UX (title computation)" },
+                { "verb": "calculates", "stakeholder": "UX (layout sizing)" },
+                { "verb": "checks", "stakeholder": "Session/Bridge (attach state)" },
+                { "verb": "retrieves", "stakeholder": "Session/Bridge" },
+                { "verb": "sends (TTY)", "stakeholder": "TTY/Protocol (raw escape-sequence wire format)" },
+                { "verb": "dispatches", "stakeholder": "Domain (tool kind dispatch)" }
+              ]
+            },
+            "cross_reference": [
+              {
+                "group": "screen-rendering",
+                "variables": ["vm", "settings", "stickyHeader", "showTaskPanel", "agent", "target", "sessionManager", "onDismiss", "onStop", "onOpenFile"],
+                "verbs": ["renders", "maps", "builds", "calculates", "checks", "retrieves", "dispatches"],
+                "stakeholder": "UX + Domain (rendering and dispatch)"
+              },
+              {
+                "group": "text-input",
+                "variables": ["inputText"],
+                "verbs": ["renders", "sends (TTY)"],
+                "stakeholder": "UX + TTY/Protocol"
+              },
+              {
+                "group": "ask-user-question-state",
+                "variables": ["selectedOptionIdx", "promptToolID"],
+                "verbs": ["renders", "sends (TTY)"],
+                "stakeholder": "UX + TTY/Protocol"
+              },
+              {
+                "group": "tty-command-construction",
+                "variables": [],
+                "verbs": ["sends (TTY)"],
+                "stakeholder": "TTY/Protocol (escape sequences \\u001b[B, \\r, \\u001b)"
+              }
+            ]
+          },
+          "scoring": {
+            "cohesion_severity": "SEVERE",
+            "verb_severity": "SEVERE",
+            "stakeholder_count": 4,
+            "final_severity": "SEVERE"
+          },
+          "findings": [
+            {
+              "id": "srp-004",
+              "severity": "SEVERE",
+              "metric": "SRP-2",
+              "line_start": 214,
+              "line_end": 1282,
+              "title": "LogViewerView contains 4 disjoint cohesion groups",
+              "issue": "Excluding broadly-shared injected dependencies, the variable graph splits into independent groups: (1) screen-rendering (vm/settings + many render methods, color/icon mapping, dispatch), (2) text-input (inputText used only by inputField/sendInput), (3) ask-user-question selection state (selectedOptionIdx + promptToolID used only by askUserQuestionPrompt), (4) TTY command construction (permissionPrompt/planApprovalPrompt/askUserQuestionPrompt/sendInput emit raw escape sequences and \\r through bridge). No single bridge method touches all groups; selection state and input text are completely disjoint from rendering state.",
+              "impact": "A 1072-line View struct concentrates UI rendering, layout, color/icon mapping, tool-kind dispatch, modal selection state, and TTY wire-protocol construction. Each concern can change independently, making this struct a magnet for unrelated edits and a serious maintainability liability.",
+              "rule_source": "SRP-2 cohesion-group analysis (rule.md)"
+            },
+            {
+              "id": "srp-005",
+              "severity": "SEVERE",
+              "metric": "SRP-3",
+              "line_start": 952,
+              "line_end": 1138,
+              "title": "TTY wire-protocol construction lives inside the View",
+              "issue": "permissionPrompt (lines 966-1029), askUserQuestionPrompt (lines 1031-1093), planApprovalPrompt (lines 1095-1138), and sendInput (lines 1183-1188) embed raw terminal escape sequences (\\u001b[B for arrow-down, \\r for Enter, \\u001b for Escape) directly inside SwiftUI button actions. The View now owns a TTY/Protocol stakeholder concern alongside its UX stakeholder concern.",
+              "impact": "Two distinct stakeholders (UX designer, TTY/protocol engineer) can independently demand changes to the same struct. Changing terminal control sequences (e.g. switching to a different TUI input library, supporting alternate keymaps) requires editing a SwiftUI view; conversely changing visuals risks breaking input semantics.",
+              "rule_source": "SRP-3 stakeholder gate (rule.md)"
+            },
+            {
+              "id": "srp-006",
+              "severity": "SEVERE",
+              "metric": "SRP-1",
+              "line_start": 619,
+              "line_end": 706,
+              "title": "toolExpandedContent fans out across 12+ tool kinds with mixed concerns",
+              "issue": "toolExpandedContent dispatches 12 ToolData cases and inlines bespoke rendering for several (agent, taskCreate, askUserQuestion, webSearch, webFetch, exitPlanMode, other) while delegating to dedicated helpers for others. The struct also owns editDiffView/writeDiffView/mcpDetailView/hookDetailView/todoChecklist/permissionPrompt/askUserQuestionPrompt/planApprovalPrompt — each is a self-contained renderer for an unrelated tool family.",
+              "impact": "Adding or changing the rendering of any single tool kind forces a change in this View. The View's verb count (9 distinct verbs across rendering/mapping/dispatching/sending/computing) far exceeds the COMPLIANT threshold and combines with multiple stakeholders to escalate severity.",
+              "rule_source": "SRP-1 verb counting (rule.md)"
+            }
+          ]
+        },
+        {
+          "unit_name": "ExpandableSection",
+          "unit_kind": "struct",
+          "metrics": {
+            "verbs": {
+              "count": 1,
+              "table": [
+                { "method": "body", "verb": "renders" }
+              ]
+            },
+            "cohesion_groups": {
+              "count": 1,
+              "method_variable_table": [
+                { "method": "body", "variables": ["isExpanded", "tintColor", "content", "label"] }
+              ],
+              "groups": [
+                {
+                  "name": "disclosure-rendering",
+                  "variables": ["isExpanded", "tintColor", "content", "label"],
+                  "methods": ["body"]
+                }
+              ]
+            },
+            "stakeholders": {
+              "count": 1,
+              "table": [
+                { "verb": "renders", "stakeholder": "UX (disclosure-group wrapper)" }
+              ]
+            },
+            "cross_reference": [
+              {
+                "group": "disclosure-rendering",
+                "variables": ["isExpanded", "tintColor", "content", "label"],
+                "verbs": ["renders"],
+                "stakeholder": "UX (disclosure-group wrapper)"
+              }
+            ]
+          },
+          "scoring": {
+            "cohesion_severity": "COMPLIANT",
+            "verb_severity": "COMPLIANT",
+            "stakeholder_count": 1,
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        },
+        {
+          "unit_name": "ToolResultView",
+          "unit_kind": "struct",
+          "metrics": {
+            "verbs": {
+              "count": 1,
+              "table": [
+                { "method": "body", "verb": "renders" },
+                { "method": "resultLabel", "verb": "renders" },
+                { "method": "resultText", "verb": "renders" }
+              ]
+            },
+            "cohesion_groups": {
+              "count": 1,
+              "method_variable_table": [
+                { "method": "body", "variables": [] },
+                { "method": "resultLabel", "variables": ["isTruncated", "showFull", "lines"] },
+                { "method": "resultText", "variables": ["showFull", "isTruncated", "content", "preview"] }
+              ],
+              "groups": [
+                {
+                  "name": "truncated-result-display",
+                  "variables": ["content", "lines", "isTruncated", "preview", "showFull", "previewLineCount"],
+                  "methods": ["body", "resultLabel", "resultText"]
+                }
+              ]
+            },
+            "stakeholders": {
+              "count": 1,
+              "table": [
+                { "verb": "renders", "stakeholder": "UX (collapsible result viewer)" }
+              ]
+            },
+            "cross_reference": [
+              {
+                "group": "truncated-result-display",
+                "variables": ["content", "lines", "isTruncated", "preview", "showFull", "previewLineCount"],
+                "verbs": ["renders"],
+                "stakeholder": "UX (collapsible result viewer)"
+              }
+            ]
+          },
+          "scoring": {
+            "cohesion_severity": "COMPLIANT",
+            "verb_severity": "COMPLIANT",
+            "stakeholder_count": 1,
+            "final_severity": "COMPLIANT"
+          },
+          "findings": []
+        }
+      ]
+    }
+  ]
+}
