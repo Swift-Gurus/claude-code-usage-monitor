@@ -15,6 +15,7 @@ final class LogViewerViewModel: LogViewerState, LogViewerActions {
     private(set) var completedTaskCount = 0
     private(set) var toolResultLookup: [String: String] = [:]
     private(set) var pendingPrompt: LogToolCall?
+    private(set) var sessionStats = SessionStats()
     private var lastMtime: Date?
     private var activityTask: Task<Void, Never>?
 
@@ -108,5 +109,6 @@ final class LogViewerViewModel: LogViewerState, LogViewerActions {
         completedTaskCount = reconstruction.tasks.filter { $0.status == "completed" }.count
         toolResultLookup = reconstruction.toolResultLookup
         pendingPrompt = reconstruction.pendingPrompt
+        sessionStats = SessionStatsAggregator(messages: messages).aggregate()
     }
 }

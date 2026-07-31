@@ -15,6 +15,11 @@ public struct SessionTokenStats: Equatable {
         return Double(cacheReadTokens) / Double(denom)
     }
 
+    /// `cacheHitRate` as a whole percentage, for display.
+    public var cacheHitRatePercent: Int {
+        Int(cacheHitRate * 100)
+    }
+
     public init(inputTokens: Int = 0, outputTokens: Int = 0, cacheCreationTokens: Int = 0, cacheReadTokens: Int = 0) {
         self.inputTokens = inputTokens
         self.outputTokens = outputTokens

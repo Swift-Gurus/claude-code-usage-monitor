@@ -3,11 +3,13 @@ import SwiftUI
 /**
  solid-name: LogViewerHeaderTrailingButtons
  solid-category: view-component
- solid-description: Renders interactive header buttons for managing log viewer state.
+ solid-description: Provides controls for toggling panel visibility and triggering session actions.
  */
 struct LogViewerHeaderTrailingButtons: View {
     @Binding var showTaskPanel: Bool
     let hasTasks: Bool
+    @Binding var showStatsPanel: Bool
+    let hasStats: Bool
     let canStop: Bool
     let navFont: Font
     let onStop: () -> Void
@@ -16,6 +18,7 @@ struct LogViewerHeaderTrailingButtons: View {
     var body: some View {
         HStack {
             if hasTasks { taskPanelToggle }
+            if hasStats { statsPanelToggle }
             if canStop { stopButton }
             openFileButton
         }
@@ -31,6 +34,16 @@ struct LogViewerHeaderTrailingButtons: View {
         )
     }
 
+    private var statsPanelToggle: some View {
+        IconButton(
+            systemName: showStatsPanel ? "chart.bar.fill" : "chart.bar",
+            color: showStatsPanel ? .blue : .secondary,
+            font: navFont,
+            help: showStatsPanel ? "Hide stats" : "Show stats",
+            action: { showStatsPanel.toggle() }
+        )
+    }
+
     private var stopButton: some View {
         IconButton(systemName: "stop.circle.fill", color: .red, font: navFont, help: "Stop session", action: onStop)
     }
@@ -42,7 +55,9 @@ struct LogViewerHeaderTrailingButtons: View {
 
 #Preview {
     LogViewerHeaderTrailingButtons(
-        showTaskPanel: .constant(true), hasTasks: true, canStop: true, navFont: .caption,
+        showTaskPanel: .constant(true), hasTasks: true,
+        showStatsPanel: .constant(false), hasStats: true,
+        canStop: true, navFont: .caption,
         onStop: {}, onOpenFile: {}
     )
 }

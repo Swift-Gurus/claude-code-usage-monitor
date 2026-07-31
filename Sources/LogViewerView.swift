@@ -2,21 +2,10 @@ import SwiftUI
 import AppKit
 
 /**
- solid-name: LogViewerActions
- solid-category: abstraction
- solid-description: Contract for log message loading, view lifecycle management, and text transmission.
- */
-protocol LogViewerActions {
-    func loadMessages() async
-    func startViewLifecycle(bridge: TTYBridge?) async
-    func send(_ text: String, via bridge: TTYBridge?)
-}
-
-/**
  solid-name: LogViewerView
  solid-category: screen
  solid-stack: [swiftui]
- solid-description: Interactive viewer for Claude Code session logs with configurable layout and text input support.
+ solid-description: Displays Claude Code session logs and enables interaction with the active session.
  */
 struct LogViewerView<VM: LogViewerState & LogViewerActions>: View {
     let agent: AgentInfo
@@ -30,7 +19,15 @@ struct LogViewerView<VM: LogViewerState & LogViewerActions>: View {
     let onDismiss: () -> Void
 
     @State private var showTaskPanel = true
+    @State private var showStatsPanel = false
     @State private var inputText = ""
+
+    private var sidePanel: LogViewerSidePanel {
+        LogViewerSidePanel(
+            showTaskPanel: showTaskPanel, taskList: vm.taskList, completedTaskCount: vm.completedTaskCount,
+            showStatsPanel: showStatsPanel, sessionStats: vm.sessionStats
+        )
+    }
 
     private var bridge: TTYBridge? {
         sessionManager?.bridge(for: agent.pid)
@@ -62,8 +59,8 @@ struct LogViewerView<VM: LogViewerState & LogViewerActions>: View {
 
     private var stickyHeaderLayout: some View {
         StickyHeaderLayout(
-            showTaskPanel: showTaskPanel && !vm.taskList.isEmpty,
-            header: { headerSection }, logContent: { logContent }, taskPanel: { taskPanelSection }
+            showTaskPanel: sidePanel.isVisible,
+            header: { headerSection }, logContent: { logContent }, taskPanel: { sidePanel }
         )
     }
 
@@ -74,15 +71,12 @@ struct LogViewerView<VM: LogViewerState & LogViewerActions>: View {
     private var headerSection: some View {
         LogViewerHeaderSubview(
             title: title, isConnected: canSendInput, showTaskPanel: $showTaskPanel,
-            hasTasks: !vm.taskList.isEmpty, canStop: canSendInput, navFont: navFont, titleFont: titleFont,
+            hasTasks: !vm.taskList.isEmpty, showStatsPanel: $showStatsPanel, hasStats: sidePanel.hasStats,
+            canStop: canSendInput, navFont: navFont, titleFont: titleFont,
             onDismiss: onDismiss,
             onStop: { bridge?.detach(); sessionManager?.sessions.removeValue(forKey: agent.pid); onStop?() },
             onOpenFile: { urlOpener.open(vm.fileURL) }
         )
-    }
-
-    private var taskPanelSection: some View {
-        LogViewerTaskPanelSubview(tasks: vm.taskList, completedCount: vm.completedTaskCount)
     }
 
     private var messageScrollSection: some View {
@@ -98,10 +92,10 @@ struct LogViewerView<VM: LogViewerState & LogViewerActions>: View {
     }
 
     private var logContent: some View {
-        LogViewerContentContainer(
+        LogViewerContentLayout(
             showHeader: !stickyHeader, header: { headerSection },
-            showTaskPanel: !stickyHeader && showTaskPanel && !vm.taskList.isEmpty,
-            taskPanel: { taskPanelSection }, messageScroll: { messageScrollSection }, inputFooter: { inputFooterSection },
+            showSidePanel: !stickyHeader && sidePanel.isVisible,
+            sidePanel: { sidePanel }, messageScroll: { messageScrollSection }, inputFooter: { inputFooterSection },
             pendingPrompt: vm.pendingPrompt, bridge: bridge, canSendInput: canSendInput,
             onAppearLifecycle: { await vm.startViewLifecycle(bridge: bridge) }
         )

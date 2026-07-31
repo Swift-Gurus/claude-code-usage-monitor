@@ -15,6 +15,7 @@ final class PreviewLogViewerVM: LogViewerState, LogViewerActions {
     var completedTaskCount: Int { taskList.filter { $0.status == "completed" }.count }
     var toolResultLookup: [String: String] = [:]
     var pendingPrompt: LogToolCall?
+    var sessionStats: SessionStats = SessionStats()
     var fileURL: URL { URL(fileURLWithPath: "/tmp/preview.jsonl") }
     func roleLabel(_ msg: LogMessage) -> String { "Assistant" }
     func loadMessages() async {}

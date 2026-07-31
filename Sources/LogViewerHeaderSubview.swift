@@ -6,6 +6,8 @@ struct LogViewerHeaderSubview: View {
     let isConnected: Bool
     @Binding var showTaskPanel: Bool
     let hasTasks: Bool
+    @Binding var showStatsPanel: Bool
+    let hasStats: Bool
     let canStop: Bool
     let navFont: Font
     let titleFont: Font
@@ -16,7 +18,8 @@ struct LogViewerHeaderSubview: View {
     var body: some View {
         LogViewerHeaderSection(
             title: title, isConnected: isConnected, showTaskPanel: $showTaskPanel,
-            hasTasks: hasTasks, canStop: canStop, navFont: navFont, titleFont: titleFont,
+            hasTasks: hasTasks, showStatsPanel: $showStatsPanel, hasStats: hasStats,
+            canStop: canStop, navFont: navFont, titleFont: titleFont,
             onDismiss: onDismiss, onStop: onStop, onOpenFile: onOpenFile
         )
     }
@@ -25,7 +28,8 @@ struct LogViewerHeaderSubview: View {
 #Preview {
     LogViewerHeaderSubview(
         title: "Preview", isConnected: true, showTaskPanel: .constant(true),
-        hasTasks: true, canStop: true, navFont: .caption, titleFont: .headline,
+        hasTasks: true, showStatsPanel: .constant(false), hasStats: true,
+        canStop: true, navFont: .caption, titleFont: .headline,
         onDismiss: {}, onStop: {}, onOpenFile: {}
     )
 }

@@ -10,6 +10,8 @@ struct LogViewerHeaderSection: View {
     let isConnected: Bool
     @Binding var showTaskPanel: Bool
     let hasTasks: Bool
+    @Binding var showStatsPanel: Bool
+    let hasStats: Bool
     let canStop: Bool
     let navFont: Font
     let titleFont: Font
@@ -18,17 +20,22 @@ struct LogViewerHeaderSection: View {
     let onOpenFile: () -> Void
 
     var body: some View {
+        content
+            .padding(.horizontal, 16)
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: 0) {
             headerRow
             Divider()
         }
-        .padding(.horizontal, 16)
     }
 
     private var headerRow: some View {
         LogViewerHeaderView(
             title: title, isConnected: isConnected,
             showTaskPanel: $showTaskPanel, hasTasks: hasTasks,
+            showStatsPanel: $showStatsPanel, hasStats: hasStats,
             canStop: canStop, navFont: navFont, titleFont: titleFont,
             onDismiss: onDismiss, onStop: onStop, onOpenFile: onOpenFile
         )
@@ -39,7 +46,8 @@ struct LogViewerHeaderSection: View {
 #Preview {
     LogViewerHeaderSection(
         title: "Preview Session", isConnected: true, showTaskPanel: .constant(true),
-        hasTasks: true, canStop: true, navFont: .caption, titleFont: .headline,
+        hasTasks: true, showStatsPanel: .constant(false), hasStats: true,
+        canStop: true, navFont: .caption, titleFont: .headline,
         onDismiss: {}, onStop: {}, onOpenFile: {}
     )
 }

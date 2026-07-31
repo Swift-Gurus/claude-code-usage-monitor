@@ -3,13 +3,15 @@ import SwiftUI
 /**
  solid-name: LogViewerHeaderView
  solid-category: view-component
- solid-description: Displays session status and enables navigation, task panel access, and session control.
+ solid-description: Displays session status and provides controls for log viewer operations.
  */
 struct LogViewerHeaderView: View {
     let title: String
     let isConnected: Bool
     @Binding var showTaskPanel: Bool
     let hasTasks: Bool
+    @Binding var showStatsPanel: Bool
+    let hasStats: Bool
     let canStop: Bool
     let navFont: Font
     let titleFont: Font
@@ -52,8 +54,9 @@ struct LogViewerHeaderView: View {
 
     private var trailingButtons: some View {
         LogViewerHeaderTrailingButtons(
-            showTaskPanel: $showTaskPanel, hasTasks: hasTasks, canStop: canStop,
-            navFont: navFont, onStop: onStop, onOpenFile: onOpenFile
+            showTaskPanel: $showTaskPanel, hasTasks: hasTasks,
+            showStatsPanel: $showStatsPanel, hasStats: hasStats,
+            canStop: canStop, navFont: navFont, onStop: onStop, onOpenFile: onOpenFile
         )
     }
 }
@@ -61,7 +64,8 @@ struct LogViewerHeaderView: View {
 #Preview {
     LogViewerHeaderView(
         title: "Preview Session", isConnected: true, showTaskPanel: .constant(true),
-        hasTasks: true, canStop: true, navFont: .caption, titleFont: .headline,
+        hasTasks: true, showStatsPanel: .constant(false), hasStats: true,
+        canStop: true, navFont: .caption, titleFont: .headline,
         onDismiss: {}, onStop: {}, onOpenFile: {}
     )
 }
