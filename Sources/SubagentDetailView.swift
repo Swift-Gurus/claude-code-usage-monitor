@@ -35,7 +35,7 @@ private struct RowHeightsKey: PreferenceKey {
 /**
  solid-name: SubagentDetailState
  solid-category: abstraction
- solid-description: Contract for the read-only state that SubagentDetailView observes. Provides subagent list, parent tool counts, and sorted subagent computation.
+ solid-description: Contract for managing and querying subagent session state.
  */
 protocol SubagentDetailState: Observable {
     var subagents: [SubagentInfo] { get }
@@ -47,7 +47,7 @@ protocol SubagentDetailState: Observable {
 /**
  solid-name: SubagentDetailActions
  solid-category: abstraction
- solid-description: Contract for actions that SubagentDetailView can trigger. Provides data loading and polling lifecycle.
+ solid-description: Contract for triggering subagent data refresh and observation cycles.
  */
 protocol SubagentDetailActions {
     func load() async
@@ -57,7 +57,7 @@ protocol SubagentDetailActions {
 /**
  solid-name: SubagentParsing
  solid-category: abstraction
- solid-description: Contract for parsing subagent metadata and session details from log data. Covers both standard and bare session types, enabling testable and decoupled retrieval of subagent information.
+ solid-description: Contract for extracting subagent information from session sources.
  */
 protocol SubagentParsing {
     func parseSubagentMeta(sessionID: String, workingDir: String, projectsDir: URL) -> [String: JSONLParser.SubagentMeta]
@@ -68,7 +68,7 @@ protocol SubagentParsing {
 /**
  solid-name: DefaultSubagentParser
  solid-category: utility
- solid-description: Default production implementation of the subagent parsing abstraction. Fulfills the full contract for loading and extracting subagent metadata and session details in live application contexts.
+ solid-description: Parses subagent metadata and session information from storage.
  */
 struct DefaultSubagentParser: SubagentParsing {
     func parseSubagentMeta(sessionID: String, workingDir: String, projectsDir: URL) -> [String: JSONLParser.SubagentMeta] {
@@ -88,7 +88,7 @@ struct DefaultSubagentParser: SubagentParsing {
  solid-name: SubagentDetailViewModel
  solid-category: viewmodel
  solid-stack: [structured-concurrency]
- solid-description: ViewModel for SubagentDetailView. Owns subagent data loading from pre-written JSON files or JSONL fallback parsing, parent tool count loading, sorting, and polling. All data-fetching and transformation logic lives here.
+ solid-description: Manages subagent data loading, sorting, and polling for display.
  */
 @Observable
 final class SubagentDetailViewModel: SubagentDetailState, SubagentDetailActions {
@@ -233,7 +233,7 @@ final class SubagentDetailViewModel: SubagentDetailState, SubagentDetailActions 
  solid-name: ToolBadgeView
  solid-category: view-component
  solid-stack: [swiftui]
- solid-description: Reusable compact badge displaying a tool name with optional count. Used in both parent tool usage and subagent row tool lists.
+ solid-description: Displays a tool name with an optional usage count.
  */
 private struct ToolBadgeView: View {
     let tool: String
@@ -253,7 +253,7 @@ private struct ToolBadgeView: View {
  solid-name: SubagentRowView
  solid-category: view-component
  solid-stack: [swiftui]
- solid-description: Renders a single subagent row with model name, lines added/removed, cost, description, context usage progress bar, and tool badges. Extracted from SubagentDetailView for reduced nesting and reusability.
+ solid-description: Displays a subagent's metrics and resource usage information.
  */
 private struct SubagentRowView: View {
     let sub: SubagentInfo
@@ -357,7 +357,7 @@ private struct SubagentRowView: View {
  solid-name: SubagentDetailView
  solid-category: screen
  solid-stack: [swiftui]
- solid-description: Full-screen detail view for a Claude Code session's subagents. Shows agent summary, parent tool usage, and scrollable subagent rows with context usage, cost, and tool badges. Delegates data loading to a generic ViewModel. Tapping a subagent opens LogViewerView for that subagent's logs.
+ solid-description: Displays subagent session information and enables navigation to subagent logs.
  */
 struct SubagentDetailView<VM: SubagentDetailState & SubagentDetailActions>: View {
     let agent: AgentInfo
@@ -384,7 +384,7 @@ struct SubagentDetailView<VM: SubagentDetailState & SubagentDetailActions>: View
         if agent.source == .codex {
             return CodexLogParser()
         }
-        return LogParserAdapter()
+        return LogParser()
     }
 
     var body: some View {

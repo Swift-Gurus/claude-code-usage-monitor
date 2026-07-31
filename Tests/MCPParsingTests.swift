@@ -23,7 +23,7 @@ final class MCPParsingTests: XCTestCase {
         let jsonl = """
         {"type":"assistant","message":{"id":"msg_1","model":"claude-opus-4-6","usage":{"input_tokens":10,"output_tokens":20},"content":[{"type":"tool_use","id":"toolu_1","name":"mcp__plugin_solid-coder_docs__load_rules","input":{"tags":"swiftui"}}]}}
         """
-        let msgs = LogParser.parseMessages(at: writeTempJSONL(jsonl))
+        let msgs = LogParser().parseMessages(at: writeTempJSONL(jsonl))
 
         let tc = msgs.first?.toolCalls.first
         XCTAssertNotNil(tc, "Expected a tool call")
@@ -40,7 +40,7 @@ final class MCPParsingTests: XCTestCase {
         let jsonl = """
         {"type":"assistant","message":{"id":"msg_2","model":"claude-opus-4-6","usage":{"input_tokens":10,"output_tokens":20},"content":[{"type":"tool_use","id":"toolu_2","name":"mcp__ide__getDiagnostics","input":{"uri":"file:///foo.swift"}}]}}
         """
-        let msgs = LogParser.parseMessages(at: writeTempJSONL(jsonl))
+        let msgs = LogParser().parseMessages(at: writeTempJSONL(jsonl))
 
         guard case .mcp(let data) = msgs.first?.toolCalls.first?.data else {
             XCTFail("Expected .mcp")
@@ -55,7 +55,7 @@ final class MCPParsingTests: XCTestCase {
         let jsonl = """
         {"type":"assistant","message":{"id":"msg_3","model":"claude-opus-4-6","usage":{"input_tokens":10,"output_tokens":20},"content":[{"type":"tool_use","id":"toolu_3","name":"mcp__plugin_solid-coder_apple-build__get_test_failures","input":{}}]}}
         """
-        let msgs = LogParser.parseMessages(at: writeTempJSONL(jsonl))
+        let msgs = LogParser().parseMessages(at: writeTempJSONL(jsonl))
 
         guard case .mcp(let data) = msgs.first?.toolCalls.first?.data else {
             XCTFail("Expected .mcp")
@@ -89,7 +89,7 @@ final class MCPParsingTests: XCTestCase {
         {"type":"assistant","message":{"id":"msg_4","model":"claude-opus-4-6","usage":{"input_tokens":10,"output_tokens":20},"content":[{"type":"tool_use","id":"toolu_4","name":"mcp__ide__getDiagnostics","input":{"uri":"file:///foo.swift"}}]}}
         {"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_4","content":[{"type":"text","text":"No diagnostics found"}]}]}}
         """
-        let msgs = LogParser.parseMessages(at: writeTempJSONL(jsonl))
+        let msgs = LogParser().parseMessages(at: writeTempJSONL(jsonl))
 
         let userMsg = msgs.first { $0.role == .user }
         XCTAssertNotNil(userMsg, "Expected a user message")
@@ -101,7 +101,7 @@ final class MCPParsingTests: XCTestCase {
         {"type":"assistant","message":{"id":"msg_5","model":"claude-opus-4-6","usage":{"input_tokens":10,"output_tokens":20},"content":[{"type":"tool_use","id":"toolu_5","name":"mcp__ide__getDiagnostics","input":{}}]}}
         {"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_5","content":[{"type":"text","text":"Done"}]}]}}
         """
-        let msgs = LogParser.parseMessages(at: writeTempJSONL(jsonl))
+        let msgs = LogParser().parseMessages(at: writeTempJSONL(jsonl))
 
         let userMsg = msgs.first { $0.role == .user }
         XCTAssertTrue(userMsg?.toolResultIDs.contains("toolu_5") == true,
@@ -114,7 +114,7 @@ final class MCPParsingTests: XCTestCase {
         let jsonl = """
         {"type":"assistant","message":{"id":"msg_6","model":"claude-opus-4-6","usage":{"input_tokens":10,"output_tokens":20},"content":[{"type":"tool_use","id":"toolu_6","name":"mcp__plugin_solid-coder_docs__load_rules","input":{"tags":"swiftui,testing","profile":"review"}}]}}
         """
-        let msgs = LogParser.parseMessages(at: writeTempJSONL(jsonl))
+        let msgs = LogParser().parseMessages(at: writeTempJSONL(jsonl))
 
         guard case .mcp(let data) = msgs.first?.toolCalls.first?.data else {
             XCTFail("Expected .mcp")
@@ -130,7 +130,7 @@ final class MCPParsingTests: XCTestCase {
         let jsonl = """
         {"type":"assistant","message":{"id":"msg_7","model":"claude-opus-4-6","usage":{"input_tokens":10,"output_tokens":20},"content":[{"type":"tool_use","id":"toolu_7","name":"Bash","input":{"command":"echo hello","description":"test"}}]}}
         """
-        let msgs = LogParser.parseMessages(at: writeTempJSONL(jsonl))
+        let msgs = LogParser().parseMessages(at: writeTempJSONL(jsonl))
 
         guard case .bash(let data) = msgs.first?.toolCalls.first?.data else {
             XCTFail("Expected .bash")
@@ -143,7 +143,7 @@ final class MCPParsingTests: XCTestCase {
         let jsonl = """
         {"type":"assistant","message":{"id":"msg_8","model":"claude-opus-4-6","usage":{"input_tokens":10,"output_tokens":20},"content":[{"type":"tool_use","id":"toolu_8","name":"SomeUnknownTool","input":{"foo":"bar"}}]}}
         """
-        let msgs = LogParser.parseMessages(at: writeTempJSONL(jsonl))
+        let msgs = LogParser().parseMessages(at: writeTempJSONL(jsonl))
 
         guard case .other(let raw) = msgs.first?.toolCalls.first?.data else {
             XCTFail("Expected .other")
@@ -161,7 +161,7 @@ final class MCPParsingTests: XCTestCase {
         let jsonl = """
         {"type":"assistant","message":{"id":"msg_9","model":"claude-opus-4-6","usage":{"input_tokens":10,"output_tokens":20},"content":[{"type":"tool_use","id":"toolu_9","name":"mcp","input":{}}]}}
         """
-        let msgs = LogParser.parseMessages(at: writeTempJSONL(jsonl))
+        let msgs = LogParser().parseMessages(at: writeTempJSONL(jsonl))
 
         let tc = msgs.first?.toolCalls.first
         if case .mcp(_) = tc?.data {

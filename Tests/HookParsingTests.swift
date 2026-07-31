@@ -7,7 +7,7 @@ final class HookParsingTests: XCTestCase {
         guard FileManager.default.fileExists(atPath: path) else {
             throw XCTSkip("inspector session not present")
         }
-        let msgs = LogParser.parseMessages(at: URL(fileURLWithPath: path))
+        let msgs = LogParser().parseMessages(at: URL(fileURLWithPath: path))
         var foundWriteWithHook = false
         for m in msgs {
             let writes = m.toolCalls.filter { $0.name == "Write" }
@@ -36,7 +36,7 @@ final class HookParsingTests: XCTestCase {
         for case let rel as String in projEnum {
             guard rel.hasSuffix(".jsonl"), rel.contains("/subagents/") else { continue }
             let full = "\(projects)/\(rel)"
-            let msgs = LogParser.parseMessages(at: URL(fileURLWithPath: full))
+            let msgs = LogParser().parseMessages(at: URL(fileURLWithPath: full))
             for m in msgs {
                 var starts = 0
                 var completes = 0
