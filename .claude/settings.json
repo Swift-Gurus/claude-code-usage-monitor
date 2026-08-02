@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Skill(solid-coder:*)",
+      "Bash(*)",
+      "Write(*)",
+      "Edit(*)",
+      "Read(*)"
+    ]
+  },
+  "enabledPlugins": {
+    "solid-coder@local-marketplace": true
+  }
+}

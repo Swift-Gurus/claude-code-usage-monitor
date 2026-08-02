@@ -1,0 +1,106 @@
+# solid-coder local config — not committed to git.
+# Changes to [llm] take effect on the next write/edit (no restart needed).
+# Changes to [server] apply the next time you run scripts/run-local-llm.sh.
+code_review_on_write_enabled = true
+# ── Hook exclusions ───────────────────────────────────────────────────────────
+# Paths matching these patterns bypass the named hook.
+# Uses ** glob: "tests/fixtures/**" matches any file under that directory.
+[hooks.pre_write_gate]
+exclude = [
+    "tests/fixtures/**",
+]
+
+# ── Hook backend ──────────────────────────────────────────────────────────────
+# Controls which LLM the pre-write health-check gate uses.
+[llm]
+
+# "claude" uses the Claude API (default).
+# "local"  routes through llama-server running on this machine.
+backend = "codex"
+
+# Base URL the hook connects to — must match [server] port below.
+host = "http://localhost:8080"
+
+# Model for the claude backend. Set to a real model id to override the CLI default,
+# e.g. "claude-haiku-4-5", "claude-sonnet-4-6". Leave as "claude" to use the CLI default.
+model = "gpt-5.6-terra"
+
+# Timeout in seconds for a single health-check LLM session.
+# Local models with many tool call rounds (6+) can take 200-300s on large files.
+# Increase if the gate times out silently on complex files.
+timeout = 1000
+
+
+# ── Local server ──────────────────────────────────────────────────────────────
+# Used by scripts/run-local-llm.sh to start llama-server.
+# Changes here require a server restart.
+[server]
+
+# Filename of the GGUF model inside ~/.cache/huggingface (any subdirectory).
+model = "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf"
+
+# Port llama-server listens on. Must match [llm] host above.
+port = 8080
+
+# Context window in tokens.
+# Model was trained on 262144 tokens. RAM budget on 48 GB machine:
+#   True app pressure (server off): ~16 GB
+#   Server model weights:           ~22 GB
+#   KV cache at 64K:                ~10 GB → total ~48 GB (fits, no swap)
+ctx_size = 65536
+
+# Number of model layers to offload to Metal GPU.
+# 99 = all layers (correct for Apple Silicon unified memory).
+gpu_layers = 99
+
+# Parallel request slots. 1 is optimal for single-gate use.
+parallel = 1
+
+# Logical batch size for prompt processing. Larger = faster prefill, more VRAM.
+batch_size = 2048
+
+# Physical micro-batch size. Tune for GPU utilisation vs latency trade-off.
+ubatch_size = 512
+
+# Lock model weights in RAM — prevents OS from swapping/compressing pages.
+# Eliminates latency spikes mid-response on memory-pressured systems.
+# Requires model + KV cache to fit in physical RAM (verified: ~44 GB on 48 GB).
+mlock = true
+
+# Fixed RNG seed for reproducible outputs across restarts.
+# Set to -1 for random seed (non-deterministic).
+seed = 42
+
+# Reasoning/thinking mode.
+# "on"   — enables chain-of-thought; model thinks before answering/calling tools.
+#          Improves detection quality. Thinking is stripped from the response and
+#          logged separately to _thinking.jsonl for inspection.
+# "off"  — disables thinking (empty <think></think> injected). Faster, less accurate.
+# "auto" — model decides. Use for models without a separate reasoning mode.
+reasoning = "on"
+
+
+# ── Per-request inference ──────────────────────────────────────────────────────
+# Passed in every /v1/chat/completions call to the local server.
+# Changes here take effect immediately — no server restart needed.
+[inference]
+
+# Temperature: 0 = fully deterministic (greedy). Best for structured JSON output.
+temperature = 0
+
+# Top-K: limit selection to the K most probable tokens. 0 = disabled.
+top_k = 20
+
+# Top-P: nucleus sampling cutoff. Lower = more focused.
+top_p = 0.95
+
+# Min-P: minimum probability relative to the top token. Filters low-confidence tokens.
+min_p = 0.05
+
+# Repeat penalty: >1.0 penalises recently seen tokens. Reduces looping in JSON.
+# llama.cpp default is 1.1; server was observed at 1.0 (disabled). Set to 1.1.
+repeat_penalty = 1.1
+
+# Maximum tokens to generate per response. -1 = unlimited.
+# Raised from 4096 — reasoning-mode models need headroom for thinking + tool calls.
+max_tokens = 16384

@@ -8,12 +8,15 @@ private enum LayoutTokens {
  solid-name: ContextProgressBar
  solid-category: view-component
  solid-stack: [swiftui]
- solid-description: Reusable progress bar displaying context window usage as a colored bar with percentage label. Color thresholds: red at 90%+, yellow at 70%+, green otherwise. Used in popover, subagent row, and subagent detail views.
+ solid-description: Displays context window usage percentage.
  */
 struct ContextProgressBar: View {
     let contextPercent: Int
     let label: String
     var barHeight: CGFloat = LayoutTokens.contextBarHeight
+    /// Bar width — the caller decides based on its own layout context. `nil` fills
+    /// whatever width the parent offers (the previous unconditional behavior).
+    var barWidth: CGFloat?
 
     private var ctxColor: Color {
         contextPercent >= 90 ? .red : contextPercent >= 70 ? .yellow : .green
@@ -21,21 +24,9 @@ struct ContextProgressBar: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            progressBar
+            FilledProgressBar(percent: contextPercent, color: ctxColor, height: barHeight, width: barWidth)
             percentLabel
         }
-    }
-
-    private var progressBar: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 2).fill(ctxColor.opacity(0.2))
-                RoundedRectangle(cornerRadius: 2).fill(ctxColor)
-                    .frame(width: geo.size.width * CGFloat(contextPercent) / 100)
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .frame(height: barHeight)
     }
 
     private var percentLabel: some View {

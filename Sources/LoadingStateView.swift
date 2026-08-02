@@ -3,24 +3,14 @@ import SwiftUI
 /**
  solid-name: LoadingStateView
  solid-category: view-component
- solid-description: Displays a loading state indicator.
+ solid-description: Displays a loading state with customizable text.
  */
 struct LoadingStateView: View {
-    var body: some View {
-        HStack {
-            Spacer()
-            ProgressView()
-                .controlSize(.small)
-            loadingText
-            Spacer()
-        }
-        .padding(.vertical, 20)
-    }
+    var message: String = "Loading logs..."
 
-    private var loadingText: some View {
-        Text("Loading logs...")
-            .font(.caption)
-            .foregroundStyle(.secondary)
+    var body: some View {
+        LoadingIndicatorRow(message: message)
+            .padding(.vertical, 20)
     }
 }
 

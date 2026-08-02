@@ -21,7 +21,7 @@ struct LogViewerHeaderView: View {
 
     var body: some View {
         HStack {
-            backButton
+            BackButton(font: navFont, action: onDismiss)
             centeredTitleRow
             trailingButtons
         }
@@ -30,22 +30,6 @@ struct LogViewerHeaderView: View {
     private var centeredTitleRow: some View {
         titleRow
             .frame(maxWidth: .infinity)
-    }
-
-    private var backButton: some View {
-        Button(action: onDismiss) {
-            backButtonLabel
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(.blue)
-    }
-
-    private var backButtonLabel: some View {
-        HStack(spacing: 4) {
-            Image(systemName: "chevron.left")
-            Text("Back")
-        }
-        .font(navFont)
     }
 
     private var titleRow: some View {
