@@ -1,7 +1,7 @@
 import Foundation
 
 /// Built-in tool call counts by name (excludes MCP tools and synthesized hook chips).
-public struct ToolCallStats: Equatable {
+public struct ToolCallStats: Equatable, Sendable {
     public var countsByName: [String: Int] = [:]
 
     public var total: Int { countsByName.values.reduce(0, +) }

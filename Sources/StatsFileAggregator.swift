@@ -5,8 +5,8 @@ import Foundation
  solid-category: abstraction
  solid-description: Contract that aggregates files into a statistics map.
  */
-protocol StatsFileAggregating {
-    func aggregate(files: Set<URL>) -> [String: SessionStats]
+protocol StatsFileAggregating: Sendable {
+    func aggregate(files: Set<URL>) async -> [String: SessionStats]
 }
 
 /**
@@ -14,7 +14,7 @@ protocol StatsFileAggregating {
  solid-category: service
  solid-description: Aggregates files into a statistics map.
  */
-struct StatsFileAggregator: StatsFileAggregating {
+actor StatsFileAggregator: StatsFileAggregating {
     private let parser: LogMessageParsing
     private let fileSystem: FileSystemProviding
     private let cache: StatsFileCache
@@ -32,7 +32,7 @@ struct StatsFileAggregator: StatsFileAggregating {
         self.dayFormatter = dayFormatter
     }
 
-    func aggregate(files: Set<URL>) -> [String: SessionStats] {
+    func aggregate(files: Set<URL>) async -> [String: SessionStats] {
         var combined: [String: SessionStats] = [:]
         for url in files {
             for (dayKey, stats) in statsByDay(for: url) {

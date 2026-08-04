@@ -2,6 +2,7 @@ import Foundation
 
 /// Tracks each account's most recent rate-limit event, loaded off the main actor.
 @Observable
+@MainActor
 final class RateLimitEventStore {
     private(set) var events: [UUID: RateLimitEvent] = [:]
 
@@ -21,7 +22,12 @@ final class RateLimitEventStore {
                     events[account.id] = event
                 }
             }
-            await MainActor.run { self?.events = events }
+            await self?.updateEvents(events)
         }
+    }
+
+    @MainActor
+    private func updateEvents(_ events: [UUID: RateLimitEvent]) {
+        self.events = events
     }
 }

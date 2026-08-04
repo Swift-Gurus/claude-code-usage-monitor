@@ -1,8 +1,8 @@
 import Foundation
 
 /// MCP tool call counts and approximate result-payload volume, grouped by server then tool.
-public struct MCPCallStats: Equatable {
-    public struct ServerStats: Equatable {
+public struct MCPCallStats: Equatable, Sendable {
+    public struct ServerStats: Equatable, Sendable {
         public var countsByTool: [String: Int] = [:]
         /// utf8 byte length of tool_result content returned for each tool, summed.
         public var payloadBytesByTool: [String: Int] = [:]

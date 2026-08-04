@@ -2,7 +2,7 @@ import Foundation
 
 /// Today/week-start/month-start boundaries for period rollups, matching UsageData's
 /// Monday-start week convention.
-struct PeriodBoundaries {
+struct PeriodBoundaries: Sendable {
     let today: Date
     let weekStart: Date
     let monthStart: Date

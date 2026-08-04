@@ -8,7 +8,7 @@ let package = Package(
         .target(
             name: "ClaudeUsageBarLib",
             path: "Sources",
-            exclude: ["Info.plist", "App"],
+            exclude: ["Info.plist", "App", "Resources/ClaudeUsageBar.entitlements"],
             resources: [.copy("Resources/statusline-command.sh")]
         ),
         .executableTarget(

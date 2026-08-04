@@ -23,7 +23,7 @@ mkdir -p "$APP_BUNDLE/Contents/Resources"
 cp "$BUILD_DIR/$APP_NAME" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 
 # Copy resource bundle
-cp -R "$BUILD_DIR/${APP_NAME}_${APP_NAME}.bundle" "$APP_BUNDLE/Contents/Resources/"
+cp -R "$BUILD_DIR/${APP_NAME}_ClaudeUsageBarLib.bundle" "$APP_BUNDLE/Contents/Resources/"
 
 # Copy app icon
 cp "$PROJECT_DIR/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"

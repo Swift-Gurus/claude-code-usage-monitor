@@ -5,8 +5,8 @@ import Foundation
  solid-category: abstraction
  solid-description: Contract for resolving every session transcript file active within a reporting period, across all accounts.
  */
-protocol StatsSessionFileResolving {
-    func resolveFiles(accounts: [Account], monthStart: Date) -> Set<URL>
+protocol StatsSessionFileResolving: Sendable {
+    func resolveFiles(accounts: [Account], monthStart: Date) async -> Set<URL>
 }
 
 /**
@@ -14,7 +14,7 @@ protocol StatsSessionFileResolving {
  solid-category: service
  solid-description: Resolves all session transcript files for specified accounts within a reporting period.
  */
-struct StatsSessionFileResolver: StatsSessionFileResolving {
+actor StatsSessionFileResolver: StatsSessionFileResolving {
     private let workingDirCollector: SessionWorkingDirCollecting
     private let sessionResolver: StatsSessionResolving
 
@@ -26,7 +26,7 @@ struct StatsSessionFileResolver: StatsSessionFileResolving {
         self.sessionResolver = sessionResolver
     }
 
-    func resolveFiles(accounts: [Account], monthStart: Date) -> Set<URL> {
+    func resolveFiles(accounts: [Account], monthStart: Date) async -> Set<URL> {
         var files: Set<URL> = []
         for account in accounts {
             for (sessionID, workingDir) in workingDirs(for: account, since: monthStart) {

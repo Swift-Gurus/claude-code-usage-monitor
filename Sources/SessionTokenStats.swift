@@ -1,7 +1,7 @@
 import Foundation
 
 /// Exact session/turn-level token totals, deduped by assistant message id upstream.
-public struct SessionTokenStats: Equatable {
+public struct SessionTokenStats: Equatable, Sendable {
     public var inputTokens = 0
     public var outputTokens = 0
     public var cacheCreationTokens = 0

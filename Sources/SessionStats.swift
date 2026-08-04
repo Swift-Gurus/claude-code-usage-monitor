@@ -4,7 +4,7 @@ import Foundation
 /// Used both for a single file (log-viewer inline panel) and additively merged across
 /// many files (the Stats page) — the scope difference lives in how many files feed in,
 /// not in this type.
-public struct SessionStats: Equatable {
+public struct SessionStats: Equatable, Sendable {
     public var tools = ToolCallStats()
     public var mcp = MCPCallStats()
     public var tokens = SessionTokenStats()

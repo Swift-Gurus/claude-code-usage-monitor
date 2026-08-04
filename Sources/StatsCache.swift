@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Rate limit event extracted from JSONL session logs.
 public struct RateLimitEvent: Sendable {
@@ -11,16 +12,16 @@ public struct RateLimitEvent: Sendable {
 /// Scan an account's JSONL files for rate limit events.
 public enum RateLimitScanner {
     /// Cache: claudeDir → (scanTime, event). Re-scan at most every 30 seconds.
-    private static var cache: [String: (scannedAt: Date, event: RateLimitEvent?)] = [:]
+    private static let cache = OSAllocatedUnfairLock<[String: (scannedAt: Date, event: RateLimitEvent?)]>(initialState: [:])
 
     /// Find the most recent rate limit event across all sessions in an account.
     public static func lastRateLimitEvent(claudeDir: String) -> RateLimitEvent? {
         let now = Date()
-        if let cached = cache[claudeDir], now.timeIntervalSince(cached.scannedAt) < 30 {
+        if let cached = cache.withLock({ $0[claudeDir] }), now.timeIntervalSince(cached.scannedAt) < 30 {
             return cached.event
         }
         let event = scanForRateLimitEvent(claudeDir: claudeDir)
-        cache[claudeDir] = (scannedAt: now, event: event)
+        cache.withLock { $0[claudeDir] = (scannedAt: now, event: event) }
         return event
     }
 
@@ -212,16 +213,16 @@ public struct StatsCache: Sendable {
     }
 
     /// Cache: claudeDir → (loadTime, stats). Re-read at most every 30 seconds.
-    private static var cache: [String: (loadedAt: Date, stats: StatsCache?)] = [:]
+    private static let cache = OSAllocatedUnfairLock<[String: (loadedAt: Date, stats: StatsCache?)]>(initialState: [:])
 
     /// Parse from a .claude directory. Cached for 30 seconds.
     public static func load(claudeDir: String) -> StatsCache? {
         let now = Date()
-        if let cached = cache[claudeDir], now.timeIntervalSince(cached.loadedAt) < 30 {
+        if let cached = cache.withLock({ $0[claudeDir] }), now.timeIntervalSince(cached.loadedAt) < 30 {
             return cached.stats
         }
         let stats = loadFromDisk(claudeDir: claudeDir)
-        cache[claudeDir] = (loadedAt: now, stats: stats)
+        cache.withLock { $0[claudeDir] = (loadedAt: now, stats: stats) }
         return stats
     }
 

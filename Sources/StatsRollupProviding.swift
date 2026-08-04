@@ -3,7 +3,7 @@
  solid-category: abstraction
  solid-description: Contract for aggregating statistics data into structured time-period summaries.
  */
-protocol StatsRollupProviding {
+protocol StatsRollupProviding: Sendable {
     func rollup(statsByDay: [String: SessionStats], boundaries: PeriodBoundaries) -> DayBucketedStatsRollup
 }
 

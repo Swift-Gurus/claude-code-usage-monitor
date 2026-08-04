@@ -12,7 +12,9 @@ struct StatsPipelineDiagnosticTests {
     private var account: Account { Account(name: "Default", claudeDir: NSHomeDirectory() + "/.claude") }
     private var boundaries: PeriodBoundaries { PeriodBoundaries(now: Date()) }
     private var resolvedFiles: Set<URL> {
-        StatsSessionFileResolver().resolveFiles(accounts: [account], monthStart: boundaries.monthStart)
+        get async {
+            await StatsSessionFileResolver().resolveFiles(accounts: [account], monthStart: boundaries.monthStart)
+        }
     }
 
     @Test("working dirs are collected from real usage data")
@@ -23,7 +25,8 @@ struct StatsPipelineDiagnosticTests {
     }
 
     @Test("session files resolve to existing paths")
-    func resolvesFiles() {
+    func resolvesFiles() async {
+        let resolvedFiles = await resolvedFiles
         print("resolved:", resolvedFiles.map(\.path))
         let existing = resolvedFiles.filter { FileManager.default.fileExists(atPath: $0.path) }
         print("existing:", existing.map(\.path))
@@ -31,8 +34,9 @@ struct StatsPipelineDiagnosticTests {
     }
 
     @Test("aggregation and rollup produce non-zero month totals")
-    func rollsUpNonZero() {
-        let statsByDay = StatsFileAggregator().aggregate(files: resolvedFiles)
+    func rollsUpNonZero() async {
+        let resolvedFiles = await resolvedFiles
+        let statsByDay = await StatsFileAggregator().aggregate(files: resolvedFiles)
         print("statsByDay:", statsByDay.mapValues { $0.tools.total })
         let rollup = DefaultStatsRollupProvider().rollup(statsByDay: statsByDay, boundaries: boundaries)
         print("month tools:", rollup.month.tools.total)

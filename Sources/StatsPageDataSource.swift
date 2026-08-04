@@ -7,6 +7,7 @@ import Foundation
  solid-description: Provides session statistics aggregated by time period.
  */
 @Observable
+@MainActor
 final class StatsPageDataSource: StatsPageState, StatsPageActions {
     private(set) var day = SessionStats()
     private(set) var week = SessionStats()
@@ -41,15 +42,17 @@ final class StatsPageDataSource: StatsPageState, StatsPageActions {
         let boundaries = boundariesProvider.boundaries(now: Date())
 
         runner.run { [weak self] in
-            let files = resolver.resolveFiles(accounts: accountsSnapshot, monthStart: boundaries.monthStart)
-            let statsByDay = aggregator.aggregate(files: files)
+            let files = await resolver.resolveFiles(accounts: accountsSnapshot, monthStart: boundaries.monthStart)
+            let statsByDay = await aggregator.aggregate(files: files)
             let rollup = rollupProvider.rollup(statsByDay: statsByDay, boundaries: boundaries)
-
-            await MainActor.run {
-                self?.day = rollup.day
-                self?.week = rollup.week
-                self?.month = rollup.month
-            }
+            await self?.updateStats(day: rollup.day, week: rollup.week, month: rollup.month)
         }
+    }
+
+    @MainActor
+    private func updateStats(day: SessionStats, week: SessionStats, month: SessionStats) {
+        self.day = day
+        self.week = week
+        self.month = month
     }
 }
