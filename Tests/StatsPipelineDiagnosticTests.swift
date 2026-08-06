@@ -11,7 +11,7 @@ import Testing
 struct StatsPipelineDiagnosticTests {
     private var account: Account { Account(name: "Default", claudeDir: NSHomeDirectory() + "/.claude") }
     private var boundaries: PeriodBoundaries { PeriodBoundaries(now: Date()) }
-    private var resolvedFiles: Set<URL> {
+    private var resolvedFiles: Set<StatsSessionFile> {
         get async {
             await StatsSessionFileResolver().resolveFiles(accounts: [account], monthStart: boundaries.monthStart)
         }
@@ -27,9 +27,9 @@ struct StatsPipelineDiagnosticTests {
     @Test("session files resolve to existing paths")
     func resolvesFiles() async {
         let resolvedFiles = await resolvedFiles
-        print("resolved:", resolvedFiles.map(\.path))
-        let existing = resolvedFiles.filter { FileManager.default.fileExists(atPath: $0.path) }
-        print("existing:", existing.map(\.path))
+        print("resolved:", resolvedFiles.map(\.url.path))
+        let existing = resolvedFiles.filter { FileManager.default.fileExists(atPath: $0.url.path) }
+        print("existing:", existing.map(\.url.path))
         #expect(!existing.isEmpty)
     }
 
