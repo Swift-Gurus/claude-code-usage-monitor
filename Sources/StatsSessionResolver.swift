@@ -18,18 +18,18 @@ struct StatsSessionResolver: StatsSessionResolving {
     private let fileSystem: FileSystemProviding
     private let pathEncoder: SessionPathEncoding
     private let directoryLocator: DirectoryLocating
-    private let bareChildLocator: BareChildLocating
+    private let bareChildFileLocator: StatsBareChildFileLocating
 
     init(
         fileSystem: FileSystemProviding = FileManager.default,
         pathEncoder: SessionPathEncoding = SessionPathEncoderAdapter(),
         directoryLocator: DirectoryLocating = DefaultDirectoryLocator(),
-        bareChildLocator: BareChildLocating = DefaultBareChildLocator()
+        bareChildFileLocator: StatsBareChildFileLocating = DefaultStatsBareChildFileLocator()
     ) {
         self.fileSystem = fileSystem
         self.pathEncoder = pathEncoder
         self.directoryLocator = directoryLocator
-        self.bareChildLocator = bareChildLocator
+        self.bareChildFileLocator = bareChildFileLocator
     }
 
     func resolveSessionFiles(sessionID: String, workingDir: String, projectsDir: URL) -> [URL] {
@@ -51,7 +51,6 @@ struct StatsSessionResolver: StatsSessionResolving {
     }
 
     private func bareChildFiles(sessionID: String, projectDir: URL) -> [URL] {
-        bareChildLocator.parseBareChildren(parentSessionID: sessionID, in: projectDir)
-            .map { projectDir.appendingPathComponent("\($0.agentID).jsonl") }
+        bareChildFileLocator.files(parentSessionID: sessionID, in: projectDir)
     }
 }

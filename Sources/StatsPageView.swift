@@ -34,7 +34,10 @@ struct StatsPageView<DS: StatsPageState & StatsPageActions>: View {
         SessionDetailScaffold(
             title: "\(period.label) Stats", settings: settings, openFileHelp: "", onDismiss: onDismiss, onOpenFile: nil
         ) {
-            StatsPageContent(period: $period, periodStats: periodStats, sessionStats: sessionStats)
+            StatsPageContent(
+                period: $period, periodStats: periodStats,
+                sessionStats: sessionStats, isLoading: dataSource.isLoading
+            )
         }
         .task { dataSource.reload() }
     }

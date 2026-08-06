@@ -14,6 +14,8 @@ exclude = [
 # Controls which LLM the pre-write health-check gate uses.
 [llm]
 
+debug = true
+
 # "claude" uses the Claude API (default).
 # "local"  routes through llama-server running on this machine.
 backend = "codex"

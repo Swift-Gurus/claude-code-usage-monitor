@@ -11,6 +11,7 @@ struct PopoverView<VM: PopoverAgentListViewState & PopoverAgentListViewActions>:
     @State private var navigation = PopoverNavigationState()
     @State private var rateLimitStore = RateLimitEventStore()
     @State private var statsCacheStore = StatsCacheStore()
+    @State private var statsPageDataSource: StatsPageDataSource
     private let projectOpener: ProjectOpening
     private let statuslineInstaller: StatuslineInstalling
 
@@ -27,11 +28,13 @@ struct PopoverView<VM: PopoverAgentListViewState & PopoverAgentListViewActions>:
         self.projectOpener = projectOpener ?? PopoverProjectOpener(sessionManager: sessionManager)
         self.statuslineInstaller = statuslineInstaller
         _mainViewModel = State(initialValue: mainViewModel)
+        _statsPageDataSource = State(initialValue: StatsPageDataSource(accounts: settings.accounts))
     }
 
     var body: some View {
         router
             .preferredColorScheme(settings.appearanceMode.colorScheme)
+            .task { statsPageDataSource.reload() }
     }
 
     @ViewBuilder
@@ -45,7 +48,7 @@ struct PopoverView<VM: PopoverAgentListViewState & PopoverAgentListViewActions>:
             )
         } else if let period = navigation.statsPagePeriod {
             StatsPageRoute(
-                data: data, settings: settings, dataSource: StatsPageDataSource(accounts: settings.accounts),
+                data: data, settings: settings, dataSource: statsPageDataSource,
                 period: period, navigation: navigation
             )
         } else if let label = navigation.selectedPeriod {

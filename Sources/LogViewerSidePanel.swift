@@ -15,7 +15,7 @@ struct LogViewerSidePanel: View {
     }
 
     var hasStats: Bool {
-        sessionStats.tools.total > 0 || sessionStats.mcp.total > 0
+        sessionStats.tools.total > 0 || sessionStats.mcp.total > 0 || sessionStats.tokens.total > 0
     }
 
     var body: some View {

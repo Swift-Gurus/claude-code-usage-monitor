@@ -2,6 +2,7 @@ import Foundation
 
 protocol CodexRolloutReading {
     func indexedSessionTitles() -> [String: String]
+    func rolloutURLs(modifiedSince date: Date) -> [URL]
     func rolloutURL(threadID: String) -> URL?
     func rolloutEvents(threadID: String, limit: Int) -> [CodexRolloutEvent]
     func parsedRollout(threadID: String, fallbackTitle: String) -> CodexParsedRollout?
@@ -32,6 +33,25 @@ struct CodexRolloutStore: CodexRolloutReading {
             result[row.id] = row.threadName ?? ""
         }
         return result
+    }
+
+    func rolloutURLs(modifiedSince date: Date) -> [URL] {
+        guard let enumerator = fileManager.enumerator(
+            at: paths.sessionsDirectory,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+
+        var urls: [URL] = []
+        for case let url as URL in enumerator {
+            guard url.pathExtension == "jsonl" else { continue }
+            let modifiedAt = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
+                .contentModificationDate ?? .distantPast
+            if modifiedAt >= date {
+                urls.append(url)
+            }
+        }
+        return urls
     }
 
     func rolloutURL(threadID: String) -> URL? {
@@ -70,32 +90,13 @@ struct CodexRolloutStore: CodexRolloutReading {
 
     func recentParsedRollouts(now: Date, threshold: TimeInterval, titlesByID: [String: String]) -> [String: CodexParsedRollout] {
         var rollouts: [String: CodexParsedRollout] = [:]
-        for url in recentRolloutURLs(now: now, threshold: threshold) {
+        for url in rolloutURLs(modifiedSince: now.addingTimeInterval(-threshold)) {
             let threadID = threadIDFromRolloutURL(url)
             if let parsed = parseRollout(at: url, fallbackTitle: titlesByID[threadID] ?? "") {
                 rollouts[threadID] = parsed
             }
         }
         return rollouts
-    }
-
-    private func recentRolloutURLs(now: Date, threshold: TimeInterval) -> [URL] {
-        guard let enumerator = fileManager.enumerator(
-            at: paths.sessionsDirectory,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-        ) else { return [] }
-
-        var urls: [URL] = []
-        for case let url as URL in enumerator {
-            guard url.pathExtension == "jsonl" else { continue }
-            let modifiedAt = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
-                .contentModificationDate ?? .distantPast
-            if now.timeIntervalSince(modifiedAt) <= threshold {
-                urls.append(url)
-            }
-        }
-        return urls
     }
 
     private func parseRollout(at url: URL, fallbackTitle: String) -> CodexParsedRollout? {

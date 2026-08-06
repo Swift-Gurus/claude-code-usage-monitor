@@ -5,6 +5,7 @@ import Foundation
 @Observable
 @MainActor
 final class PreviewStatsPageDataSource: StatsPageState, StatsPageActions {
+    var isLoading = false
     var day = SessionStats(tools: ToolCallStats(countsByName: ["Bash": 3]))
     var week = SessionStats(tools: ToolCallStats(countsByName: ["Bash": 10, "Read": 4]))
     var month = SessionStats(tools: ToolCallStats(countsByName: ["Bash": 40, "Read": 20]))

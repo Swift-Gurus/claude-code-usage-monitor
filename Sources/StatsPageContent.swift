@@ -5,13 +5,18 @@ struct StatsPageContent: View {
     @Binding var period: StatusBarPeriod
     let periodStats: PeriodStats
     let sessionStats: SessionStats
+    let isLoading: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             StatusBarPeriodPicker(period: $period)
             CostLinesSummaryView(stats: periodStats)
             Divider()
-            StatsPanelView(stats: sessionStats)
+            if isLoading {
+                LoadingStateView(message: "Loading tool and token stats...")
+            } else {
+                StatsPanelView(stats: sessionStats)
+            }
         }
     }
 }
@@ -20,6 +25,7 @@ struct StatsPageContent: View {
     StatsPageContent(
         period: .constant(.day),
         periodStats: PeriodStats(cost: 12.34, linesAdded: 120, linesRemoved: 40),
-        sessionStats: SessionStats(tools: ToolCallStats(countsByName: ["Bash": 3]))
+        sessionStats: SessionStats(tools: ToolCallStats(countsByName: ["Bash": 3])),
+        isLoading: false
     )
 }

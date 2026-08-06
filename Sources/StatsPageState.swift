@@ -7,6 +7,7 @@ import Foundation
  */
 @MainActor
 protocol StatsPageState: Observable {
+    var isLoading: Bool { get }
     var day: SessionStats { get }
     var week: SessionStats { get }
     var month: SessionStats { get }

@@ -7,6 +7,10 @@ public struct SessionTokenStats: Equatable, Sendable {
     public var cacheCreationTokens = 0
     public var cacheReadTokens = 0
 
+    public var total: Int {
+        inputTokens + outputTokens + cacheCreationTokens + cacheReadTokens
+    }
+
     /// Fraction of context-window input that was served from cache. 0 when there's no
     /// input activity at all (never NaN).
     public var cacheHitRate: Double {

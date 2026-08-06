@@ -9,6 +9,7 @@ import Foundation
 @Observable
 @MainActor
 final class StatsPageDataSource: StatsPageState, StatsPageActions {
+    private(set) var isLoading = false
     private(set) var day = SessionStats()
     private(set) var week = SessionStats()
     private(set) var month = SessionStats()
@@ -19,6 +20,7 @@ final class StatsPageDataSource: StatsPageState, StatsPageActions {
     private let boundariesProvider: PeriodBoundariesProviding
     private let rollupProvider: StatsRollupProviding
     private let runner = ReloadTaskRunner()
+    private var lastLoadedAt: Date?
 
     init(
         accounts: [Account],
@@ -35,6 +37,11 @@ final class StatsPageDataSource: StatsPageState, StatsPageActions {
     }
 
     func reload() {
+        guard !isLoading else { return }
+        if let lastLoadedAt, Date().timeIntervalSince(lastLoadedAt) < 60 {
+            return
+        }
+        isLoading = true
         let accountsSnapshot = accounts
         let resolver = fileResolver
         let aggregator = fileAggregator
@@ -54,5 +61,7 @@ final class StatsPageDataSource: StatsPageState, StatsPageActions {
         self.day = day
         self.week = week
         self.month = month
+        lastLoadedAt = Date()
+        isLoading = false
     }
 }

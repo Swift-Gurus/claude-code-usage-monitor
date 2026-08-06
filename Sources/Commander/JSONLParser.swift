@@ -708,14 +708,13 @@ public enum JSONLParser {
             let sessionID = file.deletingPathExtension().lastPathComponent
             guard sessionID != parentSessionID else { continue }
 
-            guard let data = try? Data(contentsOf: file),
-                  let content = String(data: data, encoding: .utf8) else { continue }
-
-            let lines = content.split(separator: "\n", omittingEmptySubsequences: true)
-
             // Scan first 30 lines to detect: bare session (sdk-cli) linked to this parent
+            // without loading every full transcript in the project directory. Most files
+            // are not children of this parent and can be rejected from their small prefix.
+            guard let prefixContent = readJSONLPrefix(at: file) else { continue }
+            let prefixLines = prefixContent.split(separator: "\n", omittingEmptySubsequences: true)
             var isBareChild = false
-            for line in lines.prefix(30) {
+            for line in prefixLines.prefix(30) {
                 guard let lineData = line.data(using: .utf8),
                       let raw = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
                       raw["type"] as? String == "user"
@@ -732,6 +731,10 @@ public enum JSONLParser {
             }
 
             guard isBareChild else { continue }
+
+            guard let data = try? Data(contentsOf: file),
+                  let content = String(data: data, encoding: .utf8) else { continue }
+            let lines = content.split(separator: "\n", omittingEmptySubsequences: true)
 
             // Parse usage, tool counts, and ai-title from the full file
             struct MsgUsage {
