@@ -1,0 +1,13 @@
+# Managed by mise Swift config sync. Edit the shared template instead.
+# Nested overrides: SwiftLint inherits the root config automatically.
+
+disabled_rules:
+  - prefer_nimble
+  - no_magic_numbers
+  - no_empty_block
+  - optional_data_string_conversion
+
+type_body_length:
+  warning: 250
+  error: 350
+

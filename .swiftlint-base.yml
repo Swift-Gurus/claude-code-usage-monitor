@@ -1,0 +1,60 @@
+disabled_rules:
+  - contrasted_opening_brace
+  - generic_type_name
+  - identifier_name
+  - blanket_disable_command
+  - no_empty_block
+  - explicit_acl
+  - explicit_type_interface
+  - no_extension_access_modifier
+  - prefixed_toplevel_constant
+  - explicit_top_level_acl
+  - file_name
+  - multiline_arguments_brackets
+  - multiline_parameters_brackets
+  - required_deinit
+  - indentation_width
+  - lower_acl_than_parent
+  - private_unit_test
+  - explicit_enum_raw_value
+  - no_grouping_extension
+  - optional_data_string_conversion
+  - one_declaration_per_file
+  - file_types_order
+  - no_magic_numbers
+  - balanced_xctest_lifecycle
+  - prefer_nimble
+  - closure_body_length
+  - missing_docs
+  - accessibility_label_for_image
+opt_in_rules:
+  - all
+analyzer_rules:
+  - explicit_self
+  - unused_import
+  - unused_declaration
+force_cast: error # implicitly
+force_try:
+  severity: error # explicitly
+force_unwrapping: error
+
+line_length: 150
+
+type_body_length:
+  warning: 50
+  error: 100
+# or they can set both explicitly
+file_length:
+  warning: 300
+  error: 400
+
+type_name:
+  min_length: 4 # only warning
+  max_length: # warning and error
+    warning: 40
+    error: 50
+  excluded: iPhone # excluded via string
+
+reporter: "xcode"
+
+# Repository-specific paths belong in the project's .swiftlint.yml.
